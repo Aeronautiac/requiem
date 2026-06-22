@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use eframe::App;
-use egui::ViewportCommand;
+use egui::{Align, ComboBox, Layout, Panel, TopBottomPanel, Ui, ViewportCommand};
 use lawliet_types::{
     action::{Action, ActionActor, ActionRequest, AddPlayer},
     role::Role,
@@ -18,11 +18,14 @@ enum UserInput {
 
 struct GameViewport {}
 
+struct UIState {}
+
 pub struct Application {
     input_wrt: UnboundedSender<ActionRequest>,
     output_rcv: UnboundedReceiver<AppExecResult>,
     input: Option<UserInput>,
     waiting_input: Option<UserInput>,
+    selected_actor: ActionActor,
 }
 
 impl Application {
@@ -35,6 +38,7 @@ impl Application {
             output_rcv,
             input: None,
             waiting_input: None,
+            selected_actor: ActionActor::Admin,
         }
     }
 
@@ -76,6 +80,19 @@ impl Application {
             dbg!(response_data);
         }
     }
+
+    // UI HELPERS
+    fn player_selection(&mut self, ui: &mut Ui) {
+        ComboBox::from_label("Player Selection")
+            .selected_text(format!("{:?}", self.selected_actor))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.selected_actor, ActionActor::Admin, "Admin");
+
+                if ui.button("Add player").clicked() {
+                    self.input = Some(UserInput::AddPlayer)
+                }
+            });
+    }
 }
 
 impl App for Application {
@@ -86,14 +103,18 @@ impl App for Application {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.input = None;
 
-        ui.label("Hello world!");
+        Panel::bottom("bottom bar")
+            .resizable(false)
+            .show_inside(ui, |ui| {
+                ui.horizontal(|ui| {
+                    self.player_selection(ui);
 
-        if ui.button("Add player").clicked() {
-            self.input = Some(UserInput::AddPlayer)
-        }
-
-        if ui.button("Quit").clicked() {
-            self.input = Some(UserInput::Exit)
-        }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui.button("Quit").clicked() {
+                            self.input = Some(UserInput::Exit)
+                        }
+                    });
+                });
+            });
     }
 }
