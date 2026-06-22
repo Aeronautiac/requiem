@@ -1,0 +1,9 @@
+[package]
+name = "lawliet-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lawliet = { path="../lawliet-core"}
+lawliet-types = {path="../lawliet-types"}
+serde_json = "1.0.150"

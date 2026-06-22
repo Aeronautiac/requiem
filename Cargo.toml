@@ -1,0 +1,8 @@
+[workspace]
+members = [
+  "armonia",
+  "lawliet/lawliet-types",
+  "lawliet/lawliet-runtime",
+  "lawliet/lawliet-core",
+  "yagami",
+]
