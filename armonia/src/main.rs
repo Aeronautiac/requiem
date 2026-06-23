@@ -7,7 +7,7 @@
 
 pub mod app;
 
-use eframe::{App, NativeOptions};
+use eframe::NativeOptions;
 use lawliet_types::{action::ActionRequest, engine::ExecutionResult};
 use std::{env::current_exe, process::Stdio};
 use tokio::{
@@ -26,7 +26,7 @@ use crate::app::Application;
 //
 // The process supervisor thread should solely focus on rebooting and sending out file descriptors.
 // It also sends out crash notifications.
-// The reader thread just reads from the process output pipe and feeds it back to the application
+// The reader just reads from the process output pipe and feeds it back to the application
 // The writer reads from the application input channel and sends it into the child process via pipe.
 // It also saves an input sequence of successful actions which it sends into the child whenever the
 // process restarts. If a pipe write fails (due to the child crashing), it does not write the action
@@ -66,7 +66,7 @@ async fn supervisor_loop(fd_wrt: UnboundedSender<(ChildStdin, ChildStdout)>) {
 
 async fn coordinator_loop(
     mut fd_rcv: UnboundedReceiver<(ChildStdin, ChildStdout)>,
-    output_wrt: UnboundedSender<AppExecResult>,
+    output_wrt: UnboundedSender<AppExecution>,
     mut input_rcv: UnboundedReceiver<ActionRequest>,
 ) {
     let mut stdin: Option<ChildStdin> = None;
@@ -81,8 +81,12 @@ async fn coordinator_loop(
             Some((new_in, new_out)) = fd_rcv.recv() => {
                 dbg!("received fd pair");
 
-                if awaiting.take().is_some() {
-                    output_wrt.send(AppExecResult::Crashed).ok();
+                let action_req = awaiting.take();
+                if action_req.is_some() {
+                    output_wrt.send(AppExecution {
+                        exec_result: AppExecResult::Crashed,
+                        action_req: action_req.unwrap(),
+                    }).ok();
                 }
 
                 // update fds
@@ -115,11 +119,15 @@ async fn coordinator_loop(
                 match line {
                     Ok(Some(text)) => {
                         let result: ExecutionResult = serde_json::from_str(&text).unwrap();
-                        if let Some(action) = awaiting.take() && result.is_ok() {
-                            valid_inputs.push(action);
+                        let action_req = awaiting.take();
+                        if let Some(action) = &action_req && result.is_ok() {
+                            valid_inputs.push(action.clone());
                         }
                         if to_discard == 0 {
-                            output_wrt.send(AppExecResult::Standard(result)).ok();
+                            output_wrt.send(AppExecution {
+                                exec_result: AppExecResult::Standard(result),
+                                action_req: action_req.unwrap(),
+                            }).ok();
                         } else {
                             to_discard -= 1;
                         }
@@ -137,10 +145,16 @@ pub enum AppExecResult {
     Crashed,
 }
 
+#[derive(Debug)]
+pub struct AppExecution {
+    action_req: ActionRequest,
+    exec_result: AppExecResult,
+}
+
 fn main() {
     // thread comms
     let (input_wrt, input_rcv) = unbounded_channel::<ActionRequest>();
-    let (output_wrt, output_rcv) = unbounded_channel::<AppExecResult>();
+    let (output_wrt, output_rcv) = unbounded_channel::<AppExecution>();
 
     std::thread::spawn(move || {
         let rt = Runtime::new().unwrap();
