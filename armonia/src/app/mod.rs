@@ -45,6 +45,12 @@ struct GameState {
     views: HashMap<Viewer, GameViewport>,
 }
 
+// to solve the new players issue regarding information like deaths, simply add a new target to the
+// communication protocol specifying "base info/new player info" which must be given to a new player
+// on creation. here, the engine doesn't build up memory forever, and the frontend can deal with it.
+// there are really no cases more complex than this. the player is essentially treated as if they
+// were a bystander for the whole game and just now started playing.
+
 impl GameState {
     // add view for the player, add info to everyone else's views, only show privileged info to the
     // player and the admin
