@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use specta::Type;
 
 use crate::{
     ability::{AbilityBehaviour, AbilityName},
@@ -23,7 +24,7 @@ use crate::{
     world::{OverrideSource, WorldChannelName, WorldChannelOverride},
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Type)]
 pub enum ActionError {
     ActorNotFound,
     ActorIsDead,
@@ -88,13 +89,13 @@ pub enum ActionError {
     ActorHasStrengthenedPresence,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct OrgActorInfo {
     pub org_id: ActorKey,
     pub player_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub enum ActionActor {
     Admin,
     System,
@@ -102,9 +103,10 @@ pub enum ActionActor {
     Organization(OrgActorInfo),
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ActionRequest {
     pub actor: ActionActor,
+    #[specta(type = f64)]
     pub timestamp: Time,
     pub payload: Action,
 }
@@ -113,22 +115,22 @@ pub struct ActionRequest {
 // ABILITY //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddAbilityResponse {
     pub id: AbilityKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddAbility {
     pub ability_name: AbilityName,
     pub transferrable: bool,
     pub variant: Variant,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddLinkResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddLink {
     pub ability_id: AbilityKey,
     pub pool_id: ChargePoolKey,
@@ -137,28 +139,28 @@ pub struct AddLink {
     pub volatile: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ClearLinksResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ClearLinks {
     pub ability_id: AbilityKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ClearVolatileLinksResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ClearVolatileLinks {
     pub ability_id: AbilityKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateAndGiveAbilityResponse {
     pub id: AbilityKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateAndGiveAbility {
     pub ability_name: AbilityName,
     pub transferrable: bool,
@@ -167,37 +169,37 @@ pub struct CreateAndGiveAbility {
     pub volatile: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DestroyAbilityResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DestroyAbility {
     pub ability_id: AbilityKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct GiveAbilityResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct GiveAbility {
     pub ability_id: AbilityKey,
     pub actor_id: ActorKey,
     pub volatile: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveLinkResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveLink {
     pub ability_id: AbilityKey,
     pub pool_id: ChargePoolKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UseAbilityResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UseAbility {
     pub ability_id: AbilityKey,
     pub ability_args: AbilityBehaviour,
@@ -207,52 +209,52 @@ pub struct UseAbility {
 // ACTOR //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddStateResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddState {
     pub actor_id: ActorKey,
     pub state: State,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateActorLinksResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateActorLinks {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PurgeVolatilesResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PurgeVolatiles {
     pub actor_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveStateResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveState {
     pub actor_id: ActorKey,
     pub state: State,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SeverLinksResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SeverLinks {
     pub actor_id: ActorKey,
 }
 
 // org
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddToOrgResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddToOrg {
     pub leader: bool,
     pub og: bool,
@@ -260,21 +262,21 @@ pub struct AddToOrg {
     pub org_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ChangeOrgLeaderResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ChangeOrgLeader {
     pub org_id: ActorKey,
     pub new_leader: Option<ActorKey>,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateAndGiveOrgAbilityResponse {
     pub id: AbilityKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateAndGiveOrgAbility {
     pub ability_name: AbilityName,
     pub variant: Variant,
@@ -282,50 +284,51 @@ pub struct CreateAndGiveOrgAbility {
     pub settings: OrgAbility,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateOrgResponse {
     pub id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateOrg {
     pub name: OrganizationName,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct GiveOrgAbilityResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct GiveOrgAbility {
     pub org_id: ActorKey,
     pub ability_id: AbilityKey,
     pub settings: OrgAbility,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveFromOrgResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveFromOrg {
     pub actor_id: ActorKey,
     pub org_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetLeadershipResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetLeadership {
     pub org_id: ActorKey,
+    #[specta(type = Option<u8>)]
     pub policies: Option<LeadershipTransferPolicies>,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SystemUseOrgAbilityResponse {
     pub poll_id: Option<PollKey>,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SystemUseOrgAbility {
     pub org_id: ActorKey,
     pub user_id: ActorKey,
@@ -334,12 +337,12 @@ pub struct SystemUseOrgAbility {
     pub dont_vote: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UseOrgAbilityResponse {
     pub poll_id: Option<PollKey>,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UseOrgAbility {
     pub org_id: ActorKey,
     pub ability_id: AbilityKey,
@@ -348,30 +351,30 @@ pub struct UseOrgAbility {
 
 // player
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddPlayerResponse {
     pub id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddPlayer {
     pub true_name: String,
     pub starting_role: Role,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct GiveRoleResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct GiveRole {
     pub target_id: ActorKey,
     pub role: Role,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct KillResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct Kill {
     pub target_id: ActorKey,
     pub killer_id: Option<ActorKey>,
@@ -382,30 +385,32 @@ pub struct Kill {
     pub set_books_dormant: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ReviveResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct Revive {
     pub ignore_links: bool,
     pub target_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ScheduleKillResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ScheduleKill {
+    #[specta(type = f64)]
     pub timestamp: Time,
     pub kill: Kill,
     pub notebook_scheduled: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ScheduleReviveResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ScheduleRevive {
+    #[specta(type = f64)]
     pub timestamp: Time,
     pub revive: Revive,
 }
@@ -414,30 +419,30 @@ pub struct ScheduleRevive {
 // CHARGEPOOL //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddChargePoolResponse {
     pub id: ChargePoolKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddChargePool {
     pub base_charges: ChargeCount,
     pub base_reset_time: IterationCount,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddChargesResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddCharges {
     pub id: ChargePoolKey,
     pub charges: ChargeCount,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct TryDeleteChargePoolResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct TryDeleteChargePool {
     pub id: ChargePoolKey,
 }
@@ -448,83 +453,83 @@ pub struct TryDeleteChargePool {
 
 // bug
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ArchiveBugResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ArchiveBug {
     pub bug_id: BugKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateBugResponse {
     pub id: BugKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateBug {
     pub target_id: ActorKey,
     pub source: BugSource,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DestroyBugResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DestroyBug {
     pub bug_id: BugKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdateBugVisibilitiesResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdateBugVisibilities {}
 
 // channel
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateChannelResponse {
     pub id: ChannelKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateChannel {
     pub loggable: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DestroyChannelResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DestroyChannel {
     pub channel_id: ChannelKey,
     pub archive: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SendMessageResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SendMessage {
     pub channel_id: ChannelKey,
     pub display: ActorDisplay,
     pub content: String,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetLoggableResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetLoggable {
     pub channel_id: ChannelKey,
     pub loggable: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetMemberResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetMember {
     pub player_id: ActorKey,
     pub channel_id: ChannelKey,
@@ -533,37 +538,37 @@ pub struct SetMember {
 
 // groupchat
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddToGroupchatResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddToGroupchat {
     pub groupchat_id: GroupchatKey,
     pub player_id: ActorKey,
     pub owner: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateGroupchatResponse {
     pub id: GroupchatKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateGroupchat {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveFromGroupchatResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveFromGroupchat {
     pub groupchat_id: GroupchatKey,
     pub player_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetGroupchatOwnerResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetGroupchatOwner {
     pub groupchat_id: GroupchatKey,
     pub owner: Option<ActorKey>,
@@ -571,38 +576,38 @@ pub struct SetGroupchatOwner {
 
 // lounge
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateLoungeResponse {
     pub lounge_id: crate::common::LoungeKey,
     pub channel_id: ChannelKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateLounge {
     pub variant: LoungeVariant,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct LeaveLoungeResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct LeaveLounge {
     pub lounge_id: crate::common::LoungeKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveFromLoungeResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveFromLounge {
     pub lounge_id: crate::common::LoungeKey,
     pub player_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdateContactChannelsResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdateContactChannels {
     pub player_id: ActorKey,
 }
@@ -611,23 +616,24 @@ pub struct UpdateContactChannels {
 // ENGINE //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DeferredCmdsResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DeferredCmds {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct NullResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct Null {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ScheduleJobResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ScheduleJob {
+    #[specta(type = f64)]
     pub timestamp: Time,
     pub payload: Box<Action>,
 }
@@ -636,38 +642,38 @@ pub struct ScheduleJob {
 // INCARCERATION //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateIncarcerationResponse {
     pub id: IncarcerationKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateIncarceration {
     pub victim_id: ActorKey,
     pub source: IncarcerationSource,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CullIncarceratationsResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CullIncarcerations {
     pub ability_id: AbilityKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ReleaseIncarcerationResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ReleaseIncarceration {
     pub incarceration_id: IncarcerationKey,
     pub forced: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdatePrisonChannelResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdatePrisonChannel {
     pub actor_id: ActorKey,
 }
@@ -676,142 +682,143 @@ pub struct UpdatePrisonChannel {
 // KIDNAPPING //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateKidnappingResponse {
     pub id: KidnappingKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateKidnapping {
     pub victim_id: ActorKey,
     pub kidnapping_type: KidnappingType,
     pub source: KidnappingSource,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CullKidnappingsResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CullKidnappings {
     pub ability_id: AbilityKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ReleaseKidnappingResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ReleaseKidnapping {
     pub kidnapping_id: KidnappingKey,
     pub forced: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdateKidnapChannelsResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdateKidnapChannels {}
 
 // ////////////////////////////////////////////////
 // NOTEBOOK //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddNotebookResponse {
     pub id: NotebookKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddNotebook {
     pub fake: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateAndGiveNotebookResponse {
     pub id: NotebookKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateAndGiveNotebook {
     pub fake: bool,
     pub actor_id: ActorKey,
     pub volatile: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DestroyNotebookResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DestroyNotebook {
     pub notebook_id: NotebookKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct GiveNotebookResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct GiveNotebook {
     pub notebook_id: NotebookKey,
     pub actor_id: ActorKey,
     pub volatile: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct LendNotebookResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct LendNotebook {
     pub notebook_id: NotebookKey,
     pub target_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct NotebookScheduledKillResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct NotebookScheduledKill {
     pub kill: Kill,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ReturnDormantBooksResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ReturnDormantBooks {
     pub actor_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetBooksDormantResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetBooksDormant {
     pub actor_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetBorrowersToOwnersResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetBorrowersToOwners {
     pub actor_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct TakeNotebookResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct TakeNotebook {
     pub notebook_id: NotebookKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct WriteNameResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct WriteName {
     pub true_name: String,
     pub death_message: Option<String>,
     pub notebook_id: NotebookKey,
+    #[specta(type = f64)]
     pub delay: Time,
 }
 
@@ -819,23 +826,23 @@ pub struct WriteName {
 // PASSIVE //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddPassiveResponse {
     pub id: PassiveKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddPassive {
     pub passive_type: PassiveType,
     pub transferrable: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateAndGivePassiveResponse {
     pub id: PassiveKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateAndGivePassive {
     pub passive_type: PassiveType,
     pub transferrable: bool,
@@ -843,18 +850,18 @@ pub struct CreateAndGivePassive {
     pub volatile: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DestroyPassiveResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DestroyPassive {
     pub passive_id: PassiveKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct GivePassiveResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct GivePassive {
     pub passive_id: PassiveKey,
     pub actor_id: ActorKey,
@@ -865,21 +872,21 @@ pub struct GivePassive {
 // POLL //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddVoteResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddVote {
     pub poll_id: PollKey,
     pub accept: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreatePollReponse {
     pub id: PollKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreatePoll {
     pub voter_policy: VoterPolicy,
     pub visibility: PollVisibility,
@@ -887,99 +894,100 @@ pub struct CreatePoll {
     pub timeout_policy: PollPolicy,
     pub accept_payload: Box<Option<Action>>,
     pub reject_payload: Box<Option<Action>>,
+    #[specta(type = Option<f64>)]
     pub duration: Option<Time>,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PollCleanupResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PollCleanup {
     pub poll_id: PollKey,
     pub cancelled: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PollTimeoutResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PollTimeout {
     pub poll_id: PollKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveVoteResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct RemoveVote {
     pub poll_id: PollKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdatePollsResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdatePolls {}
 
 // ////////////////////////////////////////////////
 // PROSECUTION //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AdvanceProsecutionResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AdvanceProsecution {
     pub prosecution_id: ProsecutionKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CullProsecutionsResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CullProsecutions {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ProsecutionVoteResResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct ProsecutionVoteRes {
     pub prosecution_id: ProsecutionKey,
     pub success: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SelectLawyerResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SelectLawyer {
     pub prosecution_id: ProsecutionKey,
     pub lawyer_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetCustodyResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetCustody {
     pub defendant_id: ActorKey,
     pub custody: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SignalReadyResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SignalReady {
     pub prosecution_id: ProsecutionKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct StartProsecutionResponse {
     pub id: ProsecutionKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct StartProsecution {
     pub source: ProsecutionSource,
     pub prosecutor_id: ActorKey,
@@ -989,10 +997,10 @@ pub struct StartProsecution {
     pub autonomous: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct TerminateProsecutionResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct TerminateProsecution {
     pub prosecution_id: ProsecutionKey,
 }
@@ -1001,56 +1009,56 @@ pub struct TerminateProsecution {
 // UPDATE //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdateResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct Update {}
 
 // ////////////////////////////////////////////////
 // WORLD //
 // ////////////////////////////////////////////////
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddToWorldChannelsResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct AddToWorldChannels {
     pub player_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateOrgsResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct CreateOrgs {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct InitializeEngineResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct InitializeEngine {
     pub seed: Seed,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct InitializeWorldResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct InitializeWorld {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetRandomSeedResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetRandomSeed {
     pub seed: Seed,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetWorldChannelOverrideResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct SetWorldChannelOverride {
     pub player_id: ActorKey,
     pub channel_name: WorldChannelName,
@@ -1059,10 +1067,10 @@ pub struct SetWorldChannelOverride {
     pub override_data: Option<WorldChannelOverride>,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdateWorldChannelPermsResponse {}
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub struct UpdateWorldChannelPerms {
     pub player_id: ActorKey,
 }
@@ -1071,7 +1079,7 @@ pub struct UpdateWorldChannelPerms {
 // ACTION & RESPONSE ENUMS //
 // ////////////////////////////////////////////////
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ActionContext {
     pub commands: Vec<CommandPayload>,
 }
@@ -1086,7 +1094,7 @@ impl ActionContext {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
 pub enum Action {
     ChangeOrgLeader(ChangeOrgLeader),
     Kill(Kill),
@@ -1187,7 +1195,7 @@ pub enum Action {
     CullIncarcerations(CullIncarcerations),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Type)]
 pub enum ActionResponse {
     ChangeOrgLeader(ChangeOrgLeaderResponse),
     Kill(KillResponse),

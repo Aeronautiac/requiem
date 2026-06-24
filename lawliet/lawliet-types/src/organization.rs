@@ -1,10 +1,11 @@
 use enumflags2::{BitFlags, bitflags};
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
+use specta::Type;
 
 use crate::{common::MemberCount, role::Role};
 
-#[derive(Hash, PartialEq, Eq, Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, Debug, Clone, Copy, Serialize, Deserialize, Type)]
 pub enum OrganizationName {
     NULL,
     KK,
@@ -21,10 +22,12 @@ pub enum OrgAbilityPolicy {
 }
 pub type OrgAbilityPolicies = BitFlags<OrgAbilityPolicy>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct OrgAbility {
+    #[specta(type = Vec<Role>)]
     pub require_roles: IndexSet<Role>,
     pub require_members: MemberCount,
+    #[specta(type = u8)]
     pub usage_policies: OrgAbilityPolicies,
 }
 

@@ -1,16 +1,17 @@
 use enumflags2::{BitFlags, bitflags};
 use serde::{Deserialize, Serialize};
+use specta::Type;
 
 use crate::common::{ActorKey, ID};
 use crate::role::Role;
 
-#[derive(Hash, PartialEq, Eq, Debug, Ord, PartialOrd, Clone, Copy, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, Debug, Ord, PartialOrd, Clone, Copy, Serialize, Deserialize, Type)]
 pub enum ActorLinkType {
     Life,
     Passive,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Hash, Eq, Ord, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Hash, Eq, Ord, Serialize, Deserialize, Type)]
 pub enum ActorDisplay {
     Raw(ActorKey),
     Org(ActorKey),
@@ -21,7 +22,7 @@ pub enum ActorDisplay {
 
 #[bitflags]
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Hash, Eq, Ord, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Hash, Eq, Ord, Serialize, Deserialize, Type)]
 pub enum State {
     Dead = 1 << 0,
     Incarcerated = 1 << 1,

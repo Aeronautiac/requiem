@@ -1,6 +1,7 @@
 use enumflags2::{BitFlags, bitflags};
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
+use specta::Type;
 
 use crate::actor::ActorDisplay;
 
@@ -13,8 +14,10 @@ pub enum ChannelPermission {
 }
 pub type ChannelPermissions = BitFlags<ChannelPermission>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct ChannelMember {
+    #[specta(type = u8)]
     pub perms: ChannelPermissions,
+    #[specta(type = Vec<ActorDisplay>)]
     pub displays: IndexSet<ActorDisplay>,
 }
