@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use specta::Type;
 
 use crate::{
     channel::ChannelPermissions,
@@ -7,30 +6,28 @@ use crate::{
     role::Role,
 };
 
-#[derive(Hash, Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Serialize, Deserialize, Type)]
+#[derive(Hash, Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Serialize, Deserialize)]
 pub enum WorldChargePoolName {
     Prosecution,
 }
 
-#[derive(Hash, Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Serialize, Deserialize, Type)]
+#[derive(Hash, Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Serialize, Deserialize)]
 pub enum WorldChannelName {
     News,
     General,
     Prison,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct WorldChannelOverride {
-    #[specta(type = u8)]
     pub default_perms: ChannelPermissions,
-    #[specta(type = u8)]
     pub force_perms: ChannelPermissions,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Serialize, Deserialize, Type)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Serialize, Deserialize)]
 pub enum OverrideSource {
     Role(Role),
-    Manual(#[specta(type = f64)] ID),
+    Manual(ID),
     PressConference(ActorKey),
     Incarceration,
 }

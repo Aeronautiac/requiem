@@ -11,6 +11,7 @@ use crate::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, AddLink, ClearVolatileLinks, UpdateBugVisibilities,
     },
     chargepool::PoolLink,
+    command::Command,
     common::{AbilityKey, ActorKey},
     config::ability::{AbilityIdentifier, ConfigPoolLinkDetails},
     helpers::{get_ability, get_ability_mut, get_actor, get_actor_mut},
@@ -96,6 +97,22 @@ impl ActionInterface for GiveAbility {
 
         Action::UpdateBugVisibilities(UpdateBugVisibilities {})
             .handle(eng, ctx, actor, version, mutate)?;
+
+        if mutate {
+            let ability = get_ability(eng, self.ability_id)?;
+            let (usages_remaining, iterations_to_reset) = ability.get_ability_view_counts(eng);
+            ctx.push_cmd(
+                Command::UpdateAbilityView {
+                    ability_name: ability.ability_name,
+                    usages_remaining,
+                    iterations_to_reset,
+                    ability_id: self.ability_id,
+                    owner_id: self.actor_id,
+                },
+                Some(self.actor_id),
+                eng.time,
+            );
+        }
 
         Ok(ActionResponse::GiveAbility(GiveAbilityResponse {}))
     }

@@ -67,6 +67,7 @@ impl ActionInterface for Action {
             Action::DestroyNotebook(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CreateAndGivePassive(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::TakeNotebook(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::SetNotebookPossession(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::Null(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::SetBorrowersToOwners(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::SetBooksDormant(a) => a.handle(eng, ctx, actor, version, mutate),

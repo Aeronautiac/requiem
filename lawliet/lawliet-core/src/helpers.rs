@@ -284,11 +284,11 @@ pub fn get_voter_weight(eng: &Engine, id: ActorKey) -> PollWeight {
     get_actor(eng, id).expect("Expected a valid actor ID");
     if get_player(eng, id).is_ok() {
         let passive_id = actor_get_effective_passive(eng, id, |passive_type| {
-            matches!(passive_type, PassiveType::VoteAmplication { multiplier: _ })
+            matches!(passive_type, PassiveType::VoteAmplification { multiplier: _ })
         });
         if let Some(id) = passive_id {
             let passive = get_passive(eng, id).expect("Expected passive to exist");
-            let PassiveType::VoteAmplication { multiplier: val } = passive.passive_type else {
+            let PassiveType::VoteAmplification { multiplier: val } = passive.passive_type else {
                 unreachable!();
             };
             val

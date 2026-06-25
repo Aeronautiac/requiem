@@ -1,6 +1,5 @@
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
-use specta::Type;
 
 use crate::{
     ability::AbilityName,
@@ -18,16 +17,15 @@ use crate::{
 //
 // the frontend server is expected to intercept certain commands if they wish to implement host controls
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandPayload {
-    #[specta(type = f64)]
     pub timestamp: Time,
     pub recipient: Option<ActorKey>,
     pub cmd: Command,
 }
 
 // command the frontend
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
     ////////////////////////////////////////////////
     // WORLD //
@@ -52,7 +50,6 @@ pub enum Command {
     // display/announce kidnapping. can be handled similar to death.
     Kidnapping {
         target_id: ActorKey,
-        #[specta(type = f64)]
         duration: Time,
     },
 
@@ -104,7 +101,6 @@ pub enum Command {
     // the reason this isnt handled entirely on the engine level is because its irrelevant. there
     // are no deception mechanics regarding state displays.
     ActorState {
-        #[specta(type = u8)]
         state: States,
         actor_id: ActorKey,
     },
@@ -210,7 +206,6 @@ pub enum Command {
     ShowChannelMember {
         channel_id: ChannelKey,
         display: ActorDisplay,
-        #[specta(type = u8)]
         channel_perms: ChannelPermissions,
     },
 
@@ -223,9 +218,7 @@ pub enum Command {
     // update a player's view of the channel based on their permissions
     UpdateChannelView {
         channel_id: ChannelKey,
-        #[specta(type = u8)]
         perms: ChannelPermissions,
-        #[specta(type = Vec<ActorDisplay>)]
         displays: IndexSet<ActorDisplay>,
     },
 
@@ -269,7 +262,6 @@ pub enum Command {
         user_id: ActorKey,
         message: Option<String>,
         true_name: String,
-        #[specta(type = f64)]
         delay: Time,
         successes_remaining: AttemptCount,
         attempts_remaining: AttemptCount,
@@ -331,7 +323,6 @@ pub enum Command {
     // querying and filtering, and the clients will handle the display of that info.
     RevealAutopsyMessages {
         target_id: ActorKey,
-        #[specta(type = f64)]
         range: Time,
         redact_names: bool,
     },

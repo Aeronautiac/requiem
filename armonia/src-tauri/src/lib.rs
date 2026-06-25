@@ -11,9 +11,7 @@ use std::{env::current_exe, process::Stdio};
 
 use lawliet_types::{action::ActionRequest, engine::{ExecutionResult, IpcExecutionResult}};
 use serde::Serialize;
-use specta::Type;
 use tauri::State;
-use tauri_specta::{Builder, collect_commands};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
     process::{ChildStdin, ChildStdout},
@@ -124,13 +122,13 @@ async fn coordinator_loop(
 // IPC TYPES
 // ////////////////////////////////////////////////////////////
 
-#[derive(Debug, Serialize, Type)]
+#[derive(Debug, Serialize)]
 pub enum AppExecResult {
     Standard(IpcExecutionResult),
     Crashed,
 }
 
-#[derive(Debug, Serialize, Type)]
+#[derive(Debug, Serialize)]
 pub struct AppExecution {
     pub exec_result: AppExecResult,
 }
@@ -144,7 +142,6 @@ struct AppState {
 }
 
 #[tauri::command]
-#[specta::specta]
 async fn send_action(
     action: ActionRequest,
     state: State<'_, AppState>,
@@ -163,16 +160,6 @@ async fn send_action(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = Builder::<tauri::Wry>::new().commands(collect_commands![send_action]);
-
-    #[cfg(debug_assertions)]
-    builder
-        .export(
-            specta_typescript::Typescript::default(),
-            "../src/bindings.ts",
-        )
-        .expect("failed to export tauri-specta bindings");
-
     let (action_tx, action_rx) = unbounded_channel();
 
     std::thread::spawn(move || {
@@ -187,7 +174,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(AppState { action_tx })
-        .invoke_handler(builder.invoke_handler())
+        .invoke_handler(tauri::generate_handler![send_action])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

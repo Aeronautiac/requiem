@@ -413,7 +413,7 @@ mod poll_tests {
             &mut eng,
             0,
             p3,
-            PassiveType::VoteAmplication { multiplier: 2 },
+            PassiveType::VoteAmplification { multiplier: 2 },
             false,
         );
 
@@ -451,7 +451,7 @@ mod poll_tests {
             &mut eng,
             0,
             p2,
-            PassiveType::VoteAmplication { multiplier: 10 },
+            PassiveType::VoteAmplification { multiplier: 10 },
             false,
         );
 
@@ -515,7 +515,7 @@ mod poll_tests {
             &mut eng,
             0,
             p2,
-            PassiveType::VoteAmplication { multiplier: 10 },
+            PassiveType::VoteAmplification { multiplier: 10 },
             false,
         );
 

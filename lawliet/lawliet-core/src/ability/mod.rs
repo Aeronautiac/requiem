@@ -11,6 +11,7 @@ use indexmap::IndexSet;
 
 pub mod anonymous_announcement;
 pub mod anonymous_contact;
+pub mod contact;
 pub mod anonymous_kidnap;
 pub mod anonymous_prosecute;
 pub mod autopsy;
@@ -44,6 +45,7 @@ pub trait AbilityInterface {
 impl AbilityInterface for AbilityBehaviour {
     fn ability_name(&self) -> AbilityName {
         match self {
+            AbilityBehaviour::Contact(a) => a.ability_name(),
             AbilityBehaviour::Pseudocide(a) => a.ability_name(),
             AbilityBehaviour::Gun(a) => a.ability_name(),
             AbilityBehaviour::AnonymousAnnouncement(a) => a.ability_name(),
@@ -61,6 +63,7 @@ impl AbilityInterface for AbilityBehaviour {
         mutate: bool,
     ) -> AbilityResult {
         match self {
+            AbilityBehaviour::Contact(a) => a.handle(eng, ctx, actor, ability, version, mutate),
             AbilityBehaviour::Pseudocide(a) => a.handle(eng, ctx, actor, ability, version, mutate),
             AbilityBehaviour::Gun(a) => a.handle(eng, ctx, actor, ability, version, mutate),
             AbilityBehaviour::AnonymousAnnouncement(a) => {
@@ -159,5 +162,40 @@ impl Ability {
         }
 
         lowest_limit.or(highest_permissive)
+    }
+
+    // usages_remaining: same constraining-pool logic as get_usage_limit.
+    // iterations_to_reset: minimum across all pools (soonest reset), independent of usage constraint.
+    pub fn get_ability_view_counts(&self, eng: &Engine) -> (ChargeCount, crate::common::IterationCount) {
+        let mut lowest_limit: Option<ChargeCount> = None;
+        let mut highest_permissive: Option<ChargeCount> = None;
+        let mut min_reset: Option<crate::common::IterationCount> = None;
+
+        for link_container in self.pool_links.iter() {
+            let pool = eng
+                .world
+                .get_charge_pool(link_container.link.link_dest)
+                .expect("expected valid link destination");
+            let usages = pool.charges / link_container.link.weight;
+            match link_container.link.link_type {
+                PoolLinkType::Limit => {
+                    if lowest_limit.map_or(true, |l| usages < l) {
+                        lowest_limit = Some(usages);
+                    }
+                }
+                PoolLinkType::Pool => {
+                    if highest_permissive.map_or(true, |h| usages > h) {
+                        highest_permissive = Some(usages);
+                    }
+                }
+            }
+            if min_reset.map_or(true, |r| pool.iterations_to_reset < r) {
+                min_reset = Some(pool.iterations_to_reset);
+            }
+        }
+
+        let usages = lowest_limit.or(highest_permissive).unwrap_or(0);
+        let reset = min_reset.unwrap_or(0);
+        (usages, reset)
     }
 }

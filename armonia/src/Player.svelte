@@ -2,7 +2,7 @@
   import Button from "$lib/components/ui/button/button.svelte";
 
   interface Props {
-    id: number;
+    id: string;
     display_name: string;
   }
   let { id, display_name }: Props = $props();

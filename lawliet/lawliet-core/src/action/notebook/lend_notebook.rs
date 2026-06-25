@@ -5,12 +5,13 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionError, ActionResponse,
+        Action, ActionContext, ActionInterface, ActionResult, ActionActor, ActionError, ActionResponse,
+        SetNotebookPossession,
     },
     actor::modifier::Modifier,
-    common::{ActorKey, NotebookKey, Version},
+    common::Version,
     engine::Engine,
-    helpers::{actor_id, get_actor_mut, get_notebook_mut},
+    helpers::{actor_id, get_actor_mut, get_notebook, get_notebook_mut},
 };
 
 pub use crate::action::{LendNotebook, LendNotebookResponse};
@@ -31,29 +32,31 @@ impl ActionInterface for LendNotebook {
             return Err(ActionError::CannotLendToYourself);
         }
 
-        let notebook = get_notebook_mut(eng, self.notebook_id)?;
+        let notebook = get_notebook(eng, self.notebook_id)?;
         if notebook.can_lend(user_id).is_err() {
             return Err(ActionError::NotebookNotOwned);
-        }
-        if mutate {
-            notebook.lend(self.target_id).unwrap();
         }
 
         let player_actor = get_actor_mut(eng, user_id)?;
         if player_actor.has_modifier(Modifier::NoNotebookPassage) {
             return Err(ActionError::NotebookPassageBlocked);
         }
-        if mutate {
-            player_actor.remove_notebook(self.notebook_id);
-        }
 
         let target_actor = get_actor_mut(eng, self.target_id)?;
         if target_actor.has_modifier(Modifier::NoNotebookReceive) {
             return Err(ActionError::ActorHasNotebookReceiveRestriction);
         }
+
         if mutate {
-            target_actor.add_notebook(self.notebook_id);
+            get_notebook_mut(eng, self.notebook_id)?.lend(self.target_id).unwrap();
         }
+
+        Action::SetNotebookPossession(SetNotebookPossession {
+            notebook_id: self.notebook_id,
+            from: Some(user_id),
+            to: Some(self.target_id),
+        })
+        .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::LendNotebook(LendNotebookResponse {}))
     }

@@ -10,6 +10,7 @@ use crate::{
     },
     actor::modifier::Modifier,
     chargepool::PoolLinkType,
+    command::Command,
     common::AbilityKey,
     helpers::{
         actor_id, get_ability, get_ability_config, get_ability_mut, get_actor, get_charge_pool_mut,
@@ -80,6 +81,23 @@ impl ActionInterface for UseAbility {
         let response =
             self.ability_args
                 .handle(eng, ctx, actor, self.ability_id, version, mutate)?;
+
+        if mutate {
+            let ability = get_ability(eng, self.ability_id)?;
+            let ability_name = ability.ability_name;
+            let (usages_remaining, iterations_to_reset) = ability.get_ability_view_counts(eng);
+            ctx.push_cmd(
+                Command::UpdateAbilityView {
+                    ability_name,
+                    usages_remaining,
+                    iterations_to_reset,
+                    ability_id: self.ability_id,
+                    owner_id: actor_id,
+                },
+                Some(actor_id),
+                eng.time,
+            );
+        }
 
         Ok(ActionResponse::UseAbility(UseAbilityResponse {}))
     }

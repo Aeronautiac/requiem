@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
-use specta::Type;
 
 use crate::common::ActorKey;
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize, Type)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub enum LoungeVariant {
     Fake {
         creator_id: ActorKey,

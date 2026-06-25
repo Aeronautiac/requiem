@@ -1,19 +1,18 @@
 use serde::{Deserialize, Serialize};
-use specta::Type;
 
 use crate::common::VoteAmplifier;
 
-#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize, Type)]
+#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
 pub enum ContactLogType {
     Full,
     Even,
     Odd,
 }
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Serialize, Deserialize, Type)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum PassiveType {
     Wanted,
-    VoteAmplication { multiplier: VoteAmplifier },
+    VoteAmplification { multiplier: VoteAmplifier },
     VolatileEyes,
     ContactLogs(ContactLogType),
     OwnedNotebookBlock,

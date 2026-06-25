@@ -7,6 +7,7 @@ pub mod notebook_scheduled_kill;
 pub mod return_dormant_books;
 pub mod set_books_dormant;
 pub mod set_borrowers_to_owners;
+pub mod set_notebook_possession;
 pub mod take_notebook;
 pub mod write_name;
 
