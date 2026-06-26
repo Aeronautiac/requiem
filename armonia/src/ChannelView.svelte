@@ -17,15 +17,17 @@
   const channel = $derived(
     ui.selected_channel
       ? game.views.get(ui.viewer)?.channels.get(ui.selected_channel)
-      : undefined
+      : undefined,
   );
 
   const channel_events = $derived(
-    ui.selected_channel ? (game.events.get(ui.selected_channel) ?? []) : []
+    ui.selected_channel ? (game.events.get(ui.selected_channel) ?? []) : [],
   );
 
   const notebook_id = $derived(
-    ui.selected_channel ? game.channel_to_notebook.get(ui.selected_channel) : undefined
+    ui.selected_channel
+      ? game.channel_to_notebook.get(ui.selected_channel)
+      : undefined,
   );
 
   let message_content = $state("");
@@ -41,14 +43,20 @@
   function render_display(display: ActorDisplay): string {
     if (display === "Mysterious") return "???";
     if (display === "System") return "System";
-    if ("Raw" in display) return game.players.get(slotKeyToString(display.Raw))?.display_name ?? "Unknown";
+    if ("Raw" in display)
+      return (
+        game.players.get(slotKeyToString(display.Raw))?.display_name ??
+        "Unknown"
+      );
     if ("Role" in display) return display.Role;
     if ("Org" in display) return "Org";
     return "Unknown";
   }
 
   function render_writer(user_id: ActorKey): string {
-    return game.players.get(slotKeyToString(user_id))?.display_name ?? "Unknown";
+    return (
+      game.players.get(slotKeyToString(user_id))?.display_name ?? "Unknown"
+    );
   }
 
   async function send_message() {
@@ -95,7 +103,9 @@
   </div>
 {:else}
   <div class="flex flex-col h-full">
-    <div class="px-4 py-2 border-b border-neutral-800 text-sm font-medium text-neutral-300">
+    <div
+      class="px-4 py-2 border-b border-neutral-800 text-sm font-medium text-neutral-300"
+    >
       {channel.name}
     </div>
 
@@ -106,33 +116,64 @@
         </p>
       {:else if !channel.read}
         <p class="text-xs text-neutral-500 text-center mt-2">
-          You are no longer receiving new messages. Your view permissions have been revoked.
+          You are not receiving new messages. You do not possess view
+          permissions.
         </p>
       {/if}
 
       {#each channel_events as event (event.timestamp)}
         {#if event.type === "message"}
           <div class="text-sm">
-            <span class="font-medium text-neutral-300">{render_display(event.sender_display)}</span>
-            <span class="text-neutral-500 text-xs ml-1">{new Date(event.timestamp).toLocaleTimeString()}</span>
+            <span class="font-medium text-neutral-300"
+              >{render_display(event.sender_display)}</span
+            >
+            <span class="text-neutral-500 text-xs ml-1"
+              >{new Date(event.timestamp).toLocaleTimeString()}</span
+            >
             <p class="text-neutral-400">{event.content}</p>
           </div>
         {:else if event.type === "notebook_write"}
-          <div class="text-xs rounded bg-neutral-900 px-3 py-2 border-l-2 {event.success ? 'border-red-700' : 'border-neutral-700'}">
-            <span class="font-medium {event.success ? 'text-red-400' : 'text-neutral-400'}">{render_writer(event.user_id)}</span>
-            <span class="text-neutral-500 ml-1">{new Date(event.timestamp).toLocaleTimeString()}</span>
+          <div
+            class="text-xs rounded bg-neutral-900 px-3 py-2 border-l-2 {event.success
+              ? 'border-red-700'
+              : 'border-neutral-700'}"
+          >
+            <span
+              class="font-medium {event.success
+                ? 'text-red-400'
+                : 'text-neutral-400'}">{render_writer(event.user_id)}</span
+            >
+            <span class="text-neutral-500 ml-1"
+              >{new Date(event.timestamp).toLocaleTimeString()}</span
+            >
             <p class="mt-0.5 text-neutral-300">
-              Wrote <span class="italic">"{event.true_name}"</span>
+              <span>Wrote "{event.true_name}</span>
               {#if event.success}
-                — <span class="text-red-400">{event.target_saved ? "saved by another entry" : event.delay > 0 ? `kill in ${event.delay}s` : "killed"}</span>
+                <span class="text-red-400"
+                  >{event.target_saved
+                    ? " — Something saved them..."
+                    : event.delay > 0
+                      ? `— dies in ${event.delay}s"`
+                      : ""}</span
+                >
               {:else}
-                — <span class="text-neutral-500">no match</span>
+                <span class="text-neutral-500">no match</span>
               {/if}
             </p>
             {#if event.message}
               <p class="text-neutral-500 italic mt-0.5">"{event.message}"</p>
             {/if}
-            <p class="text-neutral-600 mt-0.5">{event.successes_remaining} kills · {event.attempts_remaining} attempts remaining</p>
+            <p class="text-neutral-600 mt-0.5">
+              {#if event.attempts_remaining > 0}
+                {event.successes_remaining} writes remaining
+              {/if}
+              {#if event.successes_remaining > 0 && event.attempts_remaining > 0}
+                ·
+              {/if}
+              {#if event.successes_remaining > 0}
+                {event.attempts_remaining} attempts remaining
+              {/if}
+            </p>
           </div>
         {/if}
       {/each}
@@ -176,7 +217,9 @@
         </div>
       {:else if !channel.send || ui.viewer === "Admin"}
         <div class="px-3 py-2 rounded bg-neutral-900 text-neutral-600 text-sm">
-          {ui.viewer === "Admin" ? "Observing — send disabled for admin." : "You don't have permission to send messages."}
+          {ui.viewer === "Admin"
+            ? "Observing — send disabled for admin."
+            : "You don't have permission to send messages."}
         </div>
       {:else}
         <div class="flex gap-2">

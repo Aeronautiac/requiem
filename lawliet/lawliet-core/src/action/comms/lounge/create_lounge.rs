@@ -8,16 +8,17 @@
 */
 
 use indexmap::{IndexSet, indexset};
+use lawliet_types::lounge::AnonymousLoungeRoleDisplay;
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
     action::{
-        ActionInterface, Action, ActionResponse, CreateChannel, SetMember, UpdateContactChannels,
+        Action, ActionInterface, ActionResponse, CreateChannel, SetMember, UpdateContactChannels,
     },
     actor::ActorDisplay,
     channel::{ChannelMember, ChannelPermissions},
     command::Command,
-    common::{ActorKey, ChannelKey, LoungeKey},
+    common::{ActorKey, LoungeKey},
     helpers::{get_player, get_player_mut},
     lounge::{Lounge, LoungeVariant},
 };
@@ -64,6 +65,33 @@ impl ActionInterface for CreateLounge {
                     id: *contactor_id,
                     displays: indexset![ActorDisplay::Raw(*contactor_id),],
                 });
+                participants.push(Participant {
+                    id: *contacted_id,
+                    displays: indexset![ActorDisplay::Raw(*contacted_id),],
+                });
+            }
+            LoungeVariant::Anonymous {
+                contacted_id,
+                contactor_id,
+                role_display,
+            } => {
+                match role_display {
+                    AnonymousLoungeRoleDisplay::Dynamic => {
+                        // TODO:
+                        // need to add a new mechanism for updating the role displayed here
+                        // for now, unimplemented!(). this will rarely happen (only when someone's
+                        // role changes AFTER they have already anonymous contacted someone). so it
+                        // is probably fine to leave the behaviour alone for now. abilities should
+                        // use static roles.
+                        unimplemented!()
+                    }
+                    AnonymousLoungeRoleDisplay::Static(role) => {
+                        participants.push(Participant {
+                            id: *contactor_id,
+                            displays: indexset![ActorDisplay::Role(*role),],
+                        });
+                    }
+                }
                 participants.push(Participant {
                     id: *contacted_id,
                     displays: indexset![ActorDisplay::Raw(*contacted_id),],

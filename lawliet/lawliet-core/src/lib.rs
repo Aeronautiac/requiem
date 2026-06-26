@@ -130,20 +130,27 @@ mod test_helpers;
 mod world;
 
 pub use common::{
-    AbilityKey, ActorKey, BugKey, ChannelKey, ChargePoolKey, GroupchatKey, KidnappingKey,
-    LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey, Time, ID,
+    AbilityKey, ActorKey, BugKey, ChannelKey, ChargePoolKey, GroupchatKey, ID, KidnappingKey,
+    LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey, Time,
 };
 
 // TODO:
-// - Add destroy actions for the different kinds of objects (actors will be the final destroyable objects. they may get very messy.)
+// - Add role channels and monologues. Role channels must be potentially shared.
+//  * every player gets a monologue
+//  * roles can be associated with channels. either the role creates its own channel, or it links to some existing channel (L and Watari
+//  vs. Kira lounge for example)
+// - Implement world iteration progression
+// - Add system/admin messages (just allow admins to send messages in any channel)
 // - Go through everything and implement frontend commands
 // - Test prosecution system
-// - Implement world initialization and iteration progression
 // - Begin implementing every ability and write tests for them
-// - Write extensive integration tests
-// - Write yagami
-// - Write ryuk (ratatui)
-// - Write amane (web)
+// - more integration tests
+// - yagami
+// - Add destroy actions for the different kinds of objects (actors will be the final destroyable objects. they may get very messy.)
+// - Optimize by going through and caching what can be cached, adding indirection for very large
+// enums, and using smallvec when possible
+// - Add strictly increasing lounge ids used for ui display and abilities like tap in. The frontend
+// can't reasonably expect players to enter slotmap keys.
 
 #[cfg(test)]
 mod tests {
@@ -198,19 +205,23 @@ mod tests {
         let l_id = add_player(&mut eng, 3, Role::L, "John Pork");
         let w_id_2 = add_player(&mut eng, 5, Role::Watari, "Oima Haumzaundwich");
 
-        assert!(actor_get_effective_passive(&eng, l_id, |passive_type| {
-            matches!(passive_type, PassiveType::ContactLogs(ContactLogType::Full))
-        })
-        .is_some());
+        assert!(
+            actor_get_effective_passive(&eng, l_id, |passive_type| {
+                matches!(passive_type, PassiveType::ContactLogs(ContactLogType::Full))
+            })
+            .is_some()
+        );
 
         // link to this one should be severed now
         quick_kill(&mut eng, 5, false, true, false, w_id_1);
 
         // L should still be linked to watari 1
-        assert!(actor_get_effective_passive(&eng, l_id, |passive_type| {
-            matches!(passive_type, PassiveType::ContactLogs(ContactLogType::Full))
-        })
-        .is_some());
+        assert!(
+            actor_get_effective_passive(&eng, l_id, |passive_type| {
+                matches!(passive_type, PassiveType::ContactLogs(ContactLogType::Full))
+            })
+            .is_some()
+        );
 
         // this one should only kill watari 2 and L
         // links should remain intact
@@ -225,10 +236,12 @@ mod tests {
 
         // the passive link to watari 2 should still be intact although disabled due to the passive
         // link restriction on watari 2
-        assert!(actor_get_effective_passive(&eng, l_id, |passive_type| {
-            matches!(passive_type, PassiveType::ContactLogs(ContactLogType::Full))
-        })
-        .is_none());
+        assert!(
+            actor_get_effective_passive(&eng, l_id, |passive_type| {
+                matches!(passive_type, PassiveType::ContactLogs(ContactLogType::Full))
+            })
+            .is_none()
+        );
 
         // links were ignored, so only L should have been revived
         let watari1 = get_actor(&eng, w_id_1).unwrap();
@@ -242,10 +255,12 @@ mod tests {
         quick_revive(&mut eng, 6, false, l_id);
 
         // the passive link should be enabled again because there is no passive link restriction
-        assert!(actor_get_effective_passive(&eng, l_id, |passive_type| {
-            matches!(passive_type, PassiveType::ContactLogs(ContactLogType::Full))
-        })
-        .is_some());
+        assert!(
+            actor_get_effective_passive(&eng, l_id, |passive_type| {
+                matches!(passive_type, PassiveType::ContactLogs(ContactLogType::Full))
+            })
+            .is_some()
+        );
 
         // only watari 2 and L should be revived as watari 1 died alone
         let watari1 = get_actor(&eng, w_id_1).unwrap();

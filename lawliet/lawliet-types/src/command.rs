@@ -55,7 +55,9 @@ pub enum Command {
 
     // announce a kidnap reveal (this will either leak the kidnapper or show no kidnapper meaning it
     // was anonymous)
-    KidnapReveal {},
+    KidnapReveal {
+        kidnapper: Option<ActorKey>,
+    },
 
     // display/announce a pseudocide revival. can be handled similarly to death.
     PseudocideRevival {
@@ -76,21 +78,6 @@ pub enum Command {
     // Both organizations and players are actors.
 
     /////=<NO RECIPIENT>=/////
-
-    // map a player to an actor id
-    // client connections should be mapped to player ids
-    // handling the mapping on the client would allow players to spoof actions for other players
-    // (horrible vulnerability)
-    MapPlayer {
-        player_id: ActorKey,
-        actor_id: ActorKey,
-    },
-
-    // same as above, just for orgs
-    MapOrg {
-        org_id: ActorKey,
-        actor_id: ActorKey,
-    },
 
     // all display instances of this actor must be updated
     // this is handled by the frontend
@@ -243,7 +230,8 @@ pub enum Command {
     //
     // A write failure is not actually a failure to use an action. it is just the lack of a correct
     // true name and leads to actual state modification. the player must be explicitly notified, and
-    // the usage must be logged.
+    // the usage must be logged. The viewability of writes is governed by the same rules as channel
+    // messages.
 
     /////=<NO RECIPIENT>=/////
 
