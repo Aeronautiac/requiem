@@ -138,22 +138,23 @@ pub use common::{
 // - Add role channels
 //  * certain roles should be given access to existing world channels
 // - Add org channels
+//  * orgs get their own private channel
 // - Implement world iteration progression
 // - Add system/admin messages (just allow admins to send messages in any channel)
 // - Go through everything and implement frontend commands
-// - Test prosecution system
+// - Add strictly increasing lounge ids used for ui display and abilities like tap in. The frontend
+// can't reasonably expect players to enter slotmap keys.
 // - Begin implementing every ability and write tests for them
 // - more integration tests
 // - yagami
 // - Add destroy actions for the different kinds of objects (actors will be the final destroyable objects. they may get very messy.)
 // - Optimize by going through and caching what can be cached, adding indirection for very large
 // enums, and using smallvec when possible
-// - Add strictly increasing lounge ids used for ui display and abilities like tap in. The frontend
-// can't reasonably expect players to enter slotmap keys.
 
 // TODO:
-// test personal channels:
+// - Test personal channels
 //  * players should be allowed to change the loggable status of these channels
+// - Test prosecution system
 
 #[cfg(test)]
 mod tests {
