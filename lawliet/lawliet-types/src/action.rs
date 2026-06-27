@@ -87,6 +87,7 @@ pub enum ActionError {
     KidnappingNotFound,
     IncarcerationNotFound,
     ActorHasStrengthenedPresence,
+    PersonalChannelLimitReached,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -411,10 +412,17 @@ pub struct ScheduleRevive {
     pub revive: Revive,
 }
 
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct CreatePersonalChannelResponse {
+    pub id: ChannelKey,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct CreatePersonalChannel {}
+
 // ////////////////////////////////////////////////
 // CHARGEPOOL //
 // ////////////////////////////////////////////////
-
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct AddChargePoolResponse {
     pub id: ChargePoolKey,
@@ -1197,10 +1205,12 @@ pub enum Action {
     CreateIncarceration(CreateIncarceration),
     ReleaseIncarceration(ReleaseIncarceration),
     CullIncarcerations(CullIncarcerations),
+    CreatePersonalChannel(CreatePersonalChannel),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ActionResponse {
+    CreatePersonalChannel(CreatePersonalChannelResponse),
     ChangeOrgLeader(ChangeOrgLeaderResponse),
     Kill(KillResponse),
     AddState(AddStateResponse),

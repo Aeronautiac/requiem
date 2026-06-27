@@ -3,15 +3,14 @@
 * Send a message to a channel
 */
 
+use lawliet_types::actor::Modifier;
+
 use crate::{
-    action::{
-        ActionInterface, ActionError, ActionResponse,
-    },
-    actor::ActorDisplay,
+    action::{ActionError, ActionInterface, ActionResponse},
     channel::ChannelPermission,
     command::Command,
-    common::{BugKey, ChannelKey},
-    helpers::{get_channel, player_id},
+    common::BugKey,
+    helpers::{get_actor, get_channel, player_id},
 };
 
 use crate::action::ActionActor;
@@ -56,8 +55,10 @@ impl ActionInterface for SendMessage {
             eng.time,
         );
 
-        // relay to all active bugs targeting this player if the channel is loggable
-        if loggable {
+        // relay to all active bugs targeting this player if the channel is loggable and the player
+        // does not have log LogNullification
+        let actor_data = get_actor(eng, id).expect("actor should already be validated");
+        if loggable && !actor_data.has_modifier(Modifier::LogNullification) {
             let bug_ids: Vec<BugKey> = eng
                 .world
                 .get_player(id)

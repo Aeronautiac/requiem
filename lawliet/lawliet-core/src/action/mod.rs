@@ -29,6 +29,7 @@ pub trait ActionInterface {
     ) -> ActionResult;
 }
 
+// this is yucky, but it results in significant performance gains
 impl ActionInterface for Action {
     fn handle(
         &mut self,
@@ -137,6 +138,7 @@ impl ActionInterface for Action {
             Action::CreateIncarceration(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::ReleaseIncarceration(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CullIncarcerations(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::CreatePersonalChannel(a) => a.handle(eng, ctx, actor, version, mutate),
         }
     }
 }

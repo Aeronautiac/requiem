@@ -10,6 +10,7 @@ use crate::actor::ActorDisplay;
 pub enum ChannelPermission {
     Send = 1 << 0,
     View = 1 << 1,
+    LoggabilityControl = 1 << 2,
 }
 pub type ChannelPermissions = BitFlags<ChannelPermission>;
 

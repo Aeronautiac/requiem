@@ -33,7 +33,7 @@ pub enum State {
 pub type States = BitFlags<State>;
 
 #[bitflags]
-#[repr(u8)]
+#[repr(u16)]
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Hash, Eq, Ord, Serialize, Deserialize)]
 pub enum Modifier {
     NoPresence = 1 << 0,
@@ -42,8 +42,9 @@ pub enum Modifier {
     NoNotebookUsage = 1 << 3,
     NoNotebookPassage = 1 << 4,
     DisablePassiveLinks = 1 << 5,
-    WriteImmunity = 1 << 6,
-    StrengthenedPresence = 1 << 7,
+    WriteImmunity = 1 << 6,        // your name cannot be written in a notebook
+    StrengthenedPresence = 1 << 7, // cannot be kidnapped and similar
+    LogNullification = 1 << 8,     // messages will no longer be logged
 }
 pub type Modifiers = BitFlags<Modifier>;
 

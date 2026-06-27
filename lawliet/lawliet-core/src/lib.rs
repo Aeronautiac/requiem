@@ -135,10 +135,9 @@ pub use common::{
 };
 
 // TODO:
-// - Add role channels and monologues. Role channels must be potentially shared.
-//  * every player gets a monologue
-//  * roles can be associated with channels. either the role creates its own channel, or it links to some existing channel (L and Watari
-//  vs. Kira lounge for example)
+// - Add role channels
+//  * certain roles should be given access to existing world channels
+// - Add org channels
 // - Implement world iteration progression
 // - Add system/admin messages (just allow admins to send messages in any channel)
 // - Go through everything and implement frontend commands
@@ -151,6 +150,10 @@ pub use common::{
 // enums, and using smallvec when possible
 // - Add strictly increasing lounge ids used for ui display and abilities like tap in. The frontend
 // can't reasonably expect players to enter slotmap keys.
+
+// TODO:
+// test personal channels:
+//  * players should be allowed to change the loggable status of these channels
 
 #[cfg(test)]
 mod tests {

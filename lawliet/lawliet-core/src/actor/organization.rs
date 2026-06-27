@@ -5,19 +5,18 @@ use crate::{
 use indexmap::{IndexMap, IndexSet};
 
 pub use lawliet_types::organization::{
-    OrgAbility, OrgAbilityPolicy, OrgAbilityPolicies,
-    LeadershipTransferPolicy, LeadershipTransferPolicies,
+    LeadershipTransferPolicies, LeadershipTransferPolicy, OrgAbility, OrgAbilityPolicies,
+    OrgAbilityPolicy,
 };
 
-// TODO:
 // Org behaviours:
-// - Organizations shall have a set of actives and passives.
+// - Organizations have a set of actives and passives.
 // - When a player joins an org, a passive link is created between the player and the org (the
 // player effectively has the org's passives).
 // - Orgs have a set of active abilities. Each entry in this set contains metadata about the usage
 // mode. For example, an org's active may be used without a vote or may be used only by the current
 // leader.
-// - When players leave an org, their links to that org shall be severed.
+// - When players leave an org, their links to that org is severed.
 // - Orgs have an "invite" charge pool which many abilities draw from.
 //
 // Some examples:
@@ -33,6 +32,10 @@ pub use lawliet_types::organization::{
 
 // need a new action for using org abilities (create a vote or instant use, check permissions and
 // org state)
+
+// TODO:
+// add org channels
+// - organizations should have one channel created for all their members
 
 #[derive(Hash, PartialEq, Eq, Debug, Clone)]
 pub struct LeadershipStruct {

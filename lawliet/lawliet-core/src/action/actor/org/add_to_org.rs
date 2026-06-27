@@ -5,10 +5,9 @@
 
 use crate::{
     action::{
-        ActionInterface, Action, ActionError, ActionResponse, ChangeOrgLeader, UpdateKidnapChannels,
+        Action, ActionError, ActionInterface, ActionResponse, ChangeOrgLeader, UpdateKidnapChannels,
     },
     actor::{ActorLink, ActorLinkType},
-    common::ActorKey,
     helpers::{get_actor, get_actor_mut, get_org_mut},
 };
 

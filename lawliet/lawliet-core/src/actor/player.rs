@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use indexmap::{IndexMap, IndexSet, indexset};
+use lawliet_types::common::ChannelKey;
 
 use crate::{
     ID,
@@ -27,13 +28,29 @@ pub struct SourcedWorldChannelOverride {
 pub struct Player {
     pub role: Role,
     pub true_name: Rc<str>,
-    pub eyes: u32,
+    pub eyes: u8,
+    pub personal_channel_charges: u8,
+    pub personal_channels: IndexSet<ChannelKey>,
     pub lounges: IndexSet<LoungeKey>,
     pub groupchats: IndexSet<GroupchatKey>,
     pub bugs: IndexSet<BugKey>, // the bugs targetting this player
     pub world_channel_overrides:
         IndexMap<WorldChannelName, IndexMap<OverrideSource, SourcedWorldChannelOverride>>,
 }
+
+// personal channels dont need some kind of world meta-structure because they can only be interacted
+// with by one player and aren't really stateful outside of what channels themselves provide.
+//
+// the only semi-complex interaction to be aware of is loggability.
+// if a player dies, the personal channel should have loggability forced to false. it
+// should not be changeable until you're alive again. this is to prevent the dead from communicating
+// with the living.
+//
+// thinking about it now, there might actually be a bug regarding world channels and death.
+// if you're imprisoned, you might be able to talk in the prison channel even if you die for example.
+
+// TODO:
+// implement the set of actions for this
 
 impl Player {
     pub fn new(name: &str, role: Role) -> Self {
@@ -42,6 +59,8 @@ impl Player {
             role,
             true_name,
             eyes: 2,
+            personal_channel_charges: 5,
+            personal_channels: indexset![],
             lounges: indexset![],
             groupchats: indexset![],
             bugs: indexset![],
