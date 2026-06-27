@@ -6,7 +6,7 @@ use crate::{
     chargepool::PoolSpecifier,
 };
 
-pub use lawliet_types::world::{WorldChargePoolName, WorldChannelName};
+pub use lawliet_types::world::{WorldChannelName, WorldChargePoolName};
 
 pub struct WorldChannelConfig {
     pub default_perms: ChannelPermissions,
@@ -44,15 +44,23 @@ impl WorldConfig {
             WorldChannelConfig {
                 default_perms: ChannelPermission::Send | ChannelPermission::View,
                 send_blocking: Modifier::NoContact.into(),
-                view_blocking: Modifier::NoContact.into(),
+                view_blocking: Modifier::NoPresence.into(),
             },
         );
         channels.insert(
             WorldChannelName::Prison,
             WorldChannelConfig {
                 default_perms: ChannelPermissions::EMPTY,
-                send_blocking: Modifiers::EMPTY,
-                view_blocking: Modifiers::EMPTY,
+                send_blocking: Modifier::AbsoluteNoContact.into(),
+                view_blocking: Modifier::AbsoluteNoContact.into(),
+            },
+        );
+        channels.insert(
+            WorldChannelName::LandWatari,
+            WorldChannelConfig {
+                default_perms: ChannelPermissions::EMPTY,
+                send_blocking: Modifier::NoContact.into(),
+                view_blocking: Modifier::NoPresence.into(),
             },
         );
 

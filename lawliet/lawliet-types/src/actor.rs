@@ -45,6 +45,7 @@ pub enum Modifier {
     WriteImmunity = 1 << 6,        // your name cannot be written in a notebook
     StrengthenedPresence = 1 << 7, // cannot be kidnapped and similar
     LogNullification = 1 << 8,     // messages will no longer be logged
+    AbsoluteNoContact = 1 << 9,    // no contact with anybody, even in places like prison
 }
 pub type Modifiers = BitFlags<Modifier>;
 

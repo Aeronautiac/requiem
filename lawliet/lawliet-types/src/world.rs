@@ -16,6 +16,7 @@ pub enum WorldChannelName {
     News,
     General,
     Prison,
+    LAndWatari,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]

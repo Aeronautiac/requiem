@@ -6,12 +6,10 @@
 */
 
 use crate::{
-    action::{
-        ActionInterface, Action, ActionResponse, SetMember,
-    },
+    action::{Action, ActionInterface, ActionResponse, SetMember},
     actor::{ActorDisplay, player::OverrideResolver},
     channel::{ChannelMember, ChannelPermission, ChannelPermissions},
-    common::{ActorKey, ChannelKey},
+    common::ChannelKey,
     helpers::{get_actor, get_player},
 };
 

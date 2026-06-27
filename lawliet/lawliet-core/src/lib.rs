@@ -135,14 +135,11 @@ pub use common::{
 };
 
 // TODO:
-// - Add role channels
-//  * certain roles should be given access to existing world channels
 // - Add org channels
 //  * orgs get their own private channel
-// - Implement world iteration progression
-// - Add system/admin messages (just allow admins to send messages in any channel)
-// - Go through everything and implement frontend commands
+// - Implement world progression
 // - Add strictly increasing lounge ids used for ui display and abilities like tap in. The frontend
+// - Go through everything and implement frontend commands
 // can't reasonably expect players to enter slotmap keys.
 // - Begin implementing every ability and write tests for them
 // - more integration tests
