@@ -45,7 +45,7 @@ impl Player {
             role,
             true_name,
             eyes: 2,
-            personal_channel_charges: 5,
+            personal_channel_charges: 3,
             personal_channels: indexset![],
             lounges: indexset![],
             groupchats: indexset![],

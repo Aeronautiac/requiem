@@ -1031,6 +1031,12 @@ pub struct Update {}
 // ////////////////////////////////////////////////
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct NextIterationResponse {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct NextIteration {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct AddToWorldChannelsResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1107,6 +1113,7 @@ impl ActionContext {
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub enum Action {
+    NextIteration(NextIteration),
     ChangeOrgLeader(ChangeOrgLeader),
     Kill(Kill),
     AddState(AddState),
@@ -1210,6 +1217,7 @@ pub enum Action {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ActionResponse {
+    NextIteration(NextIterationResponse),
     CreatePersonalChannel(CreatePersonalChannelResponse),
     ChangeOrgLeader(ChangeOrgLeaderResponse),
     Kill(KillResponse),

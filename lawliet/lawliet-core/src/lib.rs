@@ -139,12 +139,6 @@ pub use common::{
 // theres no point in changing it at this point.
 
 // TODO:
-// - Implement world progression
-//  * notebooks are progressed
-//  * charge pools are progressed
-//  * iteration counter is incremented
-//  * bugs are ended
-//  * ipp is ended
 // - Add strictly increasing contact channel ids used for ui display and abilities like tap in. The frontend
 // can't reasonably expect players to enter slotmap keys. Sharing the ids will allow for things like
 // tapping into group chats without being too easy as well.
@@ -166,6 +160,12 @@ pub use common::{
 //  * their access to the channel should be determined by the same rules as contact channels (will
 //  be evaluated in the same action)
 //  * org membership should be cached within the player
+// - Test world progression
+//  * notebooks are progressed
+//  * charge pools are progressed
+//  * iteration counter is incremented
+//  * bugs are ended
+//  * ipp is ended
 
 #[cfg(test)]
 mod tests {

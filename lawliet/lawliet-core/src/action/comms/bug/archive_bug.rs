@@ -4,11 +4,8 @@
 */
 
 use crate::{
-    action::{
-        ActionInterface, ActionResponse,
-    },
+    action::{ActionInterface, ActionResponse},
     command::Command,
-    common::BugKey,
     helpers::get_bug_mut,
 };
 

@@ -4,6 +4,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
+use lawliet_types::common::IterationCount;
 use slotmap::SlotMap;
 
 use crate::{
@@ -55,11 +56,13 @@ pub struct World {
     pub kidnappings: SlotMap<KidnappingKey, Kidnapping>,
     pub incarcerations: SlotMap<IncarcerationKey, Incarceration>,
     pub world_channel_map: IndexMap<WorldChannelName, ChannelKey>,
+    pub curr_iteration: IterationCount,
 }
 
 impl World {
     pub fn new() -> Self {
         World {
+            curr_iteration: 0,
             blackout: false,
             actors: SlotMap::with_key(),
             abilities: SlotMap::with_key(),

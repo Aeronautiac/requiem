@@ -18,7 +18,7 @@ pub struct Notebook {
     pub dormant_true_owner: Option<ActorKey>, // the person who the notebook should return to if it was
     // discovered that they never actually died (this should be None most of the time, but
     // pseudocide will set it to the target's ID if applicable)
-    pub owner: Option<ActorKey>,    // the person this notebook currently belongs to
+    pub owner: Option<ActorKey>, // the person this notebook currently belongs to
     pub borrowed: Option<ActorKey>, // the person the notebook is being borrowed from (if any)
     pub iteration_successes: IndexMap<ActorKey, AttemptCount>, // success counts (correct names)
     pub iteration_failures: IndexMap<ActorKey, AttemptCount>, // failed counts (wrong names)
