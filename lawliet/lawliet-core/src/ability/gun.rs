@@ -1,12 +1,12 @@
 use crate::{
-    ability::{AbilityInterface, AbilityResponse},
+    ability::AbilityInterface,
     action::{Action, ActionActor, ActionContext, ActionInterface, actor::player::kill::Kill},
     common::AbilityKey,
     config::ability::AbilityName,
     helpers::player_id,
 };
 
-pub use lawliet_types::ability::{Gun, GunResponse};
+pub use lawliet_types::ability::Gun;
 
 impl AbilityInterface for Gun {
     fn ability_name(&self) -> crate::config::ability::AbilityName {
@@ -35,6 +35,6 @@ impl AbilityInterface for Gun {
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
-        Ok(AbilityResponse::Gun(GunResponse {}))
+        Ok(())
     }
 }

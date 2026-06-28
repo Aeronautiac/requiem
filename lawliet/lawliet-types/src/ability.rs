@@ -5,7 +5,7 @@ use crate::{common::ActorKey, role::Role};
 #[derive(Hash, Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Serialize, Deserialize)]
 pub enum AbilityName {
     Contact,
-    CreateGroupChat,
+    CreateGroupchat,
     AnonymousContact,
     FalseAnonymousContact,
     AnonymousAnnouncement,
@@ -38,12 +38,22 @@ pub enum AbilityName {
 }
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
-pub struct AnonymousAnnouncement {
-    pub content: String,
+pub enum AbilityBehaviour {
+    Contact(Contact),
+    Pseudocide(Pseudocide),
+    Gun(Gun),
+    AnonymousAnnouncement(AnonymousAnnouncement),
+    AnonymousContact(AnonymousContact),
+    AnonymousKidnap(AnonymousKidnap),
+    PublicKidnap(PublicKidnap),
+    AnonymousProsecute(AnonymousProsecute),
+    Autopsy(Autopsy),
 }
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
-pub struct AnonymousAnnouncementResponse {}
+pub struct AnonymousAnnouncement {
+    pub content: String,
+}
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
 pub struct Contact {
@@ -51,23 +61,14 @@ pub struct Contact {
 }
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
-pub struct ContactResponse {}
-
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
 pub struct AnonymousContact {
     pub target: ActorKey,
 }
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
-pub struct AnonymousContactResponse {}
-
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
 pub struct Gun {
     pub target_id: ActorKey,
 }
-
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
-pub struct GunResponse {}
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
 pub struct Pseudocide {
@@ -80,22 +81,21 @@ pub struct Pseudocide {
 }
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
-pub struct PseudocideResponse {}
-
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
-pub enum AbilityBehaviour {
-    Contact(Contact),
-    Pseudocide(Pseudocide),
-    Gun(Gun),
-    AnonymousAnnouncement(AnonymousAnnouncement),
-    AnonymousContact(AnonymousContact),
+pub struct AnonymousKidnap {
+    pub target: ActorKey,
 }
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
-pub enum AbilityResponse {
-    Contact(ContactResponse),
-    Pseudocide(PseudocideResponse),
-    Gun(GunResponse),
-    AnonymousAnnouncement(AnonymousAnnouncementResponse),
-    AnonymousContact(AnonymousContactResponse),
+pub struct PublicKidnap {
+    pub target: ActorKey,
+}
+
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct AnonymousProsecute {
+    pub target: ActorKey,
+}
+
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct Autopsy {
+    pub target: ActorKey,
 }

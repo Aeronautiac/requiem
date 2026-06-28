@@ -6,14 +6,14 @@
 // this is low priority right now.
 
 use crate::{
-    ability::{AbilityInterface, AbilityResponse},
+    ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, comms::lounge::create_lounge::CreateLounge},
     config::ability::AbilityName,
     helpers::{actor_id, get_player},
     lounge::LoungeVariant,
 };
 
-pub use lawliet_types::ability::{AnonymousContact, AnonymousContactResponse};
+pub use lawliet_types::ability::AnonymousContact;
 use lawliet_types::lounge::AnonymousLoungeRoleDisplay;
 
 impl AbilityInterface for AnonymousContact {
@@ -44,8 +44,6 @@ impl AbilityInterface for AnonymousContact {
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
-        Ok(AbilityResponse::AnonymousContact(
-            AnonymousContactResponse {},
-        ))
+        Ok(())
     }
 }

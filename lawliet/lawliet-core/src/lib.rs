@@ -139,9 +139,14 @@ pub use common::{
 // theres no point in changing it at this point.
 
 // TODO:
+// - Fully implement randomness
+// - Finish non-autonomous prosecutions
+// - Add an initialize action which sets everything up and calls initialize world. It should also do
+// stuff like set up the day progression schedule.
 // - Add strictly increasing contact channel ids used for ui display and abilities like tap in. The frontend
 // can't reasonably expect players to enter slotmap keys. Sharing the ids will allow for things like
 // tapping into group chats without being too easy as well.
+// * the world holds the counter and maintains a map of ids to lounges/gcs
 // - Go through everything and implement frontend commands. Refine the command protocol.
 // - Begin implementing every ability and write tests for them
 // - more integration tests
@@ -155,7 +160,7 @@ pub use common::{
 //  * players should be allowed to change the loggable status of these channels
 // - Test prosecution system
 // - Test org channels
-//  * orgs get their own private channel (done)
+//  * orgs get their own private channel
 //  * members are added to the channel when they join the org, and are removed when they leave
 //  * their access to the channel should be determined by the same rules as contact channels (will
 //  be evaluated in the same action)

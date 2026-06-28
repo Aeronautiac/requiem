@@ -17,14 +17,15 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, AddState, CreateChannel, UpdateKidnapChannels,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, AddState, CreateChannel, UpdateKidnapChannels,
     },
     actor::modifier::Modifier,
     actor::state::State,
-    common::{ActorKey, KidnappingKey, Version},
+    common::{KidnappingKey, Version},
     engine::Engine,
     helpers::{get_ability, get_actor, require_player},
-    kidnapping::{Kidnapping, KidnappingSource, KidnappingType},
+    kidnapping::{Kidnapping, KidnappingSource},
 };
 
 pub use crate::action::{CreateKidnapping, CreateKidnappingResponse};
@@ -83,8 +84,13 @@ impl ActionInterface for CreateKidnapping {
             KidnappingKey::default()
         };
 
-        Action::UpdateKidnapChannels(UpdateKidnapChannels {})
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+        Action::UpdateKidnapChannels(UpdateKidnapChannels {}).handle(
+            eng,
+            ctx,
+            &ActionActor::System,
+            version,
+            mutate,
+        )?;
 
         Ok(ActionResponse::CreateKidnapping(CreateKidnappingResponse {
             id,

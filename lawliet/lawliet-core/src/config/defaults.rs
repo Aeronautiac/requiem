@@ -28,6 +28,8 @@ pub struct DefaultConfig {
     pub presentation_grace_timeout: Time,
     pub presentation_timeout: Time,
     pub kidnap_time: Time,
+    pub autopsy_window: Time,
+    pub autopsy_redaction: bool,
 }
 
 pub fn default_defaults() -> DefaultConfig {
@@ -50,5 +52,7 @@ pub fn default_defaults() -> DefaultConfig {
         custody_timeout: hrs(4),
         trial_vote_duration: hrs(6),
         kidnap_time: hrs(24),
+        autopsy_window: hrs(6),
+        autopsy_redaction: false,
     }
 }

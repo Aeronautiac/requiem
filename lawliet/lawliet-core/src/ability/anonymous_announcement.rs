@@ -1,13 +1,8 @@
 use crate::{
-    ability::{AbilityInterface, AbilityResponse},
-    action::ActionContext,
-    actor::modifier::Modifier,
-    command::Command,
-    common::AbilityKey,
-    config::ability::AbilityName,
-    helpers::cmd_all_deferred,
+    ability::AbilityInterface, action::ActionContext, actor::modifier::Modifier, command::Command,
+    common::AbilityKey, config::ability::AbilityName, helpers::cmd_all_deferred,
 };
-pub use lawliet_types::ability::{AnonymousAnnouncement, AnonymousAnnouncementResponse};
+pub use lawliet_types::ability::AnonymousAnnouncement;
 
 impl AbilityInterface for AnonymousAnnouncement {
     fn ability_name(&self) -> crate::config::ability::AbilityName {
@@ -31,8 +26,6 @@ impl AbilityInterface for AnonymousAnnouncement {
             Modifier::NoPresence.into(),
         );
 
-        Ok(AbilityResponse::AnonymousAnnouncement(
-            AnonymousAnnouncementResponse {},
-        ))
+        Ok(())
     }
 }

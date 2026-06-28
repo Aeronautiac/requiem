@@ -1,13 +1,16 @@
 use crate::{
-    ability::{AbilityInterface, AbilityResponse},
-    action::{Action, ActionActor, ActionError, ActionInterface, comms::lounge::create_lounge::CreateLounge},
+    ability::AbilityInterface,
+    action::{
+        Action, ActionActor, ActionError, ActionInterface,
+        comms::lounge::create_lounge::CreateLounge,
+    },
     actor::modifier::Modifier,
     config::ability::AbilityName,
     helpers::{actor_id, get_actor},
     lounge::LoungeVariant,
 };
 
-pub use lawliet_types::ability::{Contact, ContactResponse};
+pub use lawliet_types::ability::Contact;
 
 impl AbilityInterface for Contact {
     fn ability_name(&self) -> AbilityName {
@@ -47,6 +50,6 @@ impl AbilityInterface for Contact {
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
-        Ok(AbilityResponse::Contact(ContactResponse {}))
+        Ok(())
     }
 }

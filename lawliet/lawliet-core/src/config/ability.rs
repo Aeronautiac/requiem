@@ -78,7 +78,7 @@ pub fn default_ability_config() -> AbilityConfigMap {
     );
 
     map.insert(
-        identifier(AbilityName::CreateGroupChat, 0),
+        identifier(AbilityName::CreateGroupchat, 0),
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {

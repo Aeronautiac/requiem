@@ -14,10 +14,11 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, RemoveState, DestroyChannel,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, DestroyChannel, RemoveState,
     },
     actor::state::State,
-    common::{KidnappingKey, Version},
+    common::Version,
     engine::Engine,
     helpers::{actor_owns_ability, get_kidnapping},
     kidnapping::KidnappingSource,

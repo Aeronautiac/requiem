@@ -1,4 +1,4 @@
-pub use lawliet_types::ability::{AbilityBehaviour, AbilityName, AbilityResponse};
+pub use lawliet_types::ability::{AbilityBehaviour, AbilityName};
 
 use crate::{
     action::{ActionActor, ActionContext, ActionError},
@@ -11,12 +11,12 @@ use indexmap::IndexSet;
 
 pub mod anonymous_announcement;
 pub mod anonymous_contact;
-pub mod contact;
 pub mod anonymous_kidnap;
 pub mod anonymous_prosecute;
 pub mod autopsy;
 pub mod blackout;
 pub mod civilian_arrest;
+pub mod contact;
 pub mod fake_lounge;
 pub mod false_anonymous_contact;
 pub mod gun;
@@ -50,6 +50,10 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::Gun(a) => a.ability_name(),
             AbilityBehaviour::AnonymousAnnouncement(a) => a.ability_name(),
             AbilityBehaviour::AnonymousContact(a) => a.ability_name(),
+            AbilityBehaviour::AnonymousKidnap(a) => a.ability_name(),
+            AbilityBehaviour::PublicKidnap(a) => a.ability_name(),
+            AbilityBehaviour::AnonymousProsecute(a) => a.ability_name(),
+            AbilityBehaviour::Autopsy(a) => a.ability_name(),
         }
     }
 
@@ -72,6 +76,16 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::AnonymousContact(a) => {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
+            AbilityBehaviour::AnonymousKidnap(a) => {
+                a.handle(eng, ctx, actor, ability, version, mutate)
+            }
+            AbilityBehaviour::PublicKidnap(a) => {
+                a.handle(eng, ctx, actor, ability, version, mutate)
+            }
+            AbilityBehaviour::AnonymousProsecute(a) => {
+                a.handle(eng, ctx, actor, ability, version, mutate)
+            }
+            AbilityBehaviour::Autopsy(a) => a.handle(eng, ctx, actor, ability, version, mutate),
         }
     }
 }
@@ -83,7 +97,7 @@ pub struct AbilityPoolLink {
     pub link: PoolLink,
 }
 
-pub type AbilityResult = Result<AbilityResponse, ActionError>;
+pub type AbilityResult = Result<(), ActionError>;
 
 #[derive(Debug)]
 pub struct Ability {
@@ -166,7 +180,10 @@ impl Ability {
 
     // usages_remaining: same constraining-pool logic as get_usage_limit.
     // iterations_to_reset: minimum across all pools (soonest reset), independent of usage constraint.
-    pub fn get_ability_view_counts(&self, eng: &Engine) -> (ChargeCount, crate::common::IterationCount) {
+    pub fn get_ability_view_counts(
+        &self,
+        eng: &Engine,
+    ) -> (ChargeCount, crate::common::IterationCount) {
         let mut lowest_limit: Option<ChargeCount> = None;
         let mut highest_permissive: Option<ChargeCount> = None;
         let mut min_reset: Option<crate::common::IterationCount> = None;

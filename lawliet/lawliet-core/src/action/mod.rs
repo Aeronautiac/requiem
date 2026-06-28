@@ -139,6 +139,7 @@ impl ActionInterface for Action {
             Action::ReleaseIncarceration(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CullIncarcerations(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CreatePersonalChannel(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::NextIteration(a) => a.handle(eng, ctx, actor, version, mutate),
         }
     }
 }

@@ -37,8 +37,12 @@ impl ChargePool {
     }
 
     fn use_charges(&mut self, charges: ChargeCount) {
-        self.charges = max(self.charges - charges, 0);
-        if self.iterations_to_reset > 0 {
+        if charges > self.charges {
+            self.charges = 0;
+        } else {
+            self.charges -= charges;
+        }
+        if self.iterations_to_reset == 0 {
             self.iterations_to_reset = self.base_reset_time;
         }
     }
@@ -52,10 +56,7 @@ impl ChargePool {
     }
 
     pub fn on_use(&mut self, link: &PoolLink) {
-        self.charges = max(self.charges - link.weight, 0);
-        if self.iterations_to_reset > 0 {
-            self.iterations_to_reset = self.base_reset_time;
-        }
+        self.use_charges(link.weight);
     }
 
     /// these are parameters because they may change throughout the game

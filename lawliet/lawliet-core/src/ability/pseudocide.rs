@@ -1,5 +1,5 @@
 use crate::{
-    ability::{AbilityInterface, AbilityResponse},
+    ability::AbilityInterface,
     action::{
         Action, ActionActor, ActionContext, ActionInterface,
         actor::player::{kill::Kill, revive::Revive, schedule_revive::ScheduleRevive},
@@ -11,7 +11,7 @@ use crate::{
     helpers::cmd_all_deferred,
 };
 
-pub use lawliet_types::ability::{Pseudocide, PseudocideResponse};
+pub use lawliet_types::ability::Pseudocide;
 
 impl AbilityInterface for Pseudocide {
     fn ability_name(&self) -> crate::config::ability::AbilityName {
@@ -59,6 +59,6 @@ impl AbilityInterface for Pseudocide {
             Modifier::NoPresence.into(),
         );
 
-        Ok(AbilityResponse::Pseudocide(PseudocideResponse {}))
+        Ok(())
     }
 }
