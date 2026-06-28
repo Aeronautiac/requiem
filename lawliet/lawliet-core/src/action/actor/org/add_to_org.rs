@@ -3,12 +3,19 @@
 * Add a player to an organization
 */
 
+use indexmap::indexset;
+use lawliet_types::{
+    action::{SetMember, UpdateContactChannels},
+    actor::ActorDisplay,
+    channel::{ChannelMember, ChannelPermissions},
+};
+
 use crate::{
     action::{
         Action, ActionError, ActionInterface, ActionResponse, ChangeOrgLeader, UpdateKidnapChannels,
     },
     actor::{ActorLink, ActorLinkType},
-    helpers::{get_actor, get_actor_mut, get_org_mut},
+    helpers::{get_actor_mut, get_org_mut, get_player, get_player_mut},
 };
 
 use crate::action::ActionActor;
@@ -24,9 +31,10 @@ impl ActionInterface for AddToOrg {
         mutate: bool,
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;
-        get_actor(eng, self.actor_id)?;
+        get_player(eng, self.actor_id)?;
 
         let org = get_org_mut(eng, self.org_id)?;
+        let channel_id = org.channel_id;
         if org.has_member(self.actor_id) {
             return Err(ActionError::ActorAlreadyInOrg);
         }
@@ -47,9 +55,6 @@ impl ActionInterface for AddToOrg {
                 link_dest: self.org_id,
             });
 
-            // TODO:
-            // Notify member of leadership change and membership
-
             // not possible to already be the leader because they cant have already been in the org
             if self.leader {
                 Action::ChangeOrgLeader(ChangeOrgLeader {
@@ -58,7 +63,28 @@ impl ActionInterface for AddToOrg {
                 })
                 .handle(eng, ctx, actor, version, mutate)?;
             }
+
+            let player_data = get_player_mut(eng, self.actor_id).expect("already validated player");
+            player_data.orgs.insert(self.org_id);
         }
+
+        Action::SetMember(SetMember {
+            player_id: self.actor_id,
+            settings: Some(ChannelMember {
+                perms: ChannelPermissions::EMPTY,
+                displays: indexset! { ActorDisplay::Raw(self.actor_id) },
+            }),
+            channel_id,
+        })
+        .handle(eng, ctx, actor, version, mutate)?;
+
+        Action::UpdateContactChannels(UpdateContactChannels {
+            player_id: self.actor_id,
+        })
+        .handle(eng, ctx, actor, version, mutate)?;
+
+        // TODO:
+        // Notify member of leadership change and membership
 
         Action::UpdateKidnapChannels(UpdateKidnapChannels {})
             .handle(eng, ctx, actor, version, mutate)?;

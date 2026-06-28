@@ -5,13 +5,14 @@
 * Remember that an org is just a variant of an actor
 */
 
+use lawliet_types::action::CreateChannel;
+
 use crate::{
     action::{
-        ActionInterface, Action, ActionResponse, CreateAndGiveAbility, CreateAndGiveOrgAbility, CreateAndGivePassive,
+        Action, ActionInterface, ActionResponse, CreateAndGiveOrgAbility, CreateAndGivePassive,
     },
     actor::organization::{LeadershipStruct, OrgAbility},
     common::ActorKey,
-    config::actor::organization::OrganizationName,
 };
 
 use crate::action::ActionActor;
@@ -36,6 +37,19 @@ impl ActionInterface for CreateOrg {
         let abilities = org_config.abilities.clone();
         let passives = org_config.passives.clone();
 
+        let channel_response = Action::CreateChannel(CreateChannel { loggable: true })
+            .handle(eng, ctx, actor, version, mutate)?;
+        let ActionResponse::CreateChannel(data) = channel_response else {
+            unreachable!();
+        };
+        let channel_id = data.id;
+
+        let org_config = eng
+            .config
+            .org_config
+            .get(&self.name)
+            .expect("already validated org config");
+
         let id = if mutate {
             let mut leadership = None;
             if let Some(leadership_conf) = &org_config.leadership {
@@ -45,7 +59,7 @@ impl ActionInterface for CreateOrg {
                 };
                 leadership = Some(leadership_struct);
             }
-            eng.world.add_org(self.name, leadership)
+            eng.world.add_org(self.name, leadership, channel_id)
         } else {
             ActorKey::default()
         };

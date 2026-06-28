@@ -134,13 +134,21 @@ pub use common::{
     LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey, Time,
 };
 
+// I've realized now that channels can likely be abstracted a bit further with overrides as a native
+// object rather than being specific to world channels, but everything is basically done already, so
+// theres no point in changing it at this point.
+
 // TODO:
-// - Add org channels
-//  * orgs get their own private channel
 // - Implement world progression
-// - Add strictly increasing lounge ids used for ui display and abilities like tap in. The frontend
-// - Go through everything and implement frontend commands
-// can't reasonably expect players to enter slotmap keys.
+//  * notebooks are progressed
+//  * charge pools are progressed
+//  * iteration counter is incremented
+//  * bugs are ended
+//  * ipp is ended
+// - Add strictly increasing contact channel ids used for ui display and abilities like tap in. The frontend
+// can't reasonably expect players to enter slotmap keys. Sharing the ids will allow for things like
+// tapping into group chats without being too easy as well.
+// - Go through everything and implement frontend commands. Refine the command protocol.
 // - Begin implementing every ability and write tests for them
 // - more integration tests
 // - yagami
@@ -152,6 +160,12 @@ pub use common::{
 // - Test personal channels
 //  * players should be allowed to change the loggable status of these channels
 // - Test prosecution system
+// - Test org channels
+//  * orgs get their own private channel (done)
+//  * members are added to the channel when they join the org, and are removed when they leave
+//  * their access to the channel should be determined by the same rules as contact channels (will
+//  be evaluated in the same action)
+//  * org membership should be cached within the player
 
 #[cfg(test)]
 mod tests {

@@ -44,6 +44,7 @@ pub enum ActorType {
 }
 
 pub use lawliet_types::actor::ActorDisplay;
+use lawliet_types::common::ChannelKey;
 
 #[derive(Debug)]
 pub struct Actor {
@@ -75,7 +76,11 @@ impl Actor {
         }
     }
 
-    pub fn new_org(name: OrganizationName, leadership_struct: Option<LeadershipStruct>) -> Self {
+    pub fn new_org(
+        name: OrganizationName,
+        leadership_struct: Option<LeadershipStruct>,
+        channel_id: ChannelKey,
+    ) -> Self {
         Actor {
             kills: vec![],
             abilities: IndexSet::new(),
@@ -84,7 +89,7 @@ impl Actor {
             modifiers: IndexMap::new(),
             actor_links: IndexSet::new(),
             states: States::empty(),
-            actor_type: ActorType::Org(Organization::new(name, leadership_struct)),
+            actor_type: ActorType::Org(Organization::new(name, leadership_struct, channel_id)),
             pool_map: IndexMap::new(),
         }
     }

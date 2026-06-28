@@ -56,7 +56,7 @@ impl WorldConfig {
             },
         );
         channels.insert(
-            WorldChannelName::LandWatari,
+            WorldChannelName::LAndWatari,
             WorldChannelConfig {
                 default_perms: ChannelPermissions::EMPTY,
                 send_blocking: Modifier::NoContact.into(),

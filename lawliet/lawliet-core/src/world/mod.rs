@@ -140,8 +140,10 @@ impl World {
         &mut self,
         name: OrganizationName,
         leadership_struct: Option<LeadershipStruct>,
+        channel_id: ChannelKey,
     ) -> ActorKey {
-        self.actors.insert(Actor::new_org(name, leadership_struct))
+        self.actors
+            .insert(Actor::new_org(name, leadership_struct, channel_id))
     }
 
     pub fn add_notebook(&mut self, channel_id: ChannelKey, fake: bool) -> NotebookKey {

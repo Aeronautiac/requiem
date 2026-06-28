@@ -3,13 +3,12 @@
 * Remove a player from an organization
 */
 
+use lawliet_types::action::SetMember;
+
 use crate::{
-    action::{
-        ActionInterface, Action, ActionError, ActionResponse, UpdateKidnapChannels,
-    },
+    action::{Action, ActionError, ActionInterface, ActionResponse, UpdateKidnapChannels},
     actor::{ActorLink, ActorLinkType},
-    common::ActorKey,
-    helpers::{get_actor, get_actor_mut, get_org_mut},
+    helpers::{get_actor_mut, get_org_mut, get_player, get_player_mut},
 };
 
 use crate::action::ActionActor;
@@ -25,9 +24,10 @@ impl ActionInterface for RemoveFromOrg {
         mutate: bool,
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;
-        get_actor(eng, self.actor_id)?;
+        get_player(eng, self.actor_id)?;
 
         let org = get_org_mut(eng, self.org_id)?;
+        let channel_id = org.channel_id;
         if !org.has_member(self.actor_id) {
             return Err(ActionError::PlayerNotInOrg);
         }
@@ -39,8 +39,17 @@ impl ActionInterface for RemoveFromOrg {
                 link_type: ActorLinkType::Passive,
                 link_dest: self.org_id,
             });
-            dbg!(&actor);
+
+            let player = get_player_mut(eng, self.actor_id).expect("should already be validated");
+            player.orgs.swap_remove(&self.org_id);
         }
+
+        Action::SetMember(SetMember {
+            player_id: self.actor_id,
+            settings: None,
+            channel_id,
+        })
+        .handle(eng, ctx, actor, version, mutate)?;
 
         Action::UpdateKidnapChannels(UpdateKidnapChannels {})
             .handle(eng, ctx, actor, version, mutate)?;

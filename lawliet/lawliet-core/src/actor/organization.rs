@@ -4,6 +4,7 @@ use crate::{
 };
 use indexmap::{IndexMap, IndexSet};
 
+use lawliet_types::common::ChannelKey;
 pub use lawliet_types::organization::{
     LeadershipTransferPolicies, LeadershipTransferPolicy, OrgAbility, OrgAbilityPolicies,
     OrgAbilityPolicy,
@@ -33,10 +34,6 @@ pub use lawliet_types::organization::{
 // need a new action for using org abilities (create a vote or instant use, check permissions and
 // org state)
 
-// TODO:
-// add org channels
-// - organizations should have one channel created for all their members
-
 #[derive(Hash, PartialEq, Eq, Debug, Clone)]
 pub struct LeadershipStruct {
     pub leader: Option<ActorKey>,
@@ -55,16 +52,22 @@ pub struct Organization {
     pub blacklist: IndexSet<ActorKey>,
     pub abilities: IndexMap<AbilityKey, OrgAbility>,
     pub org_name: OrganizationName,
+    pub channel_id: ChannelKey,
 }
 
 impl Organization {
-    pub fn new(name: OrganizationName, leadership_struct: Option<LeadershipStruct>) -> Self {
+    pub fn new(
+        name: OrganizationName,
+        leadership_struct: Option<LeadershipStruct>,
+        channel_id: ChannelKey,
+    ) -> Self {
         Organization {
             leadership_struct,
             members: IndexMap::new(),
             abilities: IndexMap::new(),
             blacklist: IndexSet::new(),
             org_name: name,
+            channel_id,
         }
     }
 
