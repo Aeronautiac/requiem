@@ -241,6 +241,17 @@ impl World {
         self.polls.remove(id).is_some()
     }
 
+    pub fn register_contact_channel(&mut self, channel: ContactChannel) -> ID {
+        let id = self.contact_channel_id;
+        self.contact_channel_id += 1;
+        self.contact_channels.insert(id, channel);
+        id
+    }
+
+    pub fn remove_contact_channel(&mut self, id: ID) {
+        self.contact_channels.swap_remove(&id);
+    }
+
     pub fn add_channel(&mut self, channel: Channel) -> ChannelKey {
         self.channels.insert(channel)
     }

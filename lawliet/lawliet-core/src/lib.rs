@@ -139,12 +139,7 @@ pub use common::{
 // theres no point in changing it at this point.
 
 // TODO:
-// - Fully implement randomness
 // - Finish non-autonomous prosecutions
-// - Add strictly increasing contact channel ids used for ui display and abilities like tap in. The frontend
-// can't reasonably expect players to enter slotmap keys. Sharing the ids will allow for things like
-// tapping into group chats without being too easy as well.
-// * the world holds the counter and maintains a map of ids to lounges/gcs
 // - Go through everything and implement frontend commands. Refine the command protocol.
 // - Implement every ability and write tests for them
 // - Integration tests
@@ -169,6 +164,11 @@ pub use common::{
 //  * iteration counter is incremented
 //  * bugs are ended
 //  * ipp is ended
+// - Add command outputs for strictly increasing contact channel ids used for ui display and abilities like tap in. The frontend
+// can't reasonably expect players to enter slotmap keys. Sharing the ids will allow for things like
+// tapping into group chats without being too easy as well.
+// * the world holds the counter and maintains a map of ids to lounges/gcs
+// * ensure that they are unmapped when the objects are destroyed
 
 #[cfg(test)]
 mod tests {

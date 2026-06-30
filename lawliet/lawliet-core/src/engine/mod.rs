@@ -1,3 +1,7 @@
+use rand_pcg::Pcg32;
+use rand_pcg::rand_core::SeedableRng;
+
+use crate::Time;
 use crate::action::{
     ActionContext, ActionError, ActionExt, ActionRequest, ActionResponse, ActionResult,
 };
@@ -5,7 +9,6 @@ use crate::command::DeferredCommand;
 use crate::config::Config;
 use crate::engine::jobs::Jobs;
 use crate::world::World;
-use crate::{Time, common::Seed};
 
 pub mod jobs;
 
@@ -15,7 +18,7 @@ pub struct Engine {
     pub time: Time,
     pub jobs: Jobs,
     pub deferred_commands: Vec<DeferredCommand>,
-    pub rng_state: Seed,
+    pub rng_state: Pcg32,
 }
 
 pub type ExecutionResult = Result<(ActionResponse, ActionContext), ActionError>;
@@ -28,7 +31,7 @@ impl Engine {
             jobs: Jobs::new(),
             deferred_commands: vec![],
             time: 0,
-            rng_state: 0,
+            rng_state: Pcg32::seed_from_u64(0),
         }
     }
 

@@ -4,12 +4,11 @@
 */
 
 use crate::{
-    action::{
-        ActionInterface, Action, ActionResponse, CreateChannel,
-    },
+    action::{Action, ActionInterface, ActionResponse, CreateChannel},
     command::Command,
     common::GroupchatKey,
     groupchat::Groupchat,
+    world::ContactChannel,
 };
 
 use crate::action::ActionActor;
@@ -34,7 +33,10 @@ impl ActionInterface for CreateGroupchat {
         let channel_id = data.id;
 
         let id = if mutate {
-            eng.world.add_groupchat(Groupchat::new(channel_id))
+            let gc_id = eng.world.add_groupchat(Groupchat::new(channel_id));
+            eng.world
+                .register_contact_channel(ContactChannel::Gc(gc_id));
+            gc_id
         } else {
             GroupchatKey::default()
         };
