@@ -99,3 +99,8 @@ pub struct AnonymousProsecute {
 pub struct Autopsy {
     pub target: ActorKey,
 }
+
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct Bug {
+    pub target: ActorKey,
+}

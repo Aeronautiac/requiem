@@ -15,6 +15,7 @@ pub mod anonymous_kidnap;
 pub mod anonymous_prosecute;
 pub mod autopsy;
 pub mod blackout;
+pub mod bug;
 pub mod civilian_arrest;
 pub mod contact;
 pub mod fake_lounge;

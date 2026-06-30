@@ -5,9 +5,10 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, InitializeWorld, SetRandomSeed,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        InitializeWorld, SetRandomSeed,
     },
-    common::{Seed, Version},
+    common::Version,
     engine::Engine,
 };
 
@@ -27,9 +28,10 @@ impl ActionInterface for InitializeEngine {
         Action::SetRandomSeed(SetRandomSeed { seed: self.seed })
             .handle(eng, ctx, actor, version, mutate)?;
 
-        Action::InitializeWorld(InitializeWorld {})
-            .handle(eng, ctx, actor, version, mutate)?;
+        Action::InitializeWorld(InitializeWorld {}).handle(eng, ctx, actor, version, mutate)?;
 
-        Ok(ActionResponse::InitializeEngine(InitializeEngineResponse {}))
+        Ok(ActionResponse::InitializeEngine(
+            InitializeEngineResponse {},
+        ))
     }
 }

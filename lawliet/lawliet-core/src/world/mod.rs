@@ -4,7 +4,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use lawliet_types::common::IterationCount;
+use lawliet_types::common::{ID, IterationCount};
 use slotmap::SlotMap;
 
 use crate::{
@@ -38,6 +38,12 @@ pub enum WorldError {
 }
 
 #[derive(Debug)]
+pub enum ContactChannel {
+    Lounge(LoungeKey),
+    Gc(GroupchatKey),
+}
+
+#[derive(Debug)]
 pub struct World {
     pub blackout: bool,
     pub actors: SlotMap<ActorKey, Actor>,
@@ -57,6 +63,8 @@ pub struct World {
     pub incarcerations: SlotMap<IncarcerationKey, Incarceration>,
     pub world_channel_map: IndexMap<WorldChannelName, ChannelKey>,
     pub curr_iteration: IterationCount,
+    pub contact_channels: IndexMap<ID, ContactChannel>,
+    pub contact_channel_id: ID,
 }
 
 impl World {
@@ -80,6 +88,8 @@ impl World {
             kidnappings: SlotMap::with_key(),
             incarcerations: SlotMap::with_key(),
             world_channel_map: IndexMap::new(),
+            contact_channels: IndexMap::new(),
+            contact_channel_id: 0,
         }
     }
 
