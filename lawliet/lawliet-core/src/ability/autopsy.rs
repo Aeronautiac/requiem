@@ -2,7 +2,7 @@ use lawliet_types::{
     ability::{AbilityName, Autopsy},
     action::ActionError,
     actor::State,
-    command::Command,
+    command::{Command, CommandRecipient},
 };
 
 use crate::{
@@ -36,7 +36,7 @@ impl AbilityInterface for Autopsy {
                 range: eng.config.defaults.autopsy_window,
                 redact_names: eng.config.defaults.autopsy_redaction,
             },
-            Some(user_id),
+            CommandRecipient::Player(user_id),
             eng.time,
         );
 

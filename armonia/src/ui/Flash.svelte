@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Flash } from "./flash.svelte.ts";
+  import type { Flash } from "../flash.svelte.ts";
   let { flash }: { flash: Flash } = $props();
 </script>
 

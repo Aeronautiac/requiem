@@ -1,16 +1,16 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { GAME_STATE_KEY } from "./game_state.svelte.ts";
-  import { UI_STATE_KEY } from "./ui_state.svelte.ts";
-  import type { GameState } from "./game_state.svelte.ts";
-  import type { UiState } from "./ui_state.svelte.ts";
+  import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
+  import type { GameState } from "../../game_state.svelte.ts";
+  import type { UiState } from "../../ui_state.svelte.ts";
   import { ROUTER_KEY } from "$lib/router";
   import type { Router } from "$lib/router";
-  import type { ActionRequest } from "./bindings";
-  import { slotKeyFromString } from "./bindings";
-  import { Flash } from "./flash.svelte.ts";
-  import FlashDisplay from "./Flash.svelte";
-  import { viewerToActor } from "./types";
+  import type { ActionRequest } from "../../bindings";
+  import { slotKeyFromString } from "../../bindings";
+  import { Flash } from "../../flash.svelte.ts";
+  import FlashDisplay from "../Flash.svelte";
+  import { viewerToActor } from "../../types";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
@@ -26,7 +26,9 @@
       payload: {
         UseAbility: {
           ability_id: slotKeyFromString(ability_id_str),
-          ability_args: { Contact: { target_id: slotKeyFromString(target_id_str) } },
+          ability_args: {
+            Contact: { target_id: slotKeyFromString(target_id_str) },
+          },
         },
       },
     };
@@ -40,8 +42,9 @@
   }
 
   function contact_abilities() {
-    return [...(game.views.get(ui.viewer)?.abilities.entries() ?? [])]
-      .filter(([, av]) => av.name === "Contact");
+    return [...(game.views.get(ui.viewer)?.abilities.entries() ?? [])].filter(
+      ([, av]) => av.name === "Contact",
+    );
   }
 </script>
 
@@ -50,7 +53,11 @@
     <div class="rounded text-sm">
       <button
         class="w-full text-left px-2 py-1 rounded text-neutral-300 hover:bg-neutral-800"
-        onclick={() => { expanded = expanded === id ? null : id; flash.error = null; flash.success = null; }}
+        onclick={() => {
+          expanded = expanded === id ? null : id;
+          flash.error = null;
+          flash.success = null;
+        }}
       >
         {player.display_name}
       </button>
@@ -74,5 +81,4 @@
   {#if game.players.size === 0}
     <p class="px-2 py-1 text-xs text-neutral-600">No players</p>
   {/if}
-
 </div>

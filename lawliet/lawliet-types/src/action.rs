@@ -6,7 +6,7 @@ use crate::{
     bug::BugSource,
     channel::ChannelMember,
     chargepool::PoolLinkType,
-    command::{Command, CommandPayload},
+    command::{Command, CommandPayload, CommandRecipient},
     common::{
         AbilityKey, ActorKey, BugKey, ChannelKey, ChargeCount, ChargePoolKey, GroupchatKey,
         IncarcerationKey, IterationCount, KidnappingKey, LinkWeight, NotebookKey, PassiveKey,
@@ -1102,7 +1102,7 @@ pub struct ActionContext {
 }
 
 impl ActionContext {
-    pub fn push_cmd(&mut self, cmd: Command, recipient: Option<ActorKey>, time: Time) {
+    pub fn push_cmd(&mut self, cmd: Command, recipient: CommandRecipient, time: Time) {
         self.commands.push(CommandPayload {
             timestamp: time,
             recipient,

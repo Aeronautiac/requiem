@@ -3,13 +3,13 @@
 * Create a bug that relays messages from a target player to a bug log
 */
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
-    action::{
-        ActionInterface, Action, ActionResponse, UpdateBugVisibilities,
-    },
+    action::{Action, ActionInterface, ActionResponse, UpdateBugVisibilities},
     bug::{Bug, BugSource},
     command::Command,
-    common::{ActorKey, BugKey},
+    common::BugKey,
     helpers::{get_ability, get_player_mut},
 };
 
@@ -39,7 +39,11 @@ impl ActionInterface for CreateBug {
                 .add_bug(bug_id);
 
             // this needs to come before the visibility update action
-            ctx.push_cmd(Command::NewBug { bug_key: bug_id }, None, eng.time);
+            ctx.push_cmd(
+                Command::NewBug { bug_key: bug_id },
+                CommandRecipient::System,
+                eng.time,
+            );
 
             bug_id
         } else {

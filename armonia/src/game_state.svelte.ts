@@ -1,8 +1,8 @@
 import { SvelteMap } from "svelte/reactivity";
-import type { ActorDisplay, ActorKey, ActionResponse, AppExecution, CommandPayload, NotebookKey } from "./bindings";
+import type { AbilityName, ActorDisplay, ActorKey, ActionResponse, AppExecution, CommandPayload, CommandRecipient } from "./bindings";
 import { slotKeyToString } from "./bindings";
 
-export type ChannelKind = "Lounge" | "Groupchat" | "Notebook" | "News" | "Courtroom" | "Raw";
+export type ChannelKind = "Lounge" | "Groupchat" | "Notebook" | "News" | "Courtroom" | "Prison" | "Collaboration" | "Raw";
 
 export interface Channel {
   kind: ChannelKind;
@@ -12,9 +12,11 @@ export interface Channel {
   archived: boolean;
 }
 
-export type ChannelEvent =
-  | { type: "message"; sender_display: ActorDisplay; content: string; timestamp: number }
-  | { type: "notebook_write"; user_id: ActorKey; true_name: string; success: boolean; target_saved: boolean; delay: number; message: string | null; successes_remaining: number; attempts_remaining: number; timestamp: number };
+export type Message = {
+  timestamp: number,
+  sender_display: ActorDisplay,
+  content: string,
+}
 
 export interface AbilityView {
   name: AbilityName;
@@ -38,19 +40,26 @@ export function new_player(display_name: string): Player {
   return player;
 }
 
+function recipientToView(rec: CommandRecipient) {
+  if (typeof (rec) === 'string') {
+    if (rec == "System")
+      return "Admin";
+    return rec;
+  } else {
+    const id = rec.Player;
+    return slotKeyToString(id);
+  }
+}
+
 export class GameState {
   players = new SvelteMap<string, Player>();
   views = new SvelteMap<string, GameView>();
-  events = new SvelteMap<string, ChannelEvent[]>();
-  // channel_id → notebook_id, for WriteName UI
-  channel_to_notebook = new Map<string, NotebookKey>();
-  // notebook_id string → channel_id, for NotebookWrite command routing
-  #notebook_to_channel = new Map<string, string>();
-  // Channels created by Map* commands, waiting to be assigned to a player view.
+  channel_messages = new SvelteMap<string, Message[]>();
   #pending = new Map<string, Channel>();
 
   constructor() {
     this.views.set("Admin", new GameView());
+    this.views.set("Base", new GameView());
   }
 
   private new_view(key: string) {
@@ -108,10 +117,24 @@ export class GameState {
     if ("MapNotebook" in cmd) {
       const { notebook_id, channel_id } = cmd.MapNotebook;
       const channel_key = slotKeyToString(channel_id);
-      const notebook_key = slotKeyToString(notebook_id);
-      this.channel_to_notebook.set(channel_key, notebook_id);
-      this.#notebook_to_channel.set(notebook_key, channel_key);
       this.pending_channel(channel_key, "Notebook", `death-notebook-${notebook_id.idx}v${notebook_id.version}`);
+      return;
+    }
+
+    if ("MapWorldChannel" in cmd) {
+      const { channel_name, channel_id } = cmd.MapWorldChannel;
+      const channel_key = slotKeyToString(channel_id);
+
+      if (channel_name == "News") {
+        this.pending_channel(channel_key, "Raw", "News");
+      } else if (channel_name == "General") {
+        this.pending_channel(channel_key, "Raw", "General");
+      } else if (channel_name == "Prison") {
+        this.pending_channel(channel_key, "Raw", "Prison");
+      } else if (channel_name == "LAndWatari") {
+        this.pending_channel(channel_key, "Raw", "L & Watari");
+      }
+
       return;
     }
 
@@ -119,39 +142,22 @@ export class GameState {
       const channel_id = slotKeyToString(cmd.UpdateChannelView.channel_id);
       const pending = this.#pending.get(channel_id);
 
-      if (recipient) {
-        const view = this.views.get(slotKeyToString(recipient));
-        if (view) {
-          const read = (cmd.UpdateChannelView.perms & 2) !== 0;
-          const send = (cmd.UpdateChannelView.perms & 1) !== 0;
-          let channel = view.channels.get(channel_id);
-          if (channel) {
-            channel.read = read;
-            channel.send = send;
-          } else {
-            let ch: Channel = $state({
-              kind: pending?.kind ?? "Raw",
-              name: pending?.name ?? "raw",
-              read,
-              send,
-              archived: false,
-            });
-            view.channels.set(channel_id, ch);
-          }
-        }
-      }
-
-      // Admin always sees every channel, read-only.
-      const admin = this.views.get("Admin");
-      if (admin && !admin.channels.has(channel_id)) {
+      const view = this.views.get(recipientToView(recipient))!;
+      const read = (cmd.UpdateChannelView.perms & 2) !== 0;
+      const send = (cmd.UpdateChannelView.perms & 1) !== 0;
+      let channel = view.channels.get(channel_id);
+      if (channel) {
+        channel.read = read;
+        channel.send = send;
+      } else {
         let ch: Channel = $state({
           kind: pending?.kind ?? "Raw",
           name: pending?.name ?? "raw",
-          read: true,
-          send: false,
+          read,
+          send,
           archived: false,
         });
-        admin.channels.set(channel_id, ch);
+        view.channels.set(channel_id, ch);
       }
 
       return;
@@ -167,35 +173,34 @@ export class GameState {
     }
 
     if ("RemoveChannel" in cmd) {
-      if (recipient) {
-        this.views.get(slotKeyToString(recipient))
-          ?.channels.delete(slotKeyToString(cmd.RemoveChannel.channel_id));
-      }
+      this.views.get(recipientToView(recipient))
+        ?.channels.delete(slotKeyToString(cmd.RemoveChannel.channel_id));
       return;
     }
 
     if ("AddMessage" in cmd) {
       const { channel_id, content, sender_display } = cmd.AddMessage;
       const key = slotKeyToString(channel_id);
-      const arr = this.events.get(key) ?? [];
-      this.events.set(key, [...arr, { type: "message", sender_display, content, timestamp }]);
+      const arr = this.channel_messages.get(key) ?? [];
+      this.channel_messages.set(key, [...arr, { sender_display, content, timestamp }]);
       return;
     }
 
     if ("NotebookWrite" in cmd) {
-      const { notebook_id, user_id, message, true_name, delay, successes_remaining, attempts_remaining, success, target_saved } = cmd.NotebookWrite;
-      const channel_key = this.#notebook_to_channel.get(slotKeyToString(notebook_id));
-      if (channel_key) {
-        const arr = this.events.get(channel_key) ?? [];
-        this.events.set(channel_key, [...arr, { type: "notebook_write", user_id, true_name, success, target_saved, delay, message, successes_remaining, attempts_remaining, timestamp }]);
-      }
-      return;
+      // const { notebook_id, user_id, message, true_name, delay, successes_remaining, attempts_remaining, success, target_saved } = cmd.NotebookWrite;
+      // const channel_key = this.#notebook_to_channel.get(slotKeyToString(notebook_id));
+      // if (channel_key) {
+      //   const arr = this.events.get(channel_key) ?? [];
+      //   this.events.set(channel_key, [...arr, { type: "notebook_write", user_id, true_name, success, target_saved, delay, message, successes_remaining, attempts_remaining, timestamp }]);
+      // }
+      // return;
     }
 
     if ("UpdateAbilityView" in cmd) {
-      if (recipient) {
+      if (typeof (recipient) !== "string") {
+        const player = recipient.Player;
         const { ability_id, ability_name, usages_remaining, iterations_to_reset } = cmd.UpdateAbilityView;
-        const view = this.views.get(slotKeyToString(recipient));
+        const view = this.views.get(slotKeyToString(player));
         if (view) {
           const id = slotKeyToString(ability_id);
           const existing = view.abilities.get(id);
@@ -212,10 +217,8 @@ export class GameState {
     }
 
     if ("RemoveAbility" in cmd) {
-      if (recipient) {
-        this.views.get(slotKeyToString(recipient))
-          ?.abilities.delete(slotKeyToString(cmd.RemoveAbility.ability_id));
-      }
+      this.views.get(recipientToView(recipient))
+        ?.abilities.delete(slotKeyToString(cmd.RemoveAbility.ability_id));
       return;
     }
   }

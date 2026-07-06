@@ -9,13 +9,11 @@
 // old one and swap out the player's actor id
 // for channels, similarly just remove everyone's permissions
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
-    action::{
-        ActionInterface, ActionResponse,
-    },
-    actor::modifier::Modifiers,
+    action::{ActionInterface, ActionResponse},
     command::DeferredCommand,
-    helpers::get_actor,
 };
 
 use crate::action::ActionActor;
@@ -32,12 +30,17 @@ impl ActionInterface for DeferredCmds {
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;
 
-        let mut def_cmds = eng.deferred_commands.clone();
-        let to_execute: Vec<DeferredCommand> = def_cmds
-            .extract_if(.., |cmd| {
-                let target_data = get_actor(eng, cmd.payload.recipient.expect("deferred commands should only refer to players. commands with no recipient are considered host commands."))
-                    .expect("expected valid actor as a deferred command recipient");
-                target_data.modifiers() & cmd.blocking_modifiers == Modifiers::EMPTY
+        let def_cmds = vec![];
+        let to_execute: Vec<DeferredCommand> = eng
+            .deferred_commands
+            .clone()
+            .into_iter()
+            .map(|i| {
+                if matches!(i.payload.recipient, CommandRecipient::Player(_)) {
+                    i
+                } else {
+                    panic!("Cannot defer commands for non active player targets")
+                }
             })
             .collect();
 

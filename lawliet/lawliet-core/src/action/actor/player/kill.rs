@@ -7,11 +7,13 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, GiveAbility, AddState, SeverLinks, GiveNotebook, SetBooksDormant, SetBorrowersToOwners, TakeNotebook, GivePassive,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        AddState, GiveAbility, GiveNotebook, GivePassive, SetBooksDormant, SetBorrowersToOwners,
+        SeverLinks, TakeNotebook,
     },
     actor::{ActorLinkType, ActorType, modifier::Modifier, state::State},
     command::Command,
-    common::{ActorKey, Version},
+    common::Version,
     engine::Engine,
     helpers::{
         cmd_all_deferred, get_ability, get_actor, get_actor_mut, get_notebook, get_passive,
@@ -48,8 +50,10 @@ impl ActionInterface for Kill {
 
         let mut notebook_transferred = false;
         let mut ability_transferred = false;
-        let mut next_actions: SmallVec<[Action; 8]> =
-            smallvec![Action::AddState(AddState { actor_id: self.target_id, state: State::Dead })];
+        let mut next_actions: SmallVec<[Action; 8]> = smallvec![Action::AddState(AddState {
+            actor_id: self.target_id,
+            state: State::Dead
+        })];
         if let Some(killer_id) = self.killer_id {
             let killer = get_actor_mut(eng, killer_id)?;
 
@@ -166,6 +170,7 @@ impl ActionInterface for Kill {
         if !self.silent {
             cmd_all_deferred(
                 eng,
+                ctx,
                 Command::Death {
                     true_name: String::from(&*true_name),
                     death_message: if let Some(msg) = &self.death_message {
@@ -178,6 +183,7 @@ impl ActionInterface for Kill {
                     ability_transferred,
                 },
                 Modifier::NoPresence.into(),
+                true,
             );
         }
 

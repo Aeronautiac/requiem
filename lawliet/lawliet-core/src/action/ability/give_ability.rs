@@ -6,13 +6,15 @@
 // Handle organization transfers. Orgs have a map of ability ids to ability metadata.
 // Shouild probably be done in higher level actions
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, AddLink, ClearVolatileLinks, UpdateBugVisibilities,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, AddLink, ClearVolatileLinks, UpdateBugVisibilities,
     },
     chargepool::PoolLink,
     command::Command,
-    common::{AbilityKey, ActorKey},
     config::ability::{AbilityIdentifier, ConfigPoolLinkDetails},
     helpers::{get_ability, get_ability_mut, get_actor, get_actor_mut},
 };
@@ -109,7 +111,7 @@ impl ActionInterface for GiveAbility {
                     ability_id: self.ability_id,
                     owner_id: self.actor_id,
                 },
-                Some(self.actor_id),
+                CommandRecipient::Player(self.actor_id),
                 eng.time,
             );
         }

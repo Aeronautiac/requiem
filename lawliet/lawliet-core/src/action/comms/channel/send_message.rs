@@ -3,7 +3,7 @@
 * Send a message to a channel
 */
 
-use lawliet_types::actor::Modifier;
+use lawliet_types::{actor::Modifier, command::CommandRecipient};
 
 use crate::{
     action::{ActionError, ActionInterface, ActionResponse},
@@ -70,7 +70,7 @@ impl ActionInterface for SendMessage {
                                 display: self.display,
                                 content: self.content.clone(),
                             },
-                            None,
+                            CommandRecipient::System,
                             eng.time,
                         );
                     }
@@ -86,7 +86,7 @@ impl ActionInterface for SendMessage {
                 channel_id: self.channel_id,
                 sender_display: self.display,
             },
-            None,
+            CommandRecipient::System,
             eng.time,
         );
 

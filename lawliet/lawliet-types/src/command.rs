@@ -10,6 +10,7 @@ use crate::{
         IterationCount, LoungeKey, NotebookKey, PassiveKey, Time,
     },
     role::Role,
+    world::WorldChannelName,
 };
 
 // commands with no recipient are considered "system" commands and are used to talk directly to the
@@ -17,10 +18,24 @@ use crate::{
 //
 // the frontend server is expected to intercept certain commands if they wish to implement host controls
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CommandRecipient {
+    System,
+    BasePlayer, // any player shall be fed these commands, even if the player was created AFTER the
+    // command was initially sent
+    Player(ActorKey), // a player who already exists/is participating
+}
+
+impl CommandRecipient {
+    pub fn is_system(&self) -> bool {
+        matches!(self, CommandRecipient::System)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandPayload {
     pub timestamp: Time,
-    pub recipient: Option<ActorKey>,
+    pub recipient: CommandRecipient,
     pub cmd: Command,
 }
 
@@ -32,6 +47,11 @@ pub enum Command {
     ////////////////////////////////////////////////
     // if doing something like sending as a message in the news channel, ensure that it is placed
     // into the proper slot and treated as a historical event if it wasn't sent immediately.
+    // also note that in the case of being rendered within a channel, and the channel not being available,
+    // the message must be rendered regardless of the player's permissions within that channel
+    // some "channels" should have something rendered regardless of if the player is even a member
+    // of the channel. for instance, news should be treated as a special instance where it is both a
+    // channel (if member), and an event log.
 
     /////=<TARGETTED>=/////
 
@@ -135,6 +155,11 @@ pub enum Command {
     MapGc {
         gc_id: GroupchatKey,
         channel_id: ChannelKey,
+    },
+
+    MapWorldChannel {
+        channel_id: ChannelKey,
+        channel_name: WorldChannelName,
     },
 
     // delete a channel

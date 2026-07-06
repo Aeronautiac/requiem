@@ -3,13 +3,11 @@
 * Map a player ID to a channel member struct within the channel
 */
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
-    action::{
-        ActionInterface, ActionResponse,
-    },
-    channel::ChannelMember,
+    action::{ActionInterface, ActionResponse},
     command::Command,
-    common::{ActorKey, ChannelKey},
     helpers::{get_channel_mut, get_player},
 };
 
@@ -46,7 +44,7 @@ impl ActionInterface for SetMember {
                             display: *display,
                             channel_perms: member.perms,
                         },
-                        Some(self.player_id),
+                        CommandRecipient::Player(self.player_id),
                         time,
                     );
                 }
@@ -58,7 +56,7 @@ impl ActionInterface for SetMember {
                     displays: member.displays.clone(),
                     perms: member.perms,
                 },
-                Some(self.player_id),
+                CommandRecipient::Player(self.player_id),
                 eng.time,
             );
         } else {
@@ -69,7 +67,7 @@ impl ActionInterface for SetMember {
                             channel_id: self.channel_id,
                             display: *display,
                         },
-                        Some(self.player_id),
+                        CommandRecipient::Player(self.player_id),
                         time,
                     );
                 }
@@ -79,7 +77,7 @@ impl ActionInterface for SetMember {
                 Command::RemoveChannel {
                     channel_id: self.channel_id,
                 },
-                Some(self.player_id),
+                CommandRecipient::Player(self.player_id),
                 eng.time,
             );
         }

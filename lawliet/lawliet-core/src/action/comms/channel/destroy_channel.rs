@@ -5,12 +5,11 @@
 * world channels) that reference this channel before calling this action.
 */
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
-    action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
-    },
+    action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     command::Command,
-    common::ChannelKey,
     helpers::get_channel,
 };
 
@@ -37,7 +36,7 @@ impl ActionInterface for DestroyChannel {
                 Command::DeleteChannel {
                     channel_id: self.channel_id,
                 },
-                None,
+                CommandRecipient::System,
                 eng.time,
             );
         } else {
@@ -45,7 +44,7 @@ impl ActionInterface for DestroyChannel {
                 Command::ArchiveChannel {
                     channel_id: self.channel_id,
                 },
-                None,
+                CommandRecipient::System,
                 eng.time,
             );
         }

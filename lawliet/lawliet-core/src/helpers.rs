@@ -1,3 +1,5 @@
+use lawliet_types::{action::ActionContext, command::CommandRecipient};
+
 use crate::{
     Time,
     ability::Ability,
@@ -284,7 +286,10 @@ pub fn get_voter_weight(eng: &Engine, id: ActorKey) -> PollWeight {
     get_actor(eng, id).expect("Expected a valid actor ID");
     if get_player(eng, id).is_ok() {
         let passive_id = actor_get_effective_passive(eng, id, |passive_type| {
-            matches!(passive_type, PassiveType::VoteAmplification { multiplier: _ })
+            matches!(
+                passive_type,
+                PassiveType::VoteAmplification { multiplier: _ }
+            )
         });
         if let Some(id) = passive_id {
             let passive = get_passive(eng, id).expect("Expected passive to exist");
@@ -327,7 +332,10 @@ pub fn get_world_channel(eng: &Engine, name: WorldChannelName) -> Result<&Channe
     get_channel(eng, id)
 }
 
-pub fn get_world_channel_id(eng: &Engine, name: WorldChannelName) -> Result<ChannelKey, ActionError> {
+pub fn get_world_channel_id(
+    eng: &Engine,
+    name: WorldChannelName,
+) -> Result<ChannelKey, ActionError> {
     eng.world
         .world_channel_map
         .get(&name)
@@ -446,7 +454,13 @@ pub fn require_not_defendant(eng: &Engine, actor_id: ActorKey) -> Result<(), Act
     }
 }
 
-pub fn cmd_all_deferred(eng: &mut Engine, cmd: Command, blocking_modifiers: Modifiers) {
+pub fn cmd_all_deferred(
+    eng: &mut Engine,
+    ctx: &mut ActionContext,
+    cmd: Command,
+    blocking_modifiers: Modifiers,
+    include_base: bool,
+) {
     let player_ids: Vec<ActorKey> = eng
         .world
         .actors
@@ -454,13 +468,18 @@ pub fn cmd_all_deferred(eng: &mut Engine, cmd: Command, blocking_modifiers: Modi
         .filter_map(|(id, actor)| matches!(actor.actor_type, ActorType::Player(_)).then_some(id))
         .collect();
     for id in player_ids {
-        eng.deferred_commands.push(DeferredCommand {
-            payload: CommandPayload {
-                timestamp: eng.time,
-                recipient: Some(id),
-                cmd: cmd.clone(),
-            },
+        let payload = CommandPayload {
+            timestamp: eng.time,
+            recipient: CommandRecipient::Player(id),
+            cmd: cmd.clone(),
+        };
+        let def_cmd = DeferredCommand {
+            payload: payload.clone(),
             blocking_modifiers,
-        });
+        };
+        eng.deferred_commands.push(def_cmd);
+    }
+    if include_base {
+        ctx.push_cmd(cmd, CommandRecipient::BasePlayer, eng.time);
     }
 }

@@ -3,12 +3,11 @@
 * TODO: implement
 */
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
-    action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
-    },
+    action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     command::Command,
-    common::BugKey,
     helpers::{get_bug, get_player_mut},
 };
 
@@ -37,7 +36,7 @@ impl ActionInterface for DestroyBug {
             Command::DeleteBug {
                 bug_id: self.bug_id,
             },
-            None,
+            CommandRecipient::System,
             eng.time,
         );
 

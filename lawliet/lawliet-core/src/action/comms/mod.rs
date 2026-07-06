@@ -7,6 +7,7 @@ pub mod update_contact_channels;
 #[cfg(test)]
 mod comms_tests {
     use indexmap::indexset;
+    use lawliet_types::command::CommandRecipient;
 
     use crate::{
         action::{
@@ -97,7 +98,7 @@ mod comms_tests {
         .unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == Some(p1)
+            p.recipient == CommandRecipient::Player(p1)
                 && matches!(&p.cmd, Command::UpdateChannelView { channel_id, .. } if *channel_id == ch)
         }));
     }
@@ -123,7 +124,7 @@ mod comms_tests {
         let (_, ctx) = set_member(&mut eng, 0, p1, ch, None).unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == Some(p1)
+            p.recipient == CommandRecipient::Player(p1)
                 && matches!(&p.cmd, Command::RemoveChannel { channel_id } if *channel_id == ch)
         }));
     }
@@ -301,7 +302,7 @@ mod comms_tests {
         let channel_id = get_gc(&eng, data.id).unwrap().channel_id;
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_none()
+            p.recipient.is_system()
                 && matches!(&p.cmd, Command::MapGc { gc_id, channel_id: cid }
                     if *gc_id == data.id && *cid == channel_id)
         }));
@@ -327,7 +328,7 @@ mod comms_tests {
         // with owner flag: GcOwnerStatus{owner: true} emitted to new owner
         let (_, ctx) = add_to_gc(&mut eng, 0, ActionActor::System, gc, p2, true).unwrap();
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == Some(p2)
+            p.recipient == CommandRecipient::Player(p2)
                 && matches!(&p.cmd, Command::GcOwnerStatus { owner: true, gc_id } if *gc_id == gc)
         }));
     }
@@ -402,11 +403,11 @@ mod comms_tests {
         let (_, ctx) = set_gc_owner(&mut eng, 0, ActionActor::System, gc, Some(p2)).unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == Some(p1)
+            p.recipient == CommandRecipient::Player(p1)
                 && matches!(&p.cmd, Command::GcOwnerStatus { owner: false, gc_id } if *gc_id == gc)
         }));
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == Some(p2)
+            p.recipient == CommandRecipient::Player(p2)
                 && matches!(&p.cmd, Command::GcOwnerStatus { owner: true, gc_id } if *gc_id == gc)
         }));
     }
@@ -476,7 +477,7 @@ mod comms_tests {
         };
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_none()
+            p.recipient.is_system()
                 && matches!(&p.cmd, Command::MapLounge { lounge_id, channel_id }
                     if *lounge_id == data.lounge_id && *channel_id == data.channel_id)
         }));
@@ -588,7 +589,7 @@ mod comms_tests {
         };
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_none()
+            p.recipient.is_system()
                 && matches!(&p.cmd, Command::NewBug { bug_key } if *bug_key == data.id)
         }));
     }
@@ -689,7 +690,7 @@ mod comms_tests {
             .unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_none()
+            p.recipient.is_system()
                 && matches!(&p.cmd, Command::ArchiveBug { bug_key } if *bug_key == create_data.id)
         }));
     }
@@ -827,7 +828,7 @@ mod comms_tests {
             .unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_none()
+            p.recipient.is_system()
                 && matches!(&p.cmd, Command::DeleteBug { bug_id } if *bug_id == create_data.id)
         }));
     }
@@ -882,7 +883,7 @@ mod comms_tests {
         let (_, ctx) = send_message(&mut eng, 0, p1, ch, ActorDisplay::Raw(p1), "hello").unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_none()
+            p.recipient.is_system()
                 && matches!(&p.cmd, Command::AddBugMessage { bug_key, .. } if *bug_key == bug_data.id)
         }));
     }
@@ -1043,7 +1044,7 @@ mod comms_tests {
             .unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == Some(owner)
+            p.recipient == CommandRecipient::Player(owner)
                 && matches!(&p.cmd, Command::SetBugVisibility { visible: true, .. })
         }));
     }
@@ -1126,7 +1127,7 @@ mod comms_tests {
             .unwrap();
 
         assert!(!ctx.commands.iter().any(|p| {
-            p.recipient == Some(owner)
+            p.recipient == CommandRecipient::Player(owner)
                 && matches!(&p.cmd, Command::SetBugVisibility { visible: true, .. })
         }));
     }
@@ -1156,7 +1157,7 @@ mod comms_tests {
             .unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == Some(receiver)
+            p.recipient == CommandRecipient::Player(receiver)
                 && matches!(&p.cmd, Command::SetBugVisibility { visible: true, .. })
         }));
     }

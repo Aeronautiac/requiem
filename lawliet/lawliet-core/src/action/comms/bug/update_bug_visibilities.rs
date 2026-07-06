@@ -16,13 +16,12 @@
 // still need to sort out the case where a bug is deleted
 // when a bug is deleted, the frontend should delete it too
 
+use lawliet_types::command::CommandRecipient;
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
     ActorKey,
-    action::{
-        ActionInterface, ActionResponse,
-    },
+    action::{ActionInterface, ActionResponse},
     actor::{ActorType, modifier::Modifier},
     bug::BugSource,
     command::Command,
@@ -59,7 +58,11 @@ impl ActionInterface for UpdateBugVisibilities {
         }
 
         for (key, bug) in &eng.world.bugs {
-            ctx.push_cmd(Command::ClearBugVisibily { bug_id: key }, None, eng.time);
+            ctx.push_cmd(
+                Command::ClearBugVisibily { bug_id: key },
+                CommandRecipient::System,
+                eng.time,
+            );
             match &bug.source {
                 BugSource::Ability(ability_id) => {
                     let ability = get_ability(eng, *ability_id)?;
@@ -71,7 +74,7 @@ impl ActionInterface for UpdateBugVisibilities {
                                     bug_id: key,
                                     visible: true,
                                 },
-                                Some(owner),
+                                CommandRecipient::Player(owner),
                                 eng.time,
                             );
                         }
@@ -84,7 +87,7 @@ impl ActionInterface for UpdateBugVisibilities {
                                 bug_id: key,
                                 visible: true,
                             },
-                            Some(*id),
+                            CommandRecipient::Player(*id),
                             eng.time,
                         );
                     }

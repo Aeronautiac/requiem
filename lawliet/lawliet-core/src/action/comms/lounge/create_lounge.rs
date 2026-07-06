@@ -8,7 +8,7 @@
 */
 
 use indexmap::{IndexSet, indexset};
-use lawliet_types::lounge::AnonymousLoungeRoleDisplay;
+use lawliet_types::{command::CommandRecipient, lounge::AnonymousLoungeRoleDisplay};
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
@@ -145,7 +145,7 @@ impl ActionInterface for CreateLounge {
                         lounge_id,
                         channel_id,
                     },
-                    None,
+                    CommandRecipient::System,
                     eng.time,
                 );
             }

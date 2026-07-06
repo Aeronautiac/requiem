@@ -1,9 +1,9 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { GAME_STATE_KEY } from "./game_state.svelte.ts";
-  import { UI_STATE_KEY } from "./ui_state.svelte.ts";
-  import type { GameState } from "./game_state.svelte.ts";
-  import type { UiState } from "./ui_state.svelte.ts";
+  import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
+  import type { GameState } from "../../game_state.svelte.ts";
+  import type { UiState } from "../../ui_state.svelte.ts";
   import * as Select from "$lib/components/ui/select";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
@@ -19,7 +19,9 @@
   );
 
   function label(key: string): string {
-    return key === "Admin" ? "Admin" : (game.players.get(key)?.display_name ?? key);
+    return key === "Admin"
+      ? "Admin"
+      : (game.players.get(key)?.display_name ?? key);
   }
 </script>
 

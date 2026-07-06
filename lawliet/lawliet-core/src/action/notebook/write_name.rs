@@ -4,14 +4,16 @@
 * IPP blocks this
 */
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
-    Time,
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, Kill, ScheduleKill,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, Kill, ScheduleKill,
     },
     actor::modifier::Modifier,
     command::Command,
-    common::{NotebookKey, Version},
+    common::Version,
     engine::Engine,
     helpers::{actor_get_effective_passive, actor_id, get_actor, get_notebook, get_notebook_mut},
     notebook::NotebookError,
@@ -124,7 +126,7 @@ impl ActionInterface for WriteName {
                     attempts_remaining,
                     user_id: player_id,
                 },
-                None,
+                CommandRecipient::System,
                 eng.time,
             );
         } else {
@@ -147,7 +149,7 @@ impl ActionInterface for WriteName {
                     attempts_remaining,
                     user_id: player_id,
                 },
-                None,
+                CommandRecipient::System,
                 eng.time,
             );
         }

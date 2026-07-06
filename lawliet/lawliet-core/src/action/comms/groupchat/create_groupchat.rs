@@ -3,6 +3,8 @@
 * Create a group chat
 */
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
     action::{Action, ActionInterface, ActionResponse, CreateChannel},
     command::Command,
@@ -46,7 +48,7 @@ impl ActionInterface for CreateGroupchat {
                 gc_id: id,
                 channel_id,
             },
-            None,
+            CommandRecipient::System,
             eng.time,
         );
 

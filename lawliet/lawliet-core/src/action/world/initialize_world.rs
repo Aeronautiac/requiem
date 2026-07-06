@@ -3,9 +3,12 @@
 * Initialize any necessary world state
 */
 
+use lawliet_types::command::{Command, CommandRecipient};
+
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, AddChargePool, CreateChannel,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        AddChargePool, CreateChannel,
     },
     helpers::get_charge_pool_mut,
 };
@@ -40,7 +43,13 @@ impl ActionInterface for InitializeWorld {
             }
         }
 
-        let channel_names: Vec<_> = eng.config.world_config.world_channels.keys().copied().collect();
+        let channel_names: Vec<_> = eng
+            .config
+            .world_config
+            .world_channels
+            .keys()
+            .copied()
+            .collect();
         for name in channel_names {
             let response = Action::CreateChannel(CreateChannel { loggable: true })
                 .handle(eng, ctx, actor, version, mutate)?;
@@ -48,7 +57,17 @@ impl ActionInterface for InitializeWorld {
                 let ActionResponse::CreateChannel(data) = response else {
                     unreachable!()
                 };
-                eng.world.world_channel_map.insert(name, data.id);
+                let channel_id = data.id;
+                eng.world.world_channel_map.insert(name, channel_id);
+
+                ctx.push_cmd(
+                    Command::MapWorldChannel {
+                        channel_id,
+                        channel_name: name,
+                    },
+                    CommandRecipient::System,
+                    eng.time,
+                );
             }
         }
 

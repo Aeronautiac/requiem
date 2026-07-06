@@ -3,6 +3,8 @@
 * Archive (disable) a bug.
 */
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
     action::{ActionInterface, ActionResponse},
     command::Command,
@@ -32,7 +34,7 @@ impl ActionInterface for ArchiveBug {
             Command::ArchiveBug {
                 bug_key: self.bug_id,
             },
-            None,
+            CommandRecipient::System,
             eng.time,
         );
 

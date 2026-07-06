@@ -12,7 +12,7 @@ impl AbilityInterface for AnonymousAnnouncement {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        _: &mut ActionContext,
+        ctx: &mut ActionContext,
         _: &crate::action::ActionActor,
         _: AbilityKey,
         _: u8,
@@ -20,10 +20,12 @@ impl AbilityInterface for AnonymousAnnouncement {
     ) -> super::AbilityResult {
         cmd_all_deferred(
             eng,
+            ctx,
             Command::AnonymousAnnouncement {
                 content: self.content.clone(),
             },
             Modifier::NoPresence.into(),
+            true,
         );
 
         Ok(())

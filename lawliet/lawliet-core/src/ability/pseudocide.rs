@@ -49,6 +49,7 @@ impl AbilityInterface for Pseudocide {
 
         cmd_all_deferred(
             eng,
+            ctx,
             Command::Death {
                 true_name: self.true_name.to_lowercase(),
                 death_message: self.death_message.clone(),
@@ -57,6 +58,7 @@ impl AbilityInterface for Pseudocide {
                 ability_transferred: self.ability_transferred,
             },
             Modifier::NoPresence.into(),
+            true,
         );
 
         Ok(())

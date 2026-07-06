@@ -3,13 +3,12 @@
 * Set the owner of a group chat
 */
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
-    action::{
-        ActionInterface, ActionError, ActionResponse,
-    },
+    action::{ActionError, ActionInterface, ActionResponse},
     actor::modifier::Modifier,
     command::Command,
-    common::{ActorKey, GroupchatKey},
     helpers::{actor_id, get_actor, get_gc_mut, get_player},
 };
 
@@ -54,7 +53,7 @@ impl ActionInterface for SetGroupchatOwner {
                     owner: false,
                     gc_id: self.groupchat_id,
                 },
-                Some(old),
+                CommandRecipient::Player(old),
                 eng.time,
             );
         }
@@ -64,7 +63,7 @@ impl ActionInterface for SetGroupchatOwner {
                     owner: true,
                     gc_id: self.groupchat_id,
                 },
-                Some(new),
+                CommandRecipient::Player(new),
                 eng.time,
             );
         }

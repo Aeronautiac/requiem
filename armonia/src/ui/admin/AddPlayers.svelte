@@ -6,14 +6,14 @@
   import Input from "$lib/components/ui/input/input.svelte";
   import * as Select from "$lib/components/ui/select";
   import { getContext } from "svelte";
-  import type { ActionRequest, Role } from "./bindings";
-  import { ROLES } from "./constants";
+  import type { ActionRequest, Role } from "../../bindings";
+  import { ROLES } from "../../constants";
   import type { Router } from "$lib/router";
   import { ROUTER_KEY } from "$lib/router";
   import { Button } from "$lib/components/ui/button";
-  import { GAME_STATE_KEY, GameState } from "./game_state.svelte.ts";
-  import { Flash } from "./flash.svelte.ts";
-  import FlashDisplay from "./Flash.svelte";
+  import { GAME_STATE_KEY, GameState } from "../../game_state.svelte.ts";
+  import { Flash } from "../../flash.svelte.ts";
+  import FlashDisplay from "../Flash.svelte";
 
   const router = getContext<Router>(ROUTER_KEY);
   const game_state = getContext<GameState>(GAME_STATE_KEY);

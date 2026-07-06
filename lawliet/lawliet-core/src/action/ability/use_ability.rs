@@ -3,6 +3,8 @@
 * Use an ability
 */
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
     ability::AbilityInterface,
     action::{
@@ -93,7 +95,7 @@ impl ActionInterface for UseAbility {
                     ability_id: self.ability_id,
                     owner_id: actor_id,
                 },
-                Some(actor_id),
+                CommandRecipient::Player(actor_id),
                 eng.time,
             );
         }
