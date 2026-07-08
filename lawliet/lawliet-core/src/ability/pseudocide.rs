@@ -60,6 +60,8 @@ impl AbilityInterface for Pseudocide {
             },
             Modifier::NoPresence.into(),
             true,
+            true,
+            mutate,
         );
 
         Ok(())

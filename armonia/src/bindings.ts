@@ -914,7 +914,7 @@ export type ActionResponse =
 export type Command =
   | { Death: { target_id: ActorKey, true_name: string; death_message: string; role: Role; notebook_transferred: boolean; ability_transferred: boolean } }
   | { Kidnapping: { target_id: ActorKey; duration: number } }
-  | { KidnapReveal: Record<string, never> }
+  | { KidnapReveal: { kidnapper: ActorKey | null } }
   | { PseudocideRevival: { target_id: ActorKey } }
   | { AnonymousAnnouncement: { content: string } }
   | { MapOrg: { org_id: ActorKey; actor_id: ActorKey } }

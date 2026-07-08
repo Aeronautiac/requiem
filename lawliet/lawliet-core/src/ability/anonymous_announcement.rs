@@ -16,7 +16,7 @@ impl AbilityInterface for AnonymousAnnouncement {
         _: &crate::action::ActionActor,
         _: AbilityKey,
         _: u8,
-        _: bool,
+        mutate: bool,
     ) -> super::AbilityResult {
         cmd_all_deferred(
             eng,
@@ -26,6 +26,8 @@ impl AbilityInterface for AnonymousAnnouncement {
             },
             Modifier::NoPresence.into(),
             true,
+            true,
+            mutate,
         );
 
         Ok(())

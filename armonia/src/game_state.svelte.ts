@@ -4,11 +4,11 @@ import { slotKeyFromString, slotKeyToString } from "./bindings";
 
 // store all messages and events in the top level, but give every view a copy 
 
-export type WorldEventData = {
+export type WorldEvent = {
   Death: {
-    target_id: ActorKey,
-    true_name: String,
-    death_message: String,
+    target_id: string,
+    true_name: string,
+    death_message: string,
     role: Role,
     notebook_transferred: boolean,
     ability_transferred: boolean,
@@ -16,21 +16,21 @@ export type WorldEventData = {
 } |
 {
   PseudocideRevival: {
-    target_id: ActorKey,
+    target_id: string,
   }
 } | {
   Kidnapping: {
-    target_id: ActorKey,
+    target_id: string,
     duration: number,
+  }
+} | {
+  KidnapReveal: {
+    kidnapper: string | null, // null = the kidnapper stayed anonymous
   }
 } | {
   AnonymousAnnouncement: {
     content: string,
   }
-}
-
-export type WorldEvent = {
-  data: WorldEventData,
 }
 
 export type WriteEvent = {
@@ -73,7 +73,7 @@ export type Channel = {
   kind: ChannelKind;
   name: string;
   archived: boolean;
-  events: ChannelEvent[];
+  events: GameEvent[];
 }
 
 export type Message = {
@@ -81,9 +81,9 @@ export type Message = {
   content: string,
 }
 
-export type ChannelEvent = {
+export type GameEvent = {
   timestamp: number,
-  data: { Message: Message } | { Write: WriteEvent } | { World: WorldEvent },
+  data: { Message: Message } | { Write: WriteEvent } | WorldEvent,
 }
 
 export interface AbilityView {
@@ -112,12 +112,10 @@ export interface AbilityView {
 //
 // only channels which players have had view permissions for at some point should be rendered
 
-// TODO:
-// rewrite things to fit this new model. it will work.
-
 // what a specific player can see
 export class GameView {
   channel_perms = new SvelteMap<string, ChannelPerms>();
+  events: GameEvent[] = $state([]); // should only store world events
   abilities = new SvelteMap<string, AbilityView>();
 
   // structuredClone can't clone a GameView: it drops the class prototype and
@@ -131,6 +129,9 @@ export class GameView {
     }
     for (const [id, ability] of this.abilities) {
       copy.abilities.set(id, $state.snapshot(ability));
+    }
+    for (const event of this.events) {
+      copy.events.push(event);
     }
     return copy;
   }
@@ -154,15 +155,17 @@ export function new_channel(kind: ChannelKind, name: string): Channel {
   return channel;
 }
 
-function recipientToView(rec: CommandRecipient) {
-  if (typeof (rec) === 'string') {
-    if (rec == "System")
-      return "Admin";
-    return rec;
-  } else {
-    const id = rec.Player;
-    return slotKeyToString(id);
+// Maps a command recipient to the key of the view it targets. Player recipients
+// key by their slot; the string variants map to the standing views: System is the
+// admin view (world events emitted with include_system land here), BasePlayer is
+// the Base template. Returns undefined only for an unhandled recipient.
+function recipientToView(rec: CommandRecipient): string | undefined {
+  if (typeof rec !== "string") {
+    return slotKeyToString(rec.Player);
   }
+  if (rec === "System") return "System";
+  if (rec === "BasePlayer") return "Base";
+  return undefined;
 }
 
 function recipientToPlayer(recipient: CommandRecipient): string | undefined {
@@ -175,12 +178,21 @@ function recipientToPlayer(recipient: CommandRecipient): string | undefined {
 export class GameState {
   #channel_to_notebook = new SvelteMap<string, string>();
   #notebook_to_channel = new SvelteMap<string, string>();
+  // The real News channel's key once one exists (set in MapWorldChannel). $state so
+  // that views resolving news's backing channel recompute the moment it's assigned —
+  // otherwise selecting news before the channel exists never picks up its perms.
+  // Left pointing at a stale key after removal so news falls back to event-log-only.
+  news_channel_id = $state<string | null>(null);
   channels = new SvelteMap<string, Channel>();
   players = new SvelteMap<string, Player>();
   views = new SvelteMap<string, GameView>();
 
   constructor() {
     this.views.set("Base", new GameView());
+    // System (admin) is not a player: it's never cloned from Base and bypasses
+    // channel perms (see is_admin), so its perms/abilities stay empty. It exists
+    // to hold the state authority can't cover, like the world-event stream.
+    this.views.set("System", new GameView());
   }
 
   private new_view(key: string) {
@@ -246,7 +258,15 @@ export class GameState {
         kind = "Role";
       }
 
-      this.channels.set(slotKeyToString(channel_id), new_channel(kind, channel_name));
+      const key = slotKeyToString(channel_id);
+      // News is special: it must always appear to exist even after the underlying
+      // channel is removed (world events render into it regardless of the channel's
+      // existence or the viewer's perms). Remember its id so the UI can find it.
+      if (channel_name === "News") {
+        this.news_channel_id = key;
+      }
+
+      this.channels.set(key, new_channel(kind, channel_name));
 
       return;
     }
@@ -290,9 +310,24 @@ export class GameState {
       return;
     }
 
-    // can only be directed to system
+    // RemoveChannel is per-player: the target player is no longer a member (e.g. a
+    // notebook that transferred away), so drop the channel from THAT player's view
+    // only. The channel still exists globally for whoever else holds it — deleting it
+    // globally here would wipe it for the new owner who was just granted access.
     if ("RemoveChannel" in cmd) {
-      this.channels.delete(slotKeyToString(cmd.RemoveChannel.channel_id));
+      const player_id = recipientToPlayer(recipient);
+      if (player_id) {
+        this.views
+          .get(player_id)
+          ?.channel_perms.delete(slotKeyToString(cmd.RemoveChannel.channel_id));
+      }
+      return;
+    }
+
+    // DeleteChannel removes the channel globally (system-directed); the channel
+    // ceases to exist for everyone.
+    if ("DeleteChannel" in cmd) {
+      this.channels.delete(slotKeyToString(cmd.DeleteChannel.channel_id));
       return;
     }
 
@@ -343,7 +378,7 @@ export class GameState {
 
     if ("UpdateAbilityView" in cmd) {
       const { ability_id, ability_name, usages_remaining, iterations_to_reset } = cmd.UpdateAbilityView;
-      const view = this.views.get(recipientToView(recipient));
+      const view = this.views.get(recipientToView(recipient) ?? "");
       if (view) {
         const id = slotKeyToString(ability_id);
         const existing = view.abilities.get(id);
@@ -359,9 +394,92 @@ export class GameState {
     }
 
     if ("RemoveAbility" in cmd) {
-      this.views.get(recipientToView(recipient))
-        ?.abilities.delete(slotKeyToString(cmd.RemoveAbility.ability_id));
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      view?.abilities.delete(slotKeyToString(cmd.RemoveAbility.ability_id));
       return;
+    }
+
+    if ("Death" in cmd) {
+      const death = cmd.Death;
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      if (view) {
+        view.events.push({
+          timestamp,
+          data: {
+            Death: {
+              target_id: slotKeyToString(death.target_id),
+              true_name: death.true_name,
+              death_message: death.death_message,
+              role: death.role,
+              notebook_transferred: death.notebook_transferred,
+              ability_transferred: death.ability_transferred,
+            }
+          }
+        });
+      }
+    }
+
+    if ("AnonymousAnnouncement" in cmd) {
+      const annc = cmd.AnonymousAnnouncement;
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      if (view) {
+        view.events.push({
+          timestamp,
+          data: {
+            AnonymousAnnouncement: {
+              content: annc.content
+            }
+          }
+        });
+      }
+    }
+
+    if ("Kidnapping" in cmd) {
+      const kidnapping = cmd.Kidnapping;
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      if (view) {
+        view.events.push({
+          timestamp,
+          data: {
+            Kidnapping: {
+              target_id: slotKeyToString(kidnapping.target_id),
+              duration: kidnapping.duration,
+            }
+          }
+        });
+      }
+    }
+
+    if ("KidnapReveal" in cmd) {
+      const reveal = cmd.KidnapReveal;
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      if (view) {
+        view.events.push({
+          timestamp,
+          data: {
+            KidnapReveal: {
+              kidnapper: reveal.kidnapper
+                ? slotKeyToString(reveal.kidnapper)
+                : null,
+            }
+          }
+        });
+      }
+    }
+
+    if ("PseudocideRevival" in cmd) {
+      const revival = cmd.PseudocideRevival;
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      if (view) {
+        view.events.push({
+          timestamp,
+          data: {
+            PseudocideRevival: {
+              target_id: slotKeyToString(revival.target_id),
+            }
+          }
+        });
+      }
     }
   }
 
@@ -374,6 +492,10 @@ export class GameState {
 
   base_view(): GameView {
     return this.views.get("Base")!;
+  }
+
+  system_view(): GameView {
+    return this.views.get("System")!;
   }
 
   add_player(id: ActorKey, display_name: string) {

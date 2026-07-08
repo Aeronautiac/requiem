@@ -24,6 +24,10 @@
     }
 
     for (const ch_key of game.channels.keys()) {
+      // News is rendered separately and always (even when it doesn't exist or the
+      // viewer has no perms), so skip it here to avoid rendering it twice.
+      if (ch_key === game.news_channel_id) continue;
+
       if (ui.viewer === "Admin") {
         push(ch_key);
       } else {
@@ -38,14 +42,20 @@
     return map;
   });
 
+
   // for dropdown
   // const open = new SvelteSet<ChannelKind>(CHANNEL_KINDS);
 </script>
 
 <div class="flex flex-col p-2">
-  {#if channel_categories.size === 0}
-    <p class="px-2 py-1 text-xs text-neutral-600">No channels</p>
-  {/if}
+  <button
+    class="w-full text-left px-3 py-1 rounded text-sm hover:bg-neutral-800 text-neutral-300 {ui.is_news
+      ? 'bg-neutral-800'
+      : ''}"
+    onclick={() => ui.select_news()}
+  >
+    News
+  </button>
 
   {#each channel_categories.keys() as category}
     {#each channel_categories.get(category)! as key}
@@ -57,7 +67,7 @@
             : 'text-neutral-300'} {ui.selected_channel === key
             ? 'bg-neutral-800'
             : ''}"
-          onclick={() => (ui.selected_channel = key)}
+          onclick={() => ui.select_channel(key)}
         >
           {channel.name}
         </button>

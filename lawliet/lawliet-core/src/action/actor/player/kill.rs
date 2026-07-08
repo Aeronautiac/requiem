@@ -185,6 +185,8 @@ impl ActionInterface for Kill {
                 },
                 Modifier::NoPresence.into(),
                 true,
+                true,
+                mutate,
             );
         }
 

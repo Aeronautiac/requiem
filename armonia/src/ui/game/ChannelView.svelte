@@ -3,7 +3,7 @@
   import Input from "$lib/components/ui/input/input.svelte";
   import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
-  import type { ChannelEvent, GameState } from "../../game_state.svelte.ts";
+  import type { GameEvent, GameState } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
   import { ROUTER_KEY } from "$lib/router";
   import type { Router } from "$lib/router";
@@ -12,6 +12,7 @@
   import { viewerToActor } from "../../types";
   import Button from "$lib/components/ui/button/button.svelte";
   import Message from "./Message.svelte";
+  import Announcement from "./Announcement.svelte";
   import NotebookWrite from "./NotebookWrite.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
@@ -25,30 +26,59 @@
   // Admin implicitly has every permission; players go by their channel_perms entry
   // (which may be absent, meaning no access).
   const is_admin = $derived(ui.viewer === "Admin");
+
+  // News is its own selection, not a channel — it always exists on the frontend and
+  // carries no channel data. Its backing channel (for messages and perms) is
+  // news_channel_id, which may be absent; that's only a lookup, never news's identity.
+  // Every other channel is keyed directly by selected_channel. World events render
+  // regardless (see the events derived) since they live per-view, not on the channel.
+  const is_news = $derived(ui.is_news);
+  const backing_channel_id = $derived(
+    is_news ? game.news_channel_id : ui.selected_channel,
+  );
+
   const current_channel = $derived(
-    ui.selected_channel ? game.channels.get(ui.selected_channel) : undefined,
+    backing_channel_id ? game.channels.get(backing_channel_id) : undefined,
   );
   const current_perms = $derived(
-    ui.selected_channel
-      ? game.views.get(ui.viewer)?.channel_perms.get(ui.selected_channel)
+    backing_channel_id
+      ? game.views.get(ui.viewer)?.channel_perms.get(backing_channel_id)
       : undefined,
   );
   const archived = $derived(current_channel?.archived ?? false);
+  // You can only send in a channel that actually exists. For news with no backing
+  // channel this is false, so it isn't interactable — only the event log shows.
   // Archived channels are read-only for everyone, admin included.
   const can_send = $derived(
-    !archived && (is_admin || (current_perms?.send ?? false)),
+    current_channel != null &&
+      !archived &&
+      (is_admin || (current_perms?.send ?? false)),
   );
   const can_read = $derived(is_admin || (current_perms?.read ?? false));
   const is_notebook = $derived(current_channel?.kind === "Notebook");
   const notebook_id = $derived(
-    ui.selected_channel
-      ? game.notebook_for_channel(ui.selected_channel)
+    backing_channel_id
+      ? game.notebook_for_channel(backing_channel_id)
       : undefined,
   );
   let write_open = $state(false);
 
+  // Admin reads the System view's world events; players read their own.
+  // TODO: engine must emit world events to System for this to be populated.
+  const current_view = $derived(
+    is_admin ? game.system_view() : game.views.get(ui.viewer),
+  );
+  // News may be selected without a backing channel object, so fall back to a name.
+  const header_name = $derived(channel_name ?? (is_news ? "News" : ""));
+
   function get_channel_name(): string | null {
-    return game.channels.get(ui.selected_channel ?? "")?.name ?? null;
+    return backing_channel_id
+      ? (game.channels.get(backing_channel_id)?.name ?? null)
+      : null;
+  }
+
+  function player_name(id: string): string {
+    return game.players.get(id)?.display_name ?? "Unknown";
   }
 
   function sender_display(): ActorDisplay {
@@ -70,13 +100,15 @@
   }
 
   async function send_message() {
-    if (!ui.selected_channel || !message_content.trim()) return;
+    // backing_channel_id resolves news to its real channel key; can_send already
+    // gates the box on the channel existing, so this is null only defensively.
+    if (!backing_channel_id || !message_content.trim()) return;
     const request: ActionRequest = {
       actor: viewerToActor(ui.viewer),
       timestamp: Date.now(),
       payload: {
         SendMessage: {
-          channel_id: slotKeyFromString(ui.selected_channel),
+          channel_id: slotKeyFromString(backing_channel_id),
           display: sender_display(),
           content: message_content.trim(),
         },
@@ -88,35 +120,41 @@
   }
 
   // based on the context, choose which events to include, push them into a unified list, and then sort the list
-  const events: ChannelEvent[] = $derived.by(() => {
-    if (!ui.selected_channel) {
+  const events: GameEvent[] = $derived.by(() => {
+    // Nothing selected → nothing to show. News (which has no channel key) still
+    // counts as selected, so gate on the selection itself, not the channel key.
+    if (!ui.selected) {
       return [];
     }
 
-    // The selected channel can outlive access to it: switching to a viewer with
-    // no perms entry, or a channel being removed while selected. Both leave us
-    // without a channel/perms to read, so bail out with an empty list.
+    let accum: GameEvent[] = [];
+
+    // News always shows the viewer's world events (deaths, anonymous
+    // announcements). These are game events, not channel messages, so they render
+    // regardless of whether the news channel currently exists or the viewer has
+    // any perms for it.
+    if (is_news && current_view) {
+      accum = accum.concat(current_view.events);
+    }
+
+    // Channel messages/writes follow the normal perm rules. The channel object may
+    // be absent — a channel removed while still selected, or news that doesn't
+    // currently exist — in which case there are simply no messages to add.
     const channel = current_channel;
-    if (!channel) {
-      return [];
+    if (channel) {
+      // Full history if admin or currently readable; if the viewer was once a real
+      // member (had_positive) but read is now off, only messages up to the cutoff;
+      // otherwise (never a member, e.g. L & Watari) → nothing.
+      if (can_read) {
+        accum = accum.concat(channel.events);
+      } else if (current_perms && current_perms.had_positive) {
+        accum = accum.concat(
+          channel.events.filter(
+            (val) => val.timestamp <= current_perms.read_updated,
+          ),
+        );
+      }
     }
-
-    let accum: ChannelEvent[] = [];
-
-    // Full history if admin or currently readable; if read was revoked but once
-    // existed, only messages up to the cutoff; no perms entry at all → nothing.
-    if (can_read) {
-      accum = accum.concat(channel.events);
-    } else if (current_perms) {
-      accum = accum.concat(
-        channel.events.filter(
-          (val) => val.timestamp <= current_perms.read_updated,
-        ),
-      );
-    }
-
-    // TODO:
-    // world events and similar
 
     // oldest to newest
     accum.sort((a, b) => a.timestamp - b.timestamp);
@@ -127,7 +165,7 @@
   // Switching channels always lands at the bottom. The <main> element is reused
   // across channels, so its scrollTop would otherwise carry over from the last one.
   $effect(() => {
-    ui.selected_channel; // track: re-run on channel switch
+    ui.selected; // track: re-run when the selected channel/news changes
     scroller?.scrollTo({ top: scroller.scrollHeight });
   });
 
@@ -144,13 +182,13 @@
 </script>
 
 <div class="h-full w-full bg-neutral-900 text-neutral-100">
-  {#if ui.selected_channel}
+  {#if ui.selected}
     <div class="grid h-full w-full grid-rows-[auto_1fr_auto]">
       <header
         class="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-800 px-4 shadow-sm"
       >
         <span class="text-lg font-medium text-neutral-500">#</span>
-        <span class="font-semibold text-neutral-100">{channel_name}</span>
+        <span class="font-semibold text-neutral-100">{header_name}</span>
         {#if archived}
           <span
             class="ml-1 rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-neutral-400"
@@ -168,27 +206,72 @@
               content={event.data.Message.content}
               timestamp={event.timestamp}
             />
-          {:else if "World" in event.data}
-            <div class="px-4 py-1 text-xs italic text-neutral-500">
-              World event
-            </div>
           {:else if "Write" in event.data}
             <div class="px-4 py-1 text-xs italic text-neutral-500">
               Notebook write
             </div>
+          {:else if "Death" in event.data}
+            {@const d = event.data.Death}
+            <Announcement
+              color="#ef4444"
+              description="Death"
+              content={`${player_name(d.target_id)} has died.\nReal name: ${d.true_name}\nRole: ${d.role}${d.death_message ? `\n\n${d.death_message}` : ""}`}
+            />
+          {:else if "AnonymousAnnouncement" in event.data}
+            <Announcement
+              color="#a855f7"
+              description="Anonymous Announcement"
+              content={event.data.AnonymousAnnouncement.content}
+            />
+          {:else if "PseudocideRevival" in event.data}
+            {@const r = event.data.PseudocideRevival}
+            <Announcement
+              color="#10b981"
+              description="Revival"
+              content={`${player_name(r.target_id)} is alive.`}
+            />
+          {:else if "KidnapReveal" in event.data}
+            {@const kr = event.data.KidnapReveal}
+            <Announcement
+              color="#f59e0b"
+              description="Kidnap Reveal"
+              content={kr.kidnapper
+                ? `${player_name(kr.kidnapper)} was revealed as a kidnapper.`
+                : "A kidnapping was revealed, but the kidnapper stayed anonymous."}
+            />
+          {:else if "Kidnapping" in event.data}
+            {@const k = event.data.Kidnapping}
+            <!-- TODO: the engine doesn't reveal the victim, so naming them here is
+                 wrong and this event is largely useless as-is. Placeholder render
+                 until kidnapping either reveals the victim or is reworked/removed. -->
+            <Announcement
+              color="#f59e0b"
+              description="Kidnapping"
+              content={`${player_name(k.target_id)} has been kidnapped.`}
+            />
           {/if}
         {/each}
 
-        {#if !can_read}
-          {#if current_perms}
-            <!-- read is off but a perms entry exists (revoked, or spawned without
-                 read): show history up to the cutoff, no new messages. -->
+        {#if is_news}
+          {#if !can_read}
+            <!-- news always renders world events (announcements) above; only the
+                 chat messages are gated. Spell out the events-vs-messages split. -->
+            <div class="px-4 py-3 text-center text-xs text-neutral-500">
+              You don't have access to this channel. Announcements above are game
+              events and are always shown here — but you can't see chat messages.
+            </div>
+          {/if}
+        {:else if !can_read}
+          {#if current_perms?.had_positive}
+            <!-- was once a real member but read is now off: show history up to
+                 the cutoff, no new messages. -->
             <div class="px-4 py-3 text-center text-xs text-neutral-500">
               You do not have read access to this channel. You will not receive
               new messages — only those up to your access cutoff are shown.
             </div>
           {:else}
-            <!-- no perms entry at all (e.g. switched to a view without access) -->
+            <!-- never a member: no perms entry, or an entry that was never
+                 positive (e.g. L & Watari). -->
             <div class="px-4 py-3 text-center text-xs text-neutral-500">
               You don't have access to this channel.
             </div>

@@ -460,24 +460,39 @@ pub fn cmd_all_deferred(
     cmd: Command,
     blocking_modifiers: Modifiers,
     include_base: bool,
+    include_system: bool,
+    mutate: bool,
 ) {
-    let player_ids: Vec<ActorKey> = eng
-        .world
-        .actors
-        .iter()
-        .filter_map(|(id, actor)| matches!(actor.actor_type, ActorType::Player(_)).then_some(id))
-        .collect();
-    for id in player_ids {
-        let payload = CommandPayload {
-            timestamp: eng.time,
-            recipient: CommandRecipient::Player(id),
-            cmd: cmd.clone(),
-        };
-        let def_cmd = DeferredCommand {
-            payload: payload.clone(),
-            blocking_modifiers,
-        };
-        eng.deferred_commands.push(def_cmd);
+    // Queuing deferred commands mutates engine state, so it must only happen on the
+    // execute pass. Without the mutate gate the validate pass queues them too, and
+    // every deferred command ends up delivered twice.
+    if mutate {
+        let player_ids: Vec<ActorKey> = eng
+            .world
+            .actors
+            .iter()
+            .filter_map(|(id, actor)| {
+                matches!(actor.actor_type, ActorType::Player(_)).then_some(id)
+            })
+            .collect();
+        for id in player_ids {
+            let payload = CommandPayload {
+                timestamp: eng.time,
+                recipient: CommandRecipient::Player(id),
+                cmd: cmd.clone(),
+            };
+            let def_cmd = DeferredCommand {
+                payload: payload.clone(),
+                blocking_modifiers,
+            };
+            eng.deferred_commands.push(def_cmd);
+        }
+    }
+    // System (admin) receives the event immediately and unredacted: admin isn't
+    // subject to per-player blocking, so this is not deferred. Kept separate from
+    // include_base so a deceptive event can be fed to players while admin sees truth.
+    if include_system {
+        ctx.push_cmd(cmd.clone(), CommandRecipient::System, eng.time);
     }
     if include_base {
         ctx.push_cmd(cmd, CommandRecipient::BasePlayer, eng.time);
