@@ -9,7 +9,7 @@
 
 use std::{env::current_exe, process::Stdio};
 
-use lawliet_types::{action::ActionRequest, engine::{ExecutionResult, IpcExecutionResult}};
+use lawliet_types::{action::ActionRequest, engine::ExecutionResult};
 use serde::Serialize;
 use tauri::State;
 use tokio::{
@@ -97,6 +97,7 @@ async fn coordinator_loop(
             line = async { stdout.as_mut().unwrap().next_line().await }, if stdout.is_some() => {
                 match line {
                     Ok(Some(text)) => {
+                        dbg!(&text);
                         let result: ExecutionResult = serde_json::from_str(&text).unwrap();
 
                         if to_discard > 0 {
@@ -107,7 +108,7 @@ async fn coordinator_loop(
                                 valid_inputs.push(action);
                             }
                             let _ = tx.send(AppExecution {
-                                exec_result: AppExecResult::Standard(result.into()),
+                                exec_result: AppExecResult::Standard(result),
                             });
                         }
                     }
@@ -124,7 +125,7 @@ async fn coordinator_loop(
 
 #[derive(Debug, Serialize)]
 pub enum AppExecResult {
-    Standard(IpcExecutionResult),
+    Standard(ExecutionResult),
     Crashed,
 }
 

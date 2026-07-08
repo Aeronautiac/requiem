@@ -21,7 +21,8 @@ pub struct Engine {
     pub rng_state: Pcg32,
 }
 
-pub type ExecutionResult = Result<(ActionResponse, ActionContext), ActionError>;
+pub type ExecutionResult =
+    Result<(ActionResponse, ActionContext), (ActionError, ActionContext)>;
 
 impl Engine {
     pub fn new() -> Self {
@@ -82,11 +83,11 @@ impl Engine {
     // recursively execute sub-actions
     // return only top level result (with the combined command buffer)
     pub fn execute(&mut self, action: ActionRequest) -> ExecutionResult {
-        if action.timestamp < self.time {
-            return Err(ActionError::TimeAlreadyPassed);
-        }
-
         let mut ctx = ActionContext { commands: vec![] };
+
+        if action.timestamp < self.time {
+            return Err((ActionError::TimeAlreadyPassed, ctx));
+        }
 
         // first execute pending jobs
         loop {
@@ -107,8 +108,12 @@ impl Engine {
         // the command sequence matters because the frontend is also event based
         ctx.commands.reverse();
 
-        let main_response = self.execute_atomic(&mut ctx, action)?;
-        Ok((main_response, ctx))
+        // Return the accumulated context (job-queue catchup commands) whether or
+        // not the requested action succeeds — only the Ok/Err payload differs.
+        match self.execute_atomic(&mut ctx, action) {
+            Ok(main_response) => Ok((main_response, ctx)),
+            Err(err) => Err((err, ctx)),
+        }
     }
 
     // every update to any place in code after the engine is publicly usable requires the version number to be incremented by 1

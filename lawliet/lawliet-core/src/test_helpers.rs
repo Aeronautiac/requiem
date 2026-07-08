@@ -149,7 +149,7 @@ pub fn quick_write(
     });
     match result {
         Ok(response) => Ok(response.0),
-        Err(err) => Err(err),
+        Err((err, _)) => Err(err),
     }
 }
 

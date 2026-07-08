@@ -172,6 +172,7 @@ impl ActionInterface for Kill {
                 eng,
                 ctx,
                 Command::Death {
+                    target_id: self.target_id,
                     true_name: String::from(&*true_name),
                     death_message: if let Some(msg) = &self.death_message {
                         msg.clone()

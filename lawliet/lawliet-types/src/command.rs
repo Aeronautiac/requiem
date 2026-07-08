@@ -60,6 +60,7 @@ pub enum Command {
     // the server doesn't need to intercept this because hosts can directly view the event log and
     // view/modify actor states
     Death {
+        target_id: ActorKey,
         true_name: String,
         death_message: String,
         role: Role,
@@ -157,6 +158,7 @@ pub enum Command {
         channel_id: ChannelKey,
     },
 
+    // there is only one instance of every world channel. a frontend must keep this in mind.
     MapWorldChannel {
         channel_id: ChannelKey,
         channel_name: WorldChannelName,

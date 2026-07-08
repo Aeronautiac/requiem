@@ -19,15 +19,14 @@
   );
 
   function label(key: string): string {
-    return key === "Admin"
-      ? "Admin"
-      : (game.players.get(key)?.display_name ?? key);
+    return game.players.get(key)?.display_name ?? key;
   }
 </script>
 
 <Select.Root type="single" bind:value={ui.viewer}>
   <Select.Trigger class="h-8 text-sm">{label(ui.viewer)}</Select.Trigger>
   <Select.Content>
+    <Select.Item value={"Admin"}>{"Admin"}</Select.Item>
     {#each viewers as viewer (viewer)}
       <Select.Item value={viewer}>{label(viewer)}</Select.Item>
     {/each}

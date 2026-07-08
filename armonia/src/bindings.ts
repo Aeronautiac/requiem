@@ -912,7 +912,7 @@ export type ActionResponse =
 // ////////////////////////////////////////////////////////////
 
 export type Command =
-  | { Death: { true_name: string; death_message: string; role: Role; notebook_transferred: boolean; ability_transferred: boolean } }
+  | { Death: { target_id: ActorKey, true_name: string; death_message: string; role: Role; notebook_transferred: boolean; ability_transferred: boolean } }
   | { Kidnapping: { target_id: ActorKey; duration: number } }
   | { KidnapReveal: Record<string, never> }
   | { PseudocideRevival: { target_id: ActorKey } }
@@ -966,7 +966,7 @@ export type ActionContext = {
 
 export type IpcExecutionResult =
   | { Ok: [ActionResponse, ActionContext] }
-  | { Err: ActionError };
+  | { Err: [ActionError, ActionContext] };
 
 export type AppExecResult =
   | { Standard: IpcExecutionResult }

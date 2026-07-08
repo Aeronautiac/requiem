@@ -51,6 +51,7 @@ impl AbilityInterface for Pseudocide {
             eng,
             ctx,
             Command::Death {
+                target_id: self.target_id,
                 true_name: self.true_name.to_lowercase(),
                 death_message: self.death_message.clone(),
                 role: self.role,

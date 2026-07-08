@@ -5,10 +5,10 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, CreateAndGiveAbility, GiveRole, AddChargePool, AddToWorldChannels,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, AddChargePool, AddToWorldChannels, CreateAndGiveAbility, GiveRole,
     },
     common::{ActorKey, Version},
-    config::role::Role,
     engine::Engine,
     helpers::{get_actor_mut, get_charge_pool_mut},
 };

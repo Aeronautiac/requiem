@@ -1,21 +1,89 @@
 import { SvelteMap } from "svelte/reactivity";
-import type { AbilityName, ActorDisplay, ActorKey, ActionResponse, AppExecution, CommandPayload, CommandRecipient } from "./bindings";
-import { slotKeyToString } from "./bindings";
+import type { AbilityName, ActorDisplay, ActorKey, ActionResponse, AppExecution, CommandPayload, CommandRecipient, NotebookKey, Role } from "./bindings";
+import { slotKeyFromString, slotKeyToString } from "./bindings";
 
-export type ChannelKind = "Lounge" | "Groupchat" | "Notebook" | "News" | "Courtroom" | "Prison" | "Collaboration" | "Raw";
+// store all messages and events in the top level, but give every view a copy 
 
-export interface Channel {
+export type WorldEventData = {
+  Death: {
+    target_id: ActorKey,
+    true_name: String,
+    death_message: String,
+    role: Role,
+    notebook_transferred: boolean,
+    ability_transferred: boolean,
+  }
+} |
+{
+  PseudocideRevival: {
+    target_id: ActorKey,
+  }
+} | {
+  Kidnapping: {
+    target_id: ActorKey,
+    duration: number,
+  }
+} | {
+  AnonymousAnnouncement: {
+    content: string,
+  }
+}
+
+export type WorldEvent = {
+  data: WorldEventData,
+}
+
+export type WriteEvent = {
+  user_id: string,
+  notebook_id: string,
+  message: string,
+  true_name: string,
+  delay: number,
+  successes_remaining: number,
+  attempts_remaining: number,
+  success: boolean,
+  target_saved: boolean,
+}
+
+
+export type ChannelPerms = {
+  read: boolean;
+  read_updated: number; // the time that read perms were last updated
+  send: boolean;
+  loggability_control: boolean;
+  had_positive: boolean; // if any perm here has been positive, this is set permanently
+}
+
+// world is a generic world channel type for things like prison
+// a role channel may be a world channel, but it is stronger than the world category
+// these categories are used only for display and hold no significance outside of it
+// key world channels should get their own data at a higher level and point to the lower level channel
+export type ChannelKind = "Raw" | "Lounge" | "Groupchat" | "Notebook" | "Role" | "World";
+export const CHANNEL_KINDS: ChannelKind[] = [
+  "Raw",
+  "Lounge",
+  "Groupchat",
+  "Notebook",
+  "Role",
+  "World",
+];
+
+
+export type Channel = {
   kind: ChannelKind;
   name: string;
-  read: boolean;
-  send: boolean;
   archived: boolean;
+  events: ChannelEvent[];
 }
 
 export type Message = {
-  timestamp: number,
   sender_display: ActorDisplay,
   content: string,
+}
+
+export type ChannelEvent = {
+  timestamp: number,
+  data: { Message: Message } | { Write: WriteEvent } | { World: WorldEvent },
 }
 
 export interface AbilityView {
@@ -24,11 +92,48 @@ export interface AbilityView {
   iterations_to_reset: number;
 }
 
-// What a specific player can see.
+// world events are stored individually within each view
+// channels and similar are stored top level
+// when rendering, you must create a list of channel events (world events + viewable messages)
+// and render those rather than rendering directly
+//
+// anything that would be stored in a database should be stored top level
+// as a rule of thumb
+//
+// we can do away with the concept of an admin game view state with this in mind
+// admin can be treated as a viewer of everything and a valid viewing state, but it doesn't need its own local state.
+// that is a player specific thing.
+//
+// channel permissions can be stored within the channel object itself per actor
+//
+// its ok to transform data during a rendering pass. this is already bloated to hell (its web dev) and its not core logic.
+// its an interaction layer.
+// cases where this would need to be done are cases like rendering channel events where things like messages, world events, etc... should be combined into one list and then rendered.
+//
+// only channels which players have had view permissions for at some point should be rendered
+
+// TODO:
+// rewrite things to fit this new model. it will work.
+
+// what a specific player can see
 export class GameView {
-  channels = new SvelteMap<string, Channel>();
-  // ability_id string → ability view
+  channel_perms = new SvelteMap<string, ChannelPerms>();
   abilities = new SvelteMap<string, AbilityView>();
+
+  // structuredClone can't clone a GameView: it drops the class prototype and
+  // turns the SvelteMaps into plain Maps (losing reactivity), and can throw on
+  // the maps' internal reactive state. Clone by hand into fresh SvelteMaps,
+  // copying each value object so views don't share mutable state.
+  clone(): GameView {
+    const copy = new GameView();
+    for (const [id, perms] of this.channel_perms) {
+      copy.channel_perms.set(id, { ...perms });
+    }
+    for (const [id, ability] of this.abilities) {
+      copy.abilities.set(id, $state.snapshot(ability));
+    }
+    return copy;
+  }
 }
 
 export interface Player {
@@ -38,6 +143,15 @@ export interface Player {
 export function new_player(display_name: string): Player {
   let player: Player = $state({ display_name });
   return player;
+}
+
+// Channels must be $state proxies, not plain objects: SvelteMap only tracks its
+// own get/set, not deep mutations to stored values. Without this, channel.events.push
+// and channel.archived = true don't trigger reactivity, so views go stale until
+// something else (e.g. switching channels) forces a recompute.
+export function new_channel(kind: ChannelKind, name: string): Channel {
+  let channel: Channel = $state({ kind, name, archived: false, events: [] });
+  return channel;
 }
 
 function recipientToView(rec: CommandRecipient) {
@@ -51,19 +165,26 @@ function recipientToView(rec: CommandRecipient) {
   }
 }
 
+function recipientToPlayer(recipient: CommandRecipient): string | undefined {
+  if (typeof (recipient) !== 'string') {
+    const id = recipient.Player;
+    return slotKeyToString(id);
+  }
+}
+
 export class GameState {
+  #channel_to_notebook = new SvelteMap<string, string>();
+  #notebook_to_channel = new SvelteMap<string, string>();
+  channels = new SvelteMap<string, Channel>();
   players = new SvelteMap<string, Player>();
   views = new SvelteMap<string, GameView>();
-  channel_messages = new SvelteMap<string, Message[]>();
-  #pending = new Map<string, Channel>();
 
   constructor() {
-    this.views.set("Admin", new GameView());
     this.views.set("Base", new GameView());
   }
 
   private new_view(key: string) {
-    this.views.set(key, new GameView());
+    this.views.set(key, this.base_view().clone());
   }
 
   process_response(response: AppExecution, args?: Record<string, unknown>): string | void {
@@ -73,7 +194,13 @@ export class GameState {
     }
     const result = exec_result.Standard;
     if ("Err" in result) {
-      return String(result.Err);
+      // Even on failure the engine returns catchup commands (job-queue world
+      // progression) that must still be applied. Only then surface the error.
+      const [error, context] = result.Err;
+      for (const cmd of context.commands) {
+        this.handle_command(cmd);
+      }
+      return String(error);
     }
     const [action_response, context] = result.Ok;
     this.handle_response(action_response, args);
@@ -82,135 +209,150 @@ export class GameState {
     }
   }
 
-  private pending_channel(channel_id: string, kind: ChannelKind, name: string) {
-    let ch = this.#pending.get(channel_id);
-    if (!ch) {
-      ch = { kind, name, read: false, send: false, archived: false };
-      this.#pending.set(channel_id, ch);
-    } else {
-      ch.kind = kind;
-      ch.name = name;
-    }
-    // Retroactively fix any views that already stored this channel as Raw.
-    for (const view of this.views.values()) {
-      const existing = view.channels.get(channel_id);
-      if (existing) {
-        existing.kind = kind;
-        existing.name = name;
-      }
-    }
-  }
-
   private handle_command({ recipient, cmd, timestamp }: CommandPayload) {
     if ("MapLounge" in cmd) {
       const { lounge_id, channel_id } = cmd.MapLounge;
       const name = `lounge-${lounge_id.idx}v${lounge_id.version}`;
-      this.pending_channel(slotKeyToString(channel_id), "Lounge", name);
+
+      this.channels.set(slotKeyToString(channel_id), new_channel("Lounge", name));
+
       return;
     }
 
     if ("MapGc" in cmd) {
-      this.pending_channel(slotKeyToString(cmd.MapGc.channel_id), "Groupchat", "groupchat");
       return;
     }
 
     if ("MapNotebook" in cmd) {
       const { notebook_id, channel_id } = cmd.MapNotebook;
       const channel_key = slotKeyToString(channel_id);
-      this.pending_channel(channel_key, "Notebook", `death-notebook-${notebook_id.idx}v${notebook_id.version}`);
+      const notebook_key = slotKeyToString(notebook_id);
+
+      this.channels.set(
+        slotKeyToString(channel_id),
+        new_channel("Notebook", "Death Notebook" + '-' + notebook_id.idx + 'v' + notebook_id.version),
+      );
+      this.#channel_to_notebook.set(channel_key, notebook_key);
+      this.#notebook_to_channel.set(notebook_key, channel_key);
+
       return;
     }
 
     if ("MapWorldChannel" in cmd) {
       const { channel_name, channel_id } = cmd.MapWorldChannel;
-      const channel_key = slotKeyToString(channel_id);
 
-      if (channel_name == "News") {
-        this.pending_channel(channel_key, "Raw", "News");
-      } else if (channel_name == "General") {
-        this.pending_channel(channel_key, "Raw", "General");
-      } else if (channel_name == "Prison") {
-        this.pending_channel(channel_key, "Raw", "Prison");
-      } else if (channel_name == "LAndWatari") {
-        this.pending_channel(channel_key, "Raw", "L & Watari");
+      let kind: ChannelKind = "World";
+      if (channel_name == "LAndWatari") {
+        kind = "Role";
       }
+
+      this.channels.set(slotKeyToString(channel_id), new_channel(kind, channel_name));
 
       return;
     }
 
+    // this should only ever be targetted toward players. ignore anything else.
     if ("UpdateChannelView" in cmd) {
       const channel_id = slotKeyToString(cmd.UpdateChannelView.channel_id);
-      const pending = this.#pending.get(channel_id);
 
-      const view = this.views.get(recipientToView(recipient))!;
-      const read = (cmd.UpdateChannelView.perms & 2) !== 0;
-      const send = (cmd.UpdateChannelView.perms & 1) !== 0;
-      let channel = view.channels.get(channel_id);
-      if (channel) {
-        channel.read = read;
-        channel.send = send;
-      } else {
-        let ch: Channel = $state({
-          kind: pending?.kind ?? "Raw",
-          name: pending?.name ?? "raw",
+      const player_id = recipientToPlayer(recipient);
+      if (player_id) {
+        const view = this.views.get(player_id)!;
+        const loggability_control = (cmd.UpdateChannelView.perms & 3) !== 0;
+        const read = (cmd.UpdateChannelView.perms & 2) !== 0;
+        const send = (cmd.UpdateChannelView.perms & 1) !== 0;
+        const old_perms = view.channel_perms.get(channel_id);
+        let read_updated: number = timestamp;
+        let had_positive = read || send || loggability_control;
+        if (old_perms) {
+          if (read === old_perms.read) {
+            read_updated = old_perms.read_updated;
+          }
+          had_positive ||= old_perms.had_positive;
+        }
+        const perms: ChannelPerms = {
+          had_positive,
+          read_updated,
+          loggability_control,
           read,
           send,
-          archived: false,
-        });
-        view.channels.set(channel_id, ch);
+        };
+        view.channel_perms.set(channel_id, perms);
       }
-
       return;
     }
 
+    // can only be directed to system
     if ("ArchiveChannel" in cmd) {
       const channel_id = slotKeyToString(cmd.ArchiveChannel.channel_id);
-      for (const view of this.views.values()) {
-        const ch = view.channels.get(channel_id);
-        if (ch) ch.archived = true;
-      }
+      const ch = this.channels.get(channel_id);
+      if (ch) ch.archived = true;
       return;
     }
 
+    // can only be directed to system
     if ("RemoveChannel" in cmd) {
-      this.views.get(recipientToView(recipient))
-        ?.channels.delete(slotKeyToString(cmd.RemoveChannel.channel_id));
+      this.channels.delete(slotKeyToString(cmd.RemoveChannel.channel_id));
       return;
     }
 
     if ("AddMessage" in cmd) {
       const { channel_id, content, sender_display } = cmd.AddMessage;
       const key = slotKeyToString(channel_id);
-      const arr = this.channel_messages.get(key) ?? [];
-      this.channel_messages.set(key, [...arr, { sender_display, content, timestamp }]);
+      // its not possible to add a message to a channel that doesnt exist
+      const channel = this.channels.get(key)!;
+      channel.events.push({
+        timestamp,
+        data: {
+          Message: {
+            content,
+            sender_display,
+          }
+        },
+      });
       return;
     }
 
+    // writes are treated the exact same as messages, so they should be stored using the same mechanism 
     if ("NotebookWrite" in cmd) {
-      // const { notebook_id, user_id, message, true_name, delay, successes_remaining, attempts_remaining, success, target_saved } = cmd.NotebookWrite;
-      // const channel_key = this.#notebook_to_channel.get(slotKeyToString(notebook_id));
-      // if (channel_key) {
-      //   const arr = this.events.get(channel_key) ?? [];
-      //   this.events.set(channel_key, [...arr, { type: "notebook_write", user_id, true_name, success, target_saved, delay, message, successes_remaining, attempts_remaining, timestamp }]);
-      // }
-      // return;
+      const { notebook_id, user_id, message, true_name, delay, successes_remaining, attempts_remaining, success, target_saved } = cmd.NotebookWrite;
+      const channel_key = this.#notebook_to_channel.get(slotKeyToString(notebook_id));
+      if (channel_key) {
+        const channel = this.channels.get(channel_key);
+        if (channel) {
+          channel.events.push({
+            timestamp,
+            data: {
+              Write: {
+                user_id: slotKeyToString(user_id),
+                notebook_id: slotKeyToString(notebook_id),
+                message: message ?? "",
+                target_saved,
+                success,
+                successes_remaining,
+                attempts_remaining,
+                delay,
+                true_name,
+              }
+            }
+          });
+        }
+      }
+      return;
     }
 
     if ("UpdateAbilityView" in cmd) {
-      if (typeof (recipient) !== "string") {
-        const player = recipient.Player;
-        const { ability_id, ability_name, usages_remaining, iterations_to_reset } = cmd.UpdateAbilityView;
-        const view = this.views.get(slotKeyToString(player));
-        if (view) {
-          const id = slotKeyToString(ability_id);
-          const existing = view.abilities.get(id);
-          if (existing) {
-            existing.usages_remaining = usages_remaining;
-            existing.iterations_to_reset = iterations_to_reset;
-          } else {
-            let av: AbilityView = $state({ name: ability_name, usages_remaining, iterations_to_reset });
-            view.abilities.set(id, av);
-          }
+      const { ability_id, ability_name, usages_remaining, iterations_to_reset } = cmd.UpdateAbilityView;
+      const view = this.views.get(recipientToView(recipient));
+      if (view) {
+        const id = slotKeyToString(ability_id);
+        const existing = view.abilities.get(id);
+        if (existing) {
+          existing.usages_remaining = usages_remaining;
+          existing.iterations_to_reset = iterations_to_reset;
+        } else {
+          let av: AbilityView = $state({ name: ability_name, usages_remaining, iterations_to_reset });
+          view.abilities.set(id, av);
         }
       }
       return;
@@ -230,8 +372,8 @@ export class GameState {
     }
   }
 
-  admin_view(): GameView {
-    return this.views.get("Admin")!;
+  base_view(): GameView {
+    return this.views.get("Base")!;
   }
 
   add_player(id: ActorKey, display_name: string) {
@@ -246,6 +388,13 @@ export class GameState {
       if (av.name === name) result.push(id);
     }
     return result;
+  }
+
+  // The notebook backing a notebook channel, if any. Used by the write menu to
+  // target the correct notebook.
+  notebook_for_channel(channel_key: string): NotebookKey | undefined {
+    const notebook_key = this.#channel_to_notebook.get(channel_key);
+    return notebook_key ? slotKeyFromString(notebook_key) : undefined;
   }
 }
 
