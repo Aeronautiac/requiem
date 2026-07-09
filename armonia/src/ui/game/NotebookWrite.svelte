@@ -9,9 +9,8 @@
   import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
+  import { now } from "../../time.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import { ROUTER_KEY } from "$lib/router";
-  import type { Router } from "$lib/router";
   import type { ActionRequest, NotebookKey } from "../../bindings";
   import { viewerToActor } from "../../types";
   import { Flash } from "../../flash.svelte.ts";
@@ -25,7 +24,6 @@
 
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
-  const router = getContext<Router>(ROUTER_KEY);
 
   let true_name = $state("");
   let death_message = $state("");
@@ -61,7 +59,7 @@
     }
     const request: ActionRequest = {
       actor: viewerToActor(ui.viewer),
-      timestamp: Date.now(),
+      timestamp: now(),
       payload: {
         WriteName: {
           true_name: true_name.trim(),
@@ -71,7 +69,7 @@
         },
       },
     };
-    const err = game.process_response(await router.sendAction(request));
+    const err = await game.dispatch(request);
     if (err) {
       flash.set_error(`Write failed: ${err}`);
     } else {

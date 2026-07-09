@@ -48,7 +48,13 @@ pub enum AbilityBehaviour {
     PublicKidnap(PublicKidnap),
     AnonymousProsecute(AnonymousProsecute),
     Autopsy(Autopsy),
+    CreateGroupchat(CreateGroupchat),
 }
+
+// The group-chat creation ability carries no arguments: the caller is the creator,
+// and the engine makes them the owner and a member.
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct CreateGroupchat {}
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
 pub struct AnonymousAnnouncement {

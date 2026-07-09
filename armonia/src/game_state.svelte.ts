@@ -1,6 +1,8 @@
-import { SvelteMap } from "svelte/reactivity";
-import type { AbilityName, ActorDisplay, ActorKey, ActionResponse, AppExecution, CommandPayload, CommandRecipient, NotebookKey, Role } from "./bindings";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
+import type { AbilityName, ActionRequest, ActorDisplay, ActorKey, ActionResponse, CommandPayload, CommandRecipient, GroupchatKey, NotebookKey, Role } from "./bindings";
 import { slotKeyFromString, slotKeyToString } from "./bindings";
+import { Sequencer } from "./lib/protocol";
+import type { StreamingRouter, CommandBatch } from "./lib/protocol";
 
 // store all messages and events in the top level, but give every view a copy 
 
@@ -140,6 +142,8 @@ export class GameView {
   channel_views = new SvelteMap<string, ChannelView>();
   events: GameEvent[] = $state([]); // should only store world events
   abilities = new SvelteMap<string, AbilityView>();
+  // gc keys this viewer owns (from GcOwnerStatus). Drives the group-chat controls.
+  owned_gcs = new SvelteSet<string>();
 
   // structuredClone can't clone a GameView: it drops the class prototype and
   // turns the SvelteMaps into plain Maps (losing reactivity), and can throw on
@@ -164,6 +168,9 @@ export class GameView {
     }
     for (const [id, ability] of this.abilities) {
       copy.abilities.set(id, $state.snapshot(ability));
+    }
+    for (const gc of this.owned_gcs) {
+      copy.owned_gcs.add(gc);
     }
     for (const event of this.events) {
       copy.events.push(event);
@@ -232,6 +239,7 @@ function recipientToPlayer(recipient: CommandRecipient): string | undefined {
 export class GameState {
   #channel_to_notebook = new SvelteMap<string, string>();
   #notebook_to_channel = new SvelteMap<string, string>();
+  #channel_to_gc = new SvelteMap<string, string>();
   // The real News channel's key once one exists (set in MapWorldChannel). $state so
   // that views resolving news's backing channel recompute the moment it's assigned —
   // otherwise selecting news before the channel exists never picks up its perms.
@@ -241,6 +249,13 @@ export class GameState {
   players = new SvelteMap<string, Player>();
   views = new SvelteMap<string, GameView>();
 
+  // Transport is injected (attach). The router is the swap seam; the client model
+  // doesn't care whether it's Tauri or a websocket to the server.
+  #router: StreamingRouter | null = null;
+  // All state changes — replies to our own requests AND pushed external-action
+  // batches — funnel through one ordered pipe so they can never race into a desync.
+  #seq = new Sequencer();
+
   constructor() {
     this.views.set("Base", new GameView());
     // System (admin) is not a player: it's never cloned from Base and bypasses
@@ -249,12 +264,31 @@ export class GameState {
     this.views.set("System", new GameView());
   }
 
-  private new_view(key: string) {
-    this.views.set(key, this.base_view().clone());
+  // Wire up the transport. Pushed external-action command batches are fed into the
+  // same seq-ordered pipe as our own replies. Returns nothing; call once at startup.
+  attach(router: StreamingRouter) {
+    this.#router = router;
+    router.onCommands((batch: CommandBatch) =>
+      this.#seq.ingest({
+        seq: batch.seq,
+        run: () => this.apply_batch(batch.commands),
+      }),
+    );
   }
 
-  process_response(response: AppExecution, args?: Record<string, unknown>): string | void {
-    const { exec_result } = response;
+  // Fire this client's own action. Returns an error string on failure (for UX), or
+  // void on success. The reply's state effect (response data + commands) is applied
+  // through the same seq-ordered pipe as external batches — never inline — so a reply
+  // that arrives ahead of a still-pending external batch waits its turn instead of
+  // desyncing. The error, being UX only, is read and returned immediately.
+  async dispatch(
+    request: ActionRequest,
+    args?: Record<string, unknown>,
+  ): Promise<string | void> {
+    if (!this.#router) throw new Error("dispatch before attach");
+    const { seq, execution } = await this.#router.sendAction(request);
+    const { exec_result } = execution;
+
     if (exec_result === "Crashed") {
       return "The engine has crashed.";
     }
@@ -263,16 +297,30 @@ export class GameState {
       // Even on failure the engine returns catchup commands (job-queue world
       // progression) that must still be applied. Only then surface the error.
       const [error, context] = result.Err;
-      for (const cmd of context.commands) {
-        this.handle_command(cmd);
-      }
+      this.#seq.ingest({ seq, run: () => this.apply_batch(context.commands) });
       return String(error);
     }
-    const [action_response, context] = result.Ok;
-    this.handle_response(action_response, args);
-    for (const cmd of context.commands) {
+    const [response, context] = result.Ok;
+    this.#seq.ingest({
+      seq,
+      run: () => {
+        this.handle_response(response, args);
+        this.apply_batch(context.commands);
+      },
+    });
+  }
+
+  // Apply a batch of commands in push order. The public seam the Sequencer drives;
+  // command ordering within a batch is significant (create-before-reference,
+  // last-write-wins perms), so never reorder.
+  apply_batch(commands: CommandPayload[]) {
+    for (const cmd of commands) {
       this.handle_command(cmd);
     }
+  }
+
+  private new_view(key: string) {
+    this.views.set(key, this.base_view().clone());
   }
 
   private handle_command({ recipient, cmd, timestamp }: CommandPayload) {
@@ -286,6 +334,26 @@ export class GameState {
     }
 
     if ("MapGc" in cmd) {
+      const { gc_id, channel_id } = cmd.MapGc;
+      const channel_key = slotKeyToString(channel_id);
+      const name = `groupchat-${gc_id.idx}v${gc_id.version}`;
+
+      this.channels.set(channel_key, new_channel("Groupchat", name));
+      this.#channel_to_gc.set(channel_key, slotKeyToString(gc_id));
+
+      return;
+    }
+
+    // Per-recipient: tells this player whether they now own the gc. Drives the
+    // group-chat controls (only the owner may add/remove/transfer).
+    if ("GcOwnerStatus" in cmd) {
+      const player_id = recipientToPlayer(recipient);
+      if (player_id) {
+        const view = this.views.get(player_id);
+        const gc_key = slotKeyToString(cmd.GcOwnerStatus.gc_id);
+        if (cmd.GcOwnerStatus.owner) view?.owned_gcs.add(gc_key);
+        else view?.owned_gcs.delete(gc_key);
+      }
       return;
     }
 
@@ -606,6 +674,12 @@ export class GameState {
   notebook_for_channel(channel_key: string): NotebookKey | undefined {
     const notebook_key = this.#channel_to_notebook.get(channel_key);
     return notebook_key ? slotKeyFromString(notebook_key) : undefined;
+  }
+
+  // The group chat backing a channel, if any. Used by the group-chat controls to
+  // target the correct gc. Returns the string key (use slotKeyFromString for actions).
+  gc_key_for_channel(channel_key: string): string | undefined {
+    return this.#channel_to_gc.get(channel_key);
   }
 
   // Resolve an ActorDisplay to the name to show. Raw displays look up the player's

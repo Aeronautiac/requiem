@@ -8,14 +8,12 @@
   import { getContext } from "svelte";
   import type { ActionRequest, Role } from "../../bindings";
   import { ROLES } from "../../constants";
-  import type { Router } from "$lib/router";
-  import { ROUTER_KEY } from "$lib/router";
+  import { now } from "../../time.svelte.ts";
   import { Button } from "$lib/components/ui/button";
   import { GAME_STATE_KEY, GameState } from "../../game_state.svelte.ts";
   import { Flash } from "../../flash.svelte.ts";
   import FlashDisplay from "../Flash.svelte";
 
-  const router = getContext<Router>(ROUTER_KEY);
   const game_state = getContext<GameState>(GAME_STATE_KEY);
 
   let display_name: string = $state("");
@@ -50,7 +48,7 @@
       onclick={async () => {
         const request: ActionRequest = {
           actor: "Admin", // later enforce who is allowed to do this on the server
-          timestamp: Date.now(),
+          timestamp: now(),
           payload: {
             AddPlayer: {
               true_name: true_name,
@@ -59,10 +57,7 @@
           },
         };
 
-        const err = game_state.process_response(
-          await router.sendAction(request),
-          { display_name },
-        );
+        const err = await game_state.dispatch(request, { display_name });
         if (err) {
           flash.set_error(`Action Failed: ${err}`);
         } else {

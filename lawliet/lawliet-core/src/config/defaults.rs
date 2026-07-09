@@ -34,10 +34,16 @@ pub struct DefaultConfig {
 
 pub fn default_defaults() -> DefaultConfig {
     DefaultConfig {
-        universal_abilities: vec![AbilityIdentifier {
-            name: AbilityName::Contact,
-            variant: 0,
-        }],
+        universal_abilities: vec![
+            AbilityIdentifier {
+                name: AbilityName::Contact,
+                variant: 0,
+            },
+            AbilityIdentifier {
+                name: AbilityName::CreateGroupchat,
+                variant: 0,
+            },
+        ],
         death_message: "They died from a sudden heart attack.".into(),
         life_link_death_message: "They died because of a life link.".into(),
         execution_death_message: "They were found guilty and subsequently executed.".into(),

@@ -3,10 +3,9 @@
   import Input from "$lib/components/ui/input/input.svelte";
   import { GAME_STATE_KEY, displayKey } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
+  import { now } from "../../time.svelte.ts";
   import type { GameEvent, GameState } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import { ROUTER_KEY } from "$lib/router";
-  import type { Router } from "$lib/router";
   import type { ActionRequest, ActorDisplay } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
@@ -17,7 +16,6 @@
 
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
-  const router = getContext<Router>(ROUTER_KEY);
 
   let message_content = $state("");
   let channel_name = $derived(get_channel_name());
@@ -127,7 +125,7 @@
     if (!backing_channel_id || !message_content.trim()) return;
     const request: ActionRequest = {
       actor: viewerToActor(ui.viewer),
-      timestamp: Date.now(),
+      timestamp: now(),
       payload: {
         SendMessage: {
           channel_id: slotKeyFromString(backing_channel_id),
@@ -136,7 +134,7 @@
         },
       },
     };
-    game.process_response(await router.sendAction(request));
+    await game.dispatch(request);
     message_content = "";
     console.log("message sent");
   }

@@ -3,12 +3,15 @@
 * Add a player to a group chat
 */
 
+use indexmap::indexset;
+
 use crate::{
     action::{
-        ActionInterface, Action, ActionError, ActionResponse, SetGroupchatOwner,
+        Action, ActionError, ActionInterface, ActionResponse, SetGroupchatOwner, SetMember,
+        UpdateContactChannels,
     },
-    actor::modifier::Modifier,
-    common::{ActorKey, GroupchatKey},
+    actor::{ActorDisplay, modifier::Modifier},
+    channel::{ChannelMember, ChannelPermissions},
     helpers::{actor_id, get_actor, get_actor_mut, get_gc, get_gc_mut, get_player_mut},
 };
 
@@ -46,15 +49,33 @@ impl ActionInterface for AddToGroupchat {
             return Err(ActionError::CannotContact);
         }
 
-        let gc = get_gc_mut(eng, self.groupchat_id)?;
-        let channel_id = gc.channel_id;
-        if mutate {
-            gc.add_member(self.player_id);
-        }
+        let channel_id = get_gc(eng, self.groupchat_id)?.channel_id;
 
-        let player_data = get_player_mut(eng, self.player_id)?;
+        // The channel/cache wiring is only meaningful once we actually mutate, exactly
+        // like the lounge participant setup in create_lounge.
         if mutate {
+            // Create the channel member entry so the player can see the gc channel.
+            // UpdateContactChannels then applies the real (Send|View) perms from state.
+            Action::SetMember(SetMember {
+                channel_id,
+                player_id: self.player_id,
+                settings: Some(ChannelMember {
+                    perms: ChannelPermissions::EMPTY,
+                    displays: indexset![ActorDisplay::Raw(self.player_id)],
+                }),
+            })
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+
+            let gc = get_gc_mut(eng, self.groupchat_id)?;
+            gc.add_member(self.player_id);
+
+            let player_data = get_player_mut(eng, self.player_id)?;
             player_data.add_groupchat(self.groupchat_id);
+
+            Action::UpdateContactChannels(UpdateContactChannels {
+                player_id: self.player_id,
+            })
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         if self.owner {
@@ -62,13 +83,7 @@ impl ActionInterface for AddToGroupchat {
                 groupchat_id: self.groupchat_id,
                 owner: Some(self.player_id),
             })
-            .handle(
-                eng,
-                ctx,
-                &ActionActor::System,
-                version,
-                mutate,
-            )?;
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         Ok(ActionResponse::AddToGroupchat(AddToGroupchatResponse {}))

@@ -41,7 +41,7 @@ export type Role =
 
 export type AbilityName =
   | "Contact"
-  | "CreateGroupChat"
+  | "CreateGroupchat"
   | "AnonymousContact"
   | "FalseAnonymousContact"
   | "AnonymousAnnouncement"
@@ -192,7 +192,8 @@ export type AbilityBehaviour =
   | { Pseudocide: { target_id: ActorKey; true_name: string; death_message: string; role: Role; notebook_transferred: boolean; ability_transferred: boolean } }
   | { Gun: { target_id: ActorKey } }
   | { AnonymousAnnouncement: { content: string } }
-  | { AnonymousContact: { target: ActorKey } };
+  | { AnonymousContact: { target: ActorKey } }
+  | { CreateGroupchat: Record<string, never> };
 
 // ////////////////////////////////////////////////////////////
 // ACTION STRUCTS

@@ -9,13 +9,12 @@
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
-  // Admin first, then players sorted by slot index
+  // Player views only, sorted by slot index. Base and System are internal views (not
+  // real players), so they're kept out of the picker; Admin is offered separately below.
   const viewers = $derived(
-    Array.from(game.views.keys()).sort((a, b) => {
-      if (a === "Admin") return -1;
-      if (b === "Admin") return 1;
-      return parseInt(a) - parseInt(b);
-    }),
+    Array.from(game.views.keys())
+      .filter((k) => k !== "Base" && k !== "System")
+      .sort((a, b) => parseInt(a) - parseInt(b)),
   );
 
   function label(key: string): string {

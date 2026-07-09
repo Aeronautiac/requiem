@@ -2,10 +2,9 @@
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
+  import { now } from "../../time.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import { ROUTER_KEY } from "$lib/router";
-  import type { Router } from "$lib/router";
   import type { ActionRequest, ActorDisplay } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { Flash } from "../../flash.svelte.ts";
@@ -14,7 +13,6 @@
 
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
-  const router = getContext<Router>(ROUTER_KEY);
 
   let expanded = $state<string | null>(null);
   let channel_open = $state(true);
@@ -57,7 +55,7 @@
   async function contact(target_id_str: string, ability_id_str: string) {
     const request: ActionRequest = {
       actor: viewerToActor(ui.viewer),
-      timestamp: Date.now(),
+      timestamp: now(),
       payload: {
         UseAbility: {
           ability_id: slotKeyFromString(ability_id_str),
@@ -67,7 +65,7 @@
         },
       },
     };
-    const err = game.process_response(await router.sendAction(request));
+    const err = await game.dispatch(request);
     if (err) {
       flash.set_error(`Contact failed: ${err}`);
     } else {

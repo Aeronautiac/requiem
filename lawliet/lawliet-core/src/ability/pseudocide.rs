@@ -45,7 +45,7 @@ impl AbilityInterface for Pseudocide {
                 target_id: self.target_id,
             },
         })
-        .handle(eng, ctx, actor, version, mutate)?;
+        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
         cmd_all_deferred(
             eng,
