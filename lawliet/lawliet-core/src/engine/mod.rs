@@ -89,7 +89,11 @@ impl Engine {
             return Err((ActionError::TimeAlreadyPassed, ctx));
         }
 
-        // first execute pending jobs
+        // Commands are emitted in push order; local ordering needs (e.g. perms before
+        // members) are handled with reversed scopes inside the relevant actions, so no
+        // global reversal happens here. execute_atomic resets ctx between passes, so
+        // drain each job's commands into a separate buffer as we go.
+        let mut commands = Vec::new();
         loop {
             if self.jobs.is_empty() {
                 break;
@@ -103,14 +107,18 @@ impl Engine {
             // ignore the errors of scheduled jobs.
             let job = self.jobs.pop().unwrap();
             let _ = self.execute_atomic(&mut ctx, job.request);
+            commands.append(&mut ctx.commands);
         }
 
-        // the command sequence matters because the frontend is also event based
-        ctx.commands.reverse();
+        let result = self.execute_atomic(&mut ctx, action);
+        commands.append(&mut ctx.commands);
 
-        // Return the accumulated context (job-queue catchup commands) whether or
-        // not the requested action succeeds — only the Ok/Err payload differs.
-        match self.execute_atomic(&mut ctx, action) {
+        // Catchup commands first, then the target action's, in the order they occurred.
+        ctx.commands = commands;
+
+        // Return the accumulated context (catchup + target) whether or not the
+        // requested action succeeds — only the Ok/Err payload differs.
+        match result {
             Ok(main_response) => Ok((main_response, ctx)),
             Err(err) => Err((err, ctx)),
         }

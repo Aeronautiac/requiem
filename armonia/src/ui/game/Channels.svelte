@@ -32,7 +32,7 @@
         push(ch_key);
       } else {
         let view = game.views.get(ui.viewer)!;
-        let perms = view.channel_perms.get(ch_key);
+        let perms = view.channel_views.get(ch_key)?.perms;
         if (perms && perms.had_positive) {
           push(ch_key);
         }

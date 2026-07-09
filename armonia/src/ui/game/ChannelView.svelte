@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getContext } from "svelte";
   import Input from "$lib/components/ui/input/input.svelte";
-  import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { GAME_STATE_KEY, displayKey } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import type { GameEvent, GameState } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
@@ -42,7 +42,7 @@
   );
   const current_perms = $derived(
     backing_channel_id
-      ? game.views.get(ui.viewer)?.channel_perms.get(backing_channel_id)
+      ? game.views.get(ui.viewer)?.channel_views.get(backing_channel_id)?.perms
       : undefined,
   );
   const archived = $derived(current_channel?.archived ?? false);
@@ -62,6 +62,25 @@
       : undefined,
   );
   let write_open = $state(false);
+
+  // The displays the viewer may send as in the current channel (their "send as"
+  // options, delivered by UpdateChannelView). Empty for admin (always sends as System).
+  const available_displays = $derived(
+    backing_channel_id
+      ? (game.views.get(ui.viewer)?.channel_views.get(backing_channel_id)
+          ?.displays ?? [])
+      : [],
+  );
+  let selected_display_key = $state<string | null>(null);
+
+  // Keep the selection valid as the channel (and thus the options) changes: if the
+  // current pick isn't available, fall back to the first option.
+  $effect(() => {
+    const keys = available_displays.map(displayKey);
+    if (!selected_display_key || !keys.includes(selected_display_key)) {
+      selected_display_key = keys[0] ?? null;
+    }
+  });
 
   // Admin reads the System view's world events; players read their own.
   // TODO: engine must emit world events to System for this to be populated.
@@ -83,7 +102,10 @@
 
   function sender_display(): ActorDisplay {
     if (ui.viewer === "Admin") return "System";
-    return { Raw: slotKeyFromString(ui.viewer) };
+    const chosen = available_displays.find(
+      (d) => displayKey(d) === selected_display_key,
+    );
+    return chosen ?? { Raw: slotKeyFromString(ui.viewer) };
   }
 
   function display_string(display: ActorDisplay): string {
@@ -286,6 +308,18 @@
 
       <footer class="shrink-0 px-4 pb-6 pt-1">
         <div class="flex items-center gap-2">
+          {#if can_send && available_displays.length > 1}
+            <!-- "send as" picker: only shown when the viewer has more than one display -->
+            <select
+              bind:value={selected_display_key}
+              class="rounded-lg bg-neutral-800 px-2 py-2 text-sm text-neutral-200"
+            >
+              {#each available_displays as d (displayKey(d))}
+                <option value={displayKey(d)}>{display_string(d)}</option>
+              {/each}
+            </select>
+          {/if}
+
           <div class="flex-1">
             {#if can_send}
               <form

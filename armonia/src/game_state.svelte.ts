@@ -113,8 +113,31 @@ export interface AbilityView {
 // only channels which players have had view permissions for at some point should be rendered
 
 // what a specific player can see
+// A single member of a channel, as seen by one viewer. Membership is per-view
+// because the same actor can be shown under different displays to different viewers
+// (deception). Keyed by display key -> member.
+export type ChannelMemberView = {
+  display: ActorDisplay;
+  perms: number;
+  // Sticky: set once this member has ever held a positive permission. A member that
+  // never had one isn't an effective member and shouldn't be shown as one.
+  had_positive: boolean;
+};
+
+// Everything a viewer knows about a channel they're a member of: their permissions
+// and the members they can see. The presence of an entry (hence perms) IS the
+// membership signal — non-members hold no entry and receive no member updates.
+export type ChannelView = {
+  perms: ChannelPerms;
+  members: SvelteMap<string, ChannelMemberView>;
+  // The displays this viewer may send as in this channel (their "send as" options).
+  displays: ActorDisplay[];
+};
+
 export class GameView {
-  channel_perms = new SvelteMap<string, ChannelPerms>();
+  // channel key -> the viewer's perms + visible members. Only channels the viewer is
+  // (or was) a member of appear here.
+  channel_views = new SvelteMap<string, ChannelView>();
   events: GameEvent[] = $state([]); // should only store world events
   abilities = new SvelteMap<string, AbilityView>();
 
@@ -124,8 +147,20 @@ export class GameView {
   // copying each value object so views don't share mutable state.
   clone(): GameView {
     const copy = new GameView();
-    for (const [id, perms] of this.channel_perms) {
-      copy.channel_perms.set(id, { ...perms });
+    for (const [id, cv] of this.channel_views) {
+      const members = new SvelteMap<string, ChannelMemberView>();
+      for (const [dkey, m] of cv.members) {
+        members.set(dkey, {
+          display: m.display,
+          perms: m.perms,
+          had_positive: m.had_positive,
+        });
+      }
+      copy.channel_views.set(id, {
+        perms: { ...cv.perms },
+        members,
+        displays: [...cv.displays],
+      });
     }
     for (const [id, ability] of this.abilities) {
       copy.abilities.set(id, $state.snapshot(ability));
@@ -135,6 +170,25 @@ export class GameView {
     }
     return copy;
   }
+}
+
+// Stable map key for an ActorDisplay (the tagged union isn't usable as a key directly).
+export function displayKey(d: ActorDisplay): string {
+  if (typeof d === "string") return d; // "Mysterious" | "System"
+  if ("Raw" in d) return `Raw:${slotKeyToString(d.Raw)}`;
+  if ("Org" in d) return `Org:${slotKeyToString(d.Org)}`;
+  return `Role:${d.Role}`;
+}
+
+// Channel permission bits, mirroring ChannelPermission in the engine.
+export const PERM_SEND = 1;
+export const PERM_VIEW = 2;
+export const PERM_LOGGABILITY = 4;
+
+// Whether a perms value grants at least one permission. Used to derive the sticky
+// had_positive flag — a membership is "effective" if it has EVER been positive.
+export function hasPositivePerms(perms: number): boolean {
+  return (perms & (PERM_SEND | PERM_VIEW | PERM_LOGGABILITY)) !== 0;
 }
 
 export interface Player {
@@ -278,10 +332,12 @@ export class GameState {
       const player_id = recipientToPlayer(recipient);
       if (player_id) {
         const view = this.views.get(player_id)!;
-        const loggability_control = (cmd.UpdateChannelView.perms & 3) !== 0;
-        const read = (cmd.UpdateChannelView.perms & 2) !== 0;
-        const send = (cmd.UpdateChannelView.perms & 1) !== 0;
-        const old_perms = view.channel_perms.get(channel_id);
+        const p = cmd.UpdateChannelView.perms;
+        const loggability_control = (p & PERM_LOGGABILITY) !== 0;
+        const read = (p & PERM_VIEW) !== 0;
+        const send = (p & PERM_SEND) !== 0;
+        const existing = view.channel_views.get(channel_id);
+        const old_perms = existing?.perms;
         let read_updated: number = timestamp;
         let had_positive = read || send || loggability_control;
         if (old_perms) {
@@ -297,7 +353,14 @@ export class GameState {
           read,
           send,
         };
-        view.channel_perms.set(channel_id, perms);
+        // Perms is the membership signal: an UpdateChannelView creates the channel
+        // entry if absent, preserving members if it already existed. Re-set the map key
+        // (rather than mutating in place) so perms/displays updates trigger reactivity.
+        view.channel_views.set(channel_id, {
+          perms,
+          members: existing?.members ?? new SvelteMap(),
+          displays: cmd.UpdateChannelView.displays,
+        });
       }
       return;
     }
@@ -317,9 +380,10 @@ export class GameState {
     if ("RemoveChannel" in cmd) {
       const player_id = recipientToPlayer(recipient);
       if (player_id) {
+        // Drops both perms and members for that player — they're no longer a member.
         this.views
           .get(player_id)
-          ?.channel_perms.delete(slotKeyToString(cmd.RemoveChannel.channel_id));
+          ?.channel_views.delete(slotKeyToString(cmd.RemoveChannel.channel_id));
       }
       return;
     }
@@ -328,6 +392,31 @@ export class GameState {
     // ceases to exist for everyone.
     if ("DeleteChannel" in cmd) {
       this.channels.delete(slotKeyToString(cmd.DeleteChannel.channel_id));
+      return;
+    }
+
+    // A member (identified by a display) was made visible in a channel. Only members
+    // of the channel receive these, so the channel entry already exists (perms first).
+    if ("ShowChannelMember" in cmd) {
+      const { channel_id, display, channel_perms } = cmd.ShowChannelMember;
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      const entry = view?.channel_views.get(slotKeyToString(channel_id));
+      if (entry) {
+        const key = displayKey(display);
+        const had_positive =
+          (entry.members.get(key)?.had_positive ?? false) ||
+          hasPositivePerms(channel_perms);
+        entry.members.set(key, { display, perms: channel_perms, had_positive });
+      }
+      return;
+    }
+
+    if ("RemoveChannelMember" in cmd) {
+      const { channel_id, display } = cmd.RemoveChannelMember;
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      view?.channel_views
+        .get(slotKeyToString(channel_id))
+        ?.members.delete(displayKey(display));
       return;
     }
 
@@ -517,6 +606,19 @@ export class GameState {
   notebook_for_channel(channel_key: string): NotebookKey | undefined {
     const notebook_key = this.#channel_to_notebook.get(channel_key);
     return notebook_key ? slotKeyFromString(notebook_key) : undefined;
+  }
+
+  // Resolve an ActorDisplay to the name to show. Raw displays look up the player's
+  // name; the rest are self-describing or intentionally opaque.
+  resolve_display(display: ActorDisplay): string {
+    if (display === "Mysterious") return "???";
+    if (display === "System") return "System";
+    if ("Raw" in display)
+      return this.players.get(slotKeyToString(display.Raw))?.display_name ?? "Unknown";
+    if ("Role" in display) return display.Role;
+    // TODO: orgs aren't modeled on the frontend yet. Once they are, resolve Org to
+    // the org's name (display.Org is its actor key) the way Role resolves to its name.
+    return "Org";
   }
 }
 
