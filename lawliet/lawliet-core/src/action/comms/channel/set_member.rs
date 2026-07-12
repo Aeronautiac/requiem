@@ -67,7 +67,7 @@ impl ActionInterface for SetMember {
                     displays: member.displays.clone(),
                     perms: member.perms,
                 },
-                CommandRecipient::Player(self.player_id),
+                CommandRecipient::Actor(self.player_id),
                 time,
             );
 
@@ -82,7 +82,7 @@ impl ActionInterface for SetMember {
                             display: *display,
                             channel_perms: member.perms,
                         },
-                        CommandRecipient::Player(self.player_id),
+                        CommandRecipient::Actor(self.player_id),
                         time,
                     );
                 }
@@ -102,7 +102,7 @@ impl ActionInterface for SetMember {
                             display: *display,
                             channel_perms: member.perms,
                         },
-                        CommandRecipient::Player(*id),
+                        CommandRecipient::Actor(*id),
                         time,
                     );
                 }
@@ -115,7 +115,7 @@ impl ActionInterface for SetMember {
                             channel_id: self.channel_id,
                             display: *display,
                         },
-                        CommandRecipient::Player(self.player_id),
+                        CommandRecipient::Actor(self.player_id),
                         time,
                     );
                 }
@@ -125,7 +125,7 @@ impl ActionInterface for SetMember {
                 Command::RemoveChannel {
                     channel_id: self.channel_id,
                 },
-                CommandRecipient::Player(self.player_id),
+                CommandRecipient::Actor(self.player_id),
                 time,
             );
 
@@ -143,7 +143,7 @@ impl ActionInterface for SetMember {
                                 channel_id: self.channel_id,
                                 display: *display,
                             },
-                            CommandRecipient::Player(*id),
+                            CommandRecipient::Actor(*id),
                             time,
                         );
                     }

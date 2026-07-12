@@ -5,7 +5,7 @@ use crate::{
     actor::{ActorDisplay, State},
     bug::BugSource,
     channel::ChannelMember,
-    chargepool::PoolLinkType,
+    chargepool::{ChargeConditions, PoolLinkType},
     command::{Command, CommandPayload, CommandRecipient},
     common::{
         AbilityKey, ActorKey, BugKey, ChannelKey, ChargeCount, ChargePoolKey, GroupchatKey,
@@ -88,6 +88,8 @@ pub enum ActionError {
     IncarcerationNotFound,
     ActorHasStrengthenedPresence,
     PersonalChannelLimitReached,
+    MustChooseSuccessor,
+    NoEyes,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -137,6 +139,7 @@ pub struct AddLink {
     pub weight: LinkWeight,
     pub link_type: PoolLinkType,
     pub volatile: bool,
+    pub condition: ChargeConditions,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -269,6 +272,18 @@ pub struct ChangeOrgLeaderResponse {}
 pub struct ChangeOrgLeader {
     pub org_id: ActorKey,
     pub new_leader: Option<ActorKey>,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct ResignLeadershipResponse {}
+
+// The org's current leader steps down; the new leader is chosen per the org's
+// LeadershipTransferPolicy. `chosen` is the successor named by the resigning leader,
+// used only when the org's policy allows Choose.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct ResignLeadership {
+    pub org_id: ActorKey,
+    pub chosen: Option<ActorKey>,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1115,6 +1130,7 @@ impl ActionContext {
 pub enum Action {
     NextIteration(NextIteration),
     ChangeOrgLeader(ChangeOrgLeader),
+    ResignLeadership(ResignLeadership),
     Kill(Kill),
     AddState(AddState),
     Revive(Revive),
@@ -1220,6 +1236,7 @@ pub enum ActionResponse {
     NextIteration(NextIterationResponse),
     CreatePersonalChannel(CreatePersonalChannelResponse),
     ChangeOrgLeader(ChangeOrgLeaderResponse),
+    ResignLeadership(ResignLeadershipResponse),
     Kill(KillResponse),
     AddState(AddStateResponse),
     AddPlayer(AddPlayerResponse),

@@ -478,7 +478,7 @@ pub fn cmd_all_deferred(
         for id in player_ids {
             let payload = CommandPayload {
                 timestamp: eng.time,
-                recipient: CommandRecipient::Player(id),
+                recipient: CommandRecipient::Actor(id),
                 cmd: cmd.clone(),
             };
             let def_cmd = DeferredCommand {

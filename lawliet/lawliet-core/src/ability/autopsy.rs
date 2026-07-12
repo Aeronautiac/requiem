@@ -36,10 +36,10 @@ impl AbilityInterface for Autopsy {
                 range: eng.config.defaults.autopsy_window,
                 redact_names: eng.config.defaults.autopsy_redaction,
             },
-            CommandRecipient::Player(user_id),
+            CommandRecipient::Actor(user_id),
             eng.time,
         );
 
-        Ok(())
+        Ok(super::AbilityStatus::Success)
     }
 }

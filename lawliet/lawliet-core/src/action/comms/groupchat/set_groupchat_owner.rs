@@ -53,7 +53,7 @@ impl ActionInterface for SetGroupchatOwner {
                     owner: false,
                     gc_id: self.groupchat_id,
                 },
-                CommandRecipient::Player(old),
+                CommandRecipient::Actor(old),
                 eng.time,
             );
         }
@@ -63,7 +63,7 @@ impl ActionInterface for SetGroupchatOwner {
                     owner: true,
                     gc_id: self.groupchat_id,
                 },
-                CommandRecipient::Player(new),
+                CommandRecipient::Actor(new),
                 eng.time,
             );
         }

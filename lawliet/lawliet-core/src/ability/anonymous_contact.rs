@@ -44,6 +44,6 @@ impl AbilityInterface for AnonymousContact {
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
-        Ok(())
+        Ok(super::AbilityStatus::Success)
     }
 }

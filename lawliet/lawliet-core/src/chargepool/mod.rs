@@ -1,4 +1,4 @@
-pub use lawliet_types::chargepool::PoolLinkType;
+pub use lawliet_types::chargepool::{ChargeCondition, ChargeConditions, PoolLinkType};
 
 use crate::common::{ChargeCount, ChargePoolKey, IterationCount, LinkWeight};
 use std::cmp::max;

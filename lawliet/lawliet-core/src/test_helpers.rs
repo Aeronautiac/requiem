@@ -343,6 +343,8 @@ pub fn quick_link(
             weight,
             link_type,
             volatile: false,
+            // test helper: subtract on any outcome, matching the pre-conditional behavior
+            condition: crate::chargepool::ChargeConditions::all(),
         }),
     })
     .unwrap();

@@ -30,6 +30,7 @@ pub struct DefaultConfig {
     pub kidnap_time: Time,
     pub autopsy_window: Time,
     pub autopsy_redaction: bool,
+    pub prosecution_autonomous: bool, // whether the plain Prosecute ability files autonomous trials
 }
 
 pub fn default_defaults() -> DefaultConfig {
@@ -60,5 +61,6 @@ pub fn default_defaults() -> DefaultConfig {
         kidnap_time: hrs(24),
         autopsy_window: hrs(6),
         autopsy_redaction: false,
+        prosecution_autonomous: true,
     }
 }

@@ -30,6 +30,6 @@ impl AbilityInterface for AnonymousAnnouncement {
             mutate,
         );
 
-        Ok(())
+        Ok(super::AbilityStatus::Success)
     }
 }

@@ -11,7 +11,7 @@ use crate::{
     action::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, AddChargePool,
     },
-    chargepool::PoolLink,
+    chargepool::{ChargeConditions, PoolLink},
     common::{AbilityKey, Variant},
     config::ability::{AbilityIdentifier, AbilityName, ConfigPoolLinkDetails},
     helpers::get_charge_pool_mut,
@@ -37,9 +37,10 @@ impl ActionInterface for AddAbility {
             return Err(ActionError::AbilityConfigNotFound);
         };
 
-        // Only create non-volatile links on ability creation
+        // Only create non-volatile links on ability creation. Each entry carries the
+        // config link's subtraction condition alongside its resolved PoolLink.
         let conf_links = &config.default_links.clone();
-        let mut links_to_create: Vec<PoolLink> = vec![];
+        let mut links_to_create: Vec<(PoolLink, ChargeConditions)> = vec![];
         for link in conf_links {
             match &link.details {
                 ConfigPoolLinkDetails::Individual(specifier) => {
@@ -55,20 +56,26 @@ impl ActionInterface for AddAbility {
                     if mutate {
                         let pool = get_charge_pool_mut(eng, data.id)?;
                         pool.on_link();
-                        links_to_create.push(PoolLink {
-                            link_dest: data.id,
-                            weight: link.weight,
-                            link_type: link.link_type,
-                        });
+                        links_to_create.push((
+                            PoolLink {
+                                link_dest: data.id,
+                                weight: link.weight,
+                                link_type: link.link_type,
+                            },
+                            link.condition,
+                        ));
                     }
                 }
                 ConfigPoolLinkDetails::World(pool_name) => {
-                    links_to_create.push(PoolLink {
-                        link_type: link.link_type,
-                        weight: link.weight,
-                        link_dest: *eng.world.pool_map.get(pool_name).unwrap(), // crash on
-                                                                                // failure. it must have been created before any abilities.
-                    });
+                    links_to_create.push((
+                        PoolLink {
+                            link_type: link.link_type,
+                            weight: link.weight,
+                            link_dest: *eng.world.pool_map.get(pool_name).unwrap(), // crash on
+                                                                                    // failure. it must have been created before any abilities.
+                        },
+                        link.condition,
+                    ));
                 }
                 ConfigPoolLinkDetails::Actor(_) => {} // if its an
                                                       // actor, it only binds when the ability changes owners
@@ -77,10 +84,10 @@ impl ActionInterface for AddAbility {
 
         let id = if mutate {
             let mut ability = Ability::new(self.ability_name, self.variant, self.transferrable);
-            for link in &links_to_create {
-                ability.add_link(link.link_dest, link.link_type, link.weight, false);
+            for (link, condition) in &links_to_create {
+                ability.add_link(link.link_dest, link.link_type, link.weight, false, *condition);
             }
-            for link in &links_to_create {
+            for (link, _) in &links_to_create {
                 let pool = get_charge_pool_mut(eng, link.link_dest)?;
                 pool.on_link();
             }

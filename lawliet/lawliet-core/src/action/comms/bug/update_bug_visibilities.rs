@@ -74,7 +74,7 @@ impl ActionInterface for UpdateBugVisibilities {
                                     bug_id: key,
                                     visible: true,
                                 },
-                                CommandRecipient::Player(owner),
+                                CommandRecipient::Actor(owner),
                                 eng.time,
                             );
                         }
@@ -87,7 +87,7 @@ impl ActionInterface for UpdateBugVisibilities {
                                 bug_id: key,
                                 visible: true,
                             },
-                            CommandRecipient::Player(*id),
+                            CommandRecipient::Actor(*id),
                             eng.time,
                         );
                     }

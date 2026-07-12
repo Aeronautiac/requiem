@@ -23,7 +23,9 @@ pub enum CommandRecipient {
     System,
     BasePlayer, // any player shall be fed these commands, even if the player was created AFTER the
     // command was initially sent
-    Player(ActorKey), // a player who already exists/is participating
+    // an actor (player or org) that already exists/is participating. for an org recipient,
+    // the frontend gates visibility per player by their view of the org's channel.
+    Actor(ActorKey),
 }
 
 impl CommandRecipient {
@@ -320,10 +322,13 @@ pub enum Command {
 
     /////=<TARGETTED>=/////
 
-    // update the view of an ability to reflect its current state
+    // update the view of an ability to reflect its current state. usages are split by
+    // outcome because conditional charge subtraction means successful and failed uses can
+    // have different remaining counts (see Ability::get_ability_view_counts).
     UpdateAbilityView {
         ability_name: AbilityName,
-        usages_remaining: ChargeCount,
+        success_usages_remaining: ChargeCount,
+        failure_usages_remaining: ChargeCount,
         iterations_to_reset: IterationCount,
         ability_id: AbilityKey,
         owner_id: ActorKey,
@@ -340,6 +345,18 @@ pub enum Command {
         target_id: ActorKey,
         range: Time,
         redact_names: bool,
+    },
+
+    // privately reveal a target player's true name to the recipient (BackgroundCheck)
+    RevealTrueName {
+        target_id: ActorKey,
+        true_name: String,
+    },
+
+    // privately reveal whether a target is currently holding a notebook (NotebookReveal)
+    RevealNotebookHolding {
+        target_id: ActorKey,
+        holding: bool,
     },
     ////////////////////////////////////////////////
     // POLLS //

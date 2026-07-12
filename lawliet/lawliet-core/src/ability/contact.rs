@@ -50,6 +50,6 @@ impl AbilityInterface for Contact {
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
-        Ok(())
+        Ok(super::AbilityStatus::Success)
     }
 }

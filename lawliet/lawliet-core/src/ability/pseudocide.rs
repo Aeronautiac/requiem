@@ -22,7 +22,7 @@ impl AbilityInterface for Pseudocide {
         &mut self,
         eng: &mut crate::engine::Engine,
         ctx: &mut ActionContext,
-        actor: &crate::action::ActionActor,
+        _actor: &crate::action::ActionActor,
         _ability: AbilityKey,
         version: u8,
         mutate: bool,
@@ -64,6 +64,6 @@ impl AbilityInterface for Pseudocide {
             mutate,
         );
 
-        Ok(())
+        Ok(super::AbilityStatus::Success)
     }
 }

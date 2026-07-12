@@ -41,6 +41,7 @@ impl ActionInterface for Action {
     ) -> ActionResult {
         match self {
             Action::ChangeOrgLeader(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::ResignLeadership(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::Kill(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::AddState(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::Revive(a) => a.handle(eng, ctx, actor, version, mutate),

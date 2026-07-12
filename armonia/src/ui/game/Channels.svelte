@@ -28,6 +28,7 @@
     Notebook: "Notebooks",
     Role: "Roles",
     World: "World",
+    Info: "Info",
   };
 
   // World leads; News lives under it, so it always shows. The rest follow in their
@@ -66,6 +67,16 @@
           push(ch_key);
         }
       }
+    }
+
+    // Frontend-only info channels live per-view, not in game.channels, so pull them
+    // from the viewer's own view and list them under the Info category.
+    const view =
+      ui.viewer === "Admin" ? game.system_view() : game.views.get(ui.viewer);
+    for (const key of view?.info_channels.keys() ?? []) {
+      const existing = map.get("Info");
+      if (existing) existing.push(key);
+      else map.set("Info", [key]);
     }
 
     return map;
@@ -139,7 +150,7 @@
           {/if}
 
           {#each keys as key}
-            {@const channel = game.channels.get(key)!}
+            {@const channel = game.resolve_channel(ui.viewer, key)!}
             <button
               class="w-full text-left px-3 py-1 rounded text-sm hover:bg-neutral-800 {channel.archived
                 ? 'text-neutral-600'

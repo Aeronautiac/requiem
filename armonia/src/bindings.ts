@@ -126,7 +126,7 @@ export const LeadershipTransferPolicyFlag = {
   Random: 1 << 1,
 } as const;
 
-export type PoolLinkType = "Limit" | "Pool";
+export type PoolLinkType = "Restrictive" | "Permissive";
 
 export type ContactLogType = "Full" | "Even" | "Odd";
 
@@ -193,7 +193,18 @@ export type AbilityBehaviour =
   | { Gun: { target_id: ActorKey } }
   | { AnonymousAnnouncement: { content: string } }
   | { AnonymousContact: { target: ActorKey } }
-  | { CreateGroupchat: Record<string, never> };
+  | { CreateGroupchat: Record<string, never> }
+  | { FabricateLounge: { contacted_id: ActorKey; contactor_id: ActorKey } }
+  | { FalseAnonymousContact: { target: ActorKey; role: Role } }
+  | { Ipp: { target: ActorKey } }
+  | { Prosecute: { target: ActorKey } }
+  | { TrueNameInvite: { target: ActorKey; true_name: string } }
+  | { ForceInvite: { target: ActorKey } }
+  | { BackgroundCheck: { target: ActorKey } }
+  | { Outsource: { invitee: ActorKey; defendant: ActorKey } }
+  | { LeaderResign: { successor: ActorKey | null } }
+  | { TrueNameReveal: { target: ActorKey } }
+  | { NotebookReveal: { target: ActorKey } };
 
 // ////////////////////////////////////////////////////////////
 // ACTION STRUCTS
@@ -943,12 +954,14 @@ export type Command =
   | { NotebookWrite: { notebook_id: NotebookKey; user_id: ActorKey; message: string | null; true_name: string; delay: number; successes_remaining: number; attempts_remaining: number; success: boolean; target_saved: boolean } }
   | { NotebookBorrowingStatus: { borrowed: boolean } }
   | { AddContactLog: { passive_id: PassiveKey } }
-  | { UpdateAbilityView: { ability_name: AbilityName; usages_remaining: number; iterations_to_reset: number; ability_id: AbilityKey; owner_id: ActorKey } }
+  | { UpdateAbilityView: { ability_name: AbilityName; success_usages_remaining: number; failure_usages_remaining: number; iterations_to_reset: number; ability_id: AbilityKey; owner_id: ActorKey } }
   | { RemoveAbility: { ability_id: AbilityKey } }
-  | { RevealAutopsyMessages: { target_id: ActorKey; range: number; redact_names: boolean } };
+  | { RevealAutopsyMessages: { target_id: ActorKey; range: number; redact_names: boolean } }
+  | { RevealTrueName: { target_id: ActorKey; true_name: string } }
+  | { RevealNotebookHolding: { target_id: ActorKey; holding: boolean } };
 
 export type CommandRecipient = "System" | "BasePlayer" | {
-  Player: ActorKey
+  Actor: ActorKey
 }
 
 export type CommandPayload = {

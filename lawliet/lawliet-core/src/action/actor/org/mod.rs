@@ -4,6 +4,7 @@ pub mod create_and_give_org_ability;
 pub mod create_org;
 pub mod give_org_ability;
 pub mod remove_from_org;
+pub mod resign_leadership;
 pub mod set_leadership;
 pub mod system_use_org_ability;
 pub mod use_org_ability;

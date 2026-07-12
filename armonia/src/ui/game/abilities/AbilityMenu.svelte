@@ -28,7 +28,7 @@
       out.push({
         id,
         name: av.name,
-        usages: av.usages_remaining,
+        usages: av.success_usages_remaining,
         resets: av.iterations_to_reset,
       });
     }

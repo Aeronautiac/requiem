@@ -28,7 +28,13 @@ impl ActionInterface for AddLink {
 
         let ability = get_ability_mut(eng, self.ability_id)?;
         if mutate {
-            ability.add_link(self.pool_id, self.link_type, self.weight, self.volatile);
+            ability.add_link(
+                self.pool_id,
+                self.link_type,
+                self.weight,
+                self.volatile,
+                self.condition,
+            );
             let pool = get_charge_pool_mut(eng, self.pool_id)?;
             pool.on_link();
         }

@@ -36,7 +36,7 @@ impl ActionInterface for DeferredCmds {
             .clone()
             .into_iter()
             .map(|i| {
-                if matches!(i.payload.recipient, CommandRecipient::Player(_)) {
+                if matches!(i.payload.recipient, CommandRecipient::Actor(_)) {
                     i
                 } else {
                     panic!("Cannot defer commands for non active player targets")

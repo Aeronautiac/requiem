@@ -6,4 +6,7 @@ pub mod player;
 pub enum ActorChargePoolName {
     Contact,
     Invite,
+    // shared "shinigami eyes" ability pool (TrueNameReveal / NotebookReveal). Distinct
+    // from a player's `eyes` count, which is a separate permanent/volatile resource.
+    ShinigamiEyes,
 }

@@ -13,7 +13,7 @@ use crate::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
         ActionResult, AddLink, ClearVolatileLinks, UpdateBugVisibilities,
     },
-    chargepool::PoolLink,
+    chargepool::{ChargeConditions, PoolLink},
     command::Command,
     config::ability::{AbilityIdentifier, ConfigPoolLinkDetails},
     helpers::{get_ability, get_ability_mut, get_actor, get_actor_mut},
@@ -64,15 +64,18 @@ impl ActionInterface for GiveAbility {
 
         let actor_data = get_actor(eng, self.actor_id)?;
         let conf_links = &config.default_links.clone();
-        let mut links_to_create: Vec<PoolLink> = vec![];
+        let mut links_to_create: Vec<(PoolLink, ChargeConditions)> = vec![];
         for link in conf_links {
             if let ConfigPoolLinkDetails::Actor(pool_name) = &link.details {
-                links_to_create.push(PoolLink {
-                    link_type: link.link_type,
-                    weight: link.weight,
-                    link_dest: *actor_data.pool_map.get(pool_name).unwrap(), // crash on
-                                                                             // failure. it must have been created before any abilities.
-                });
+                links_to_create.push((
+                    PoolLink {
+                        link_type: link.link_type,
+                        weight: link.weight,
+                        link_dest: *actor_data.pool_map.get(pool_name).unwrap(), // crash on
+                                                                                 // failure. it must have been created before any abilities.
+                    },
+                    link.condition,
+                ));
             }
         }
 
@@ -82,13 +85,14 @@ impl ActionInterface for GiveAbility {
                 .ownership_struct
                 .set_owner(self.actor_id, self.volatile);
 
-            for link in &links_to_create {
+            for (link, condition) in &links_to_create {
                 Action::AddLink(AddLink {
                     ability_id: self.ability_id,
                     pool_id: link.link_dest,
                     weight: link.weight,
                     link_type: link.link_type,
                     volatile: true,
+                    condition: *condition,
                 })
                 .handle(eng, ctx, actor, version, mutate)?;
             }
@@ -102,16 +106,18 @@ impl ActionInterface for GiveAbility {
 
         if mutate {
             let ability = get_ability(eng, self.ability_id)?;
-            let (usages_remaining, iterations_to_reset) = ability.get_ability_view_counts(eng);
+            let (success_usages_remaining, failure_usages_remaining, iterations_to_reset) =
+                ability.get_ability_view_counts(eng);
             ctx.push_cmd(
                 Command::UpdateAbilityView {
                     ability_name: ability.ability_name,
-                    usages_remaining,
+                    success_usages_remaining,
+                    failure_usages_remaining,
                     iterations_to_reset,
                     ability_id: self.ability_id,
                     owner_id: self.actor_id,
                 },
-                CommandRecipient::Player(self.actor_id),
+                CommandRecipient::Actor(self.actor_id),
                 eng.time,
             );
         }

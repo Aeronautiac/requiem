@@ -36,13 +36,18 @@
   );
 
   const current_channel = $derived(
-    backing_channel_id ? game.channels.get(backing_channel_id) : undefined,
+    backing_channel_id
+      ? game.resolve_channel(ui.viewer, backing_channel_id)
+      : undefined,
   );
   const current_perms = $derived(
     backing_channel_id
       ? game.views.get(ui.viewer)?.channel_views.get(backing_channel_id)?.perms
       : undefined,
   );
+  // Info channels are frontend-only, read-only feeds (name reveals, autopsies): you
+  // can never send in one, and their owner can always read them (no engine perms).
+  const is_info = $derived(current_channel?.kind === "Info");
   const archived = $derived(current_channel?.archived ?? false);
   // You can only send in a channel that actually exists. For news with no backing
   // channel this is false, so it isn't interactable — only the event log shows.
@@ -50,9 +55,10 @@
   const can_send = $derived(
     current_channel != null &&
       !archived &&
+      !is_info &&
       (is_admin || (current_perms?.send ?? false)),
   );
-  const can_read = $derived(is_admin || (current_perms?.read ?? false));
+  const can_read = $derived(is_info || is_admin || (current_perms?.read ?? false));
   const is_notebook = $derived(current_channel?.kind === "Notebook");
   const notebook_id = $derived(
     backing_channel_id
@@ -90,7 +96,7 @@
 
   function get_channel_name(): string | null {
     return backing_channel_id
-      ? (game.channels.get(backing_channel_id)?.name ?? null)
+      ? (game.resolve_channel(ui.viewer, backing_channel_id)?.name ?? null)
       : null;
   }
 
@@ -242,6 +248,20 @@
               color="#a855f7"
               description="Anonymous Announcement"
               content={event.data.AnonymousAnnouncement.content}
+            />
+          {:else if "RevealTrueName" in event.data}
+            {@const r = event.data.RevealTrueName}
+            <Announcement
+              color="#3b82f6"
+              description="Name Reveal"
+              content={`${player_name(r.target_id)}'s true name is ${r.true_name}.`}
+            />
+          {:else if "RevealNotebookHolding" in event.data}
+            {@const r = event.data.RevealNotebookHolding}
+            <Announcement
+              color="#3b82f6"
+              description="Notebook Check"
+              content={`${player_name(r.target_id)} is ${r.holding ? "" : "not "}currently holding a notebook.`}
             />
           {:else if "PseudocideRevival" in event.data}
             {@const r = event.data.PseudocideRevival}

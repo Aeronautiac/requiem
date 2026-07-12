@@ -122,7 +122,7 @@
             class="px-2 py-0.5 text-xs text-left rounded text-neutral-400 hover:bg-neutral-800"
             onclick={() => contact(id, ability_id)}
           >
-            Contact ({av.usages_remaining}, resets in {av.iterations_to_reset})
+            Contact ({av.success_usages_remaining}, resets in {av.iterations_to_reset})
           </button>
         {/each}
         <FlashDisplay {flash} />

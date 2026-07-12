@@ -18,6 +18,16 @@ impl PlayerConfig {
             },
         );
 
+        // shared eye-ability pool: 2 uses per day. Only the roles with the eye abilities
+        // link to it, but every player carries the pool (like Contact).
+        charge_pools.insert(
+            ActorChargePoolName::ShinigamiEyes,
+            PoolSpecifier {
+                charges: 2,
+                reset_time: 1,
+            },
+        );
+
         PlayerConfig { charge_pools }
     }
 }

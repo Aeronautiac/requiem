@@ -60,7 +60,10 @@ export type ChannelPerms = {
 // a role channel may be a world channel, but it is stronger than the world category
 // these categories are used only for display and hold no significance outside of it
 // key world channels should get their own data at a higher level and point to the lower level channel
-export type ChannelKind = "Raw" | "Lounge" | "Groupchat" | "Notebook" | "Role" | "World";
+// "Info" is a frontend-only, read-only channel-like object (name reveals, autopsies,
+// …). Unlike News (a hybrid feed + real channel), you can't interact with it, and it
+// isn't backed by an engine channel — it lives per-view in GameView.info_channels.
+export type ChannelKind = "Raw" | "Lounge" | "Groupchat" | "Notebook" | "Role" | "World" | "Info";
 export const CHANNEL_KINDS: ChannelKind[] = [
   "Raw",
   "Lounge",
@@ -68,6 +71,7 @@ export const CHANNEL_KINDS: ChannelKind[] = [
   "Notebook",
   "Role",
   "World",
+  "Info",
 ];
 
 
@@ -83,14 +87,33 @@ export type Message = {
   content: string,
 }
 
+// Entries that render inside a read-only Info channel (as opposed to WorldEvents,
+// which render in News). Kept separate so info-channel content never leaks into the
+// world-event/news stream.
+export type InfoEvent = {
+  RevealTrueName: {
+    target_id: string,
+    true_name: string,
+  }
+} | {
+  RevealNotebookHolding: {
+    target_id: string,
+    holding: boolean,
+  }
+}
+
 export type GameEvent = {
   timestamp: number,
-  data: { Message: Message } | { Write: WriteEvent } | WorldEvent,
+  data: { Message: Message } | { Write: WriteEvent } | WorldEvent | InfoEvent,
 }
 
 export interface AbilityView {
   name: AbilityName;
-  usages_remaining: number;
+  // Split by outcome: conditional charge subtraction means successful and failed uses
+  // can have different remaining counts (e.g. a true-name guess bounded by an attempts
+  // pool on failure but also an invite pool on success).
+  success_usages_remaining: number;
+  failure_usages_remaining: number;
   iterations_to_reset: number;
 }
 
@@ -141,6 +164,9 @@ export class GameView {
   // (or was) a member of appear here.
   channel_views = new SvelteMap<string, ChannelView>();
   events: GameEvent[] = $state([]); // should only store world events
+  // Frontend-only, read-only "info" channels private to this viewer (name reveals,
+  // autopsies, …). Keyed by a synthetic "info:*" key; not engine channels.
+  info_channels = new SvelteMap<string, Channel>();
   abilities = new SvelteMap<string, AbilityView>();
   // gc keys this viewer owns (from GcOwnerStatus). Drives the group-chat controls.
   owned_gcs = new SvelteSet<string>();
@@ -174,6 +200,12 @@ export class GameView {
     }
     for (const event of this.events) {
       copy.events.push(event);
+    }
+    for (const [key, ch] of this.info_channels) {
+      const copy_ch = new_channel(ch.kind, ch.name);
+      copy_ch.archived = ch.archived;
+      for (const event of ch.events) copy_ch.events.push(event);
+      copy.info_channels.set(key, copy_ch);
     }
     return copy;
   }
@@ -216,13 +248,17 @@ export function new_channel(kind: ChannelKind, name: string): Channel {
   return channel;
 }
 
-// Maps a command recipient to the key of the view it targets. Player recipients
+// Synthetic key of the single shared, read-only info channel that collects reveal
+// results (true names, notebook holdings, …).
+export const REVEAL_CHANNEL = "info:reveals";
+
+// Maps a command recipient to the key of the view it targets. Actor recipients
 // key by their slot; the string variants map to the standing views: System is the
 // admin view (world events emitted with include_system land here), BasePlayer is
 // the Base template. Returns undefined only for an unhandled recipient.
 function recipientToView(rec: CommandRecipient): string | undefined {
   if (typeof rec !== "string") {
-    return slotKeyToString(rec.Player);
+    return slotKeyToString(rec.Actor);
   }
   if (rec === "System") return "System";
   if (rec === "BasePlayer") return "Base";
@@ -231,7 +267,7 @@ function recipientToView(rec: CommandRecipient): string | undefined {
 
 function recipientToPlayer(recipient: CommandRecipient): string | undefined {
   if (typeof (recipient) !== 'string') {
-    const id = recipient.Player;
+    const id = recipient.Actor;
     return slotKeyToString(id);
   }
 }
@@ -534,16 +570,17 @@ export class GameState {
     }
 
     if ("UpdateAbilityView" in cmd) {
-      const { ability_id, ability_name, usages_remaining, iterations_to_reset } = cmd.UpdateAbilityView;
+      const { ability_id, ability_name, success_usages_remaining, failure_usages_remaining, iterations_to_reset } = cmd.UpdateAbilityView;
       const view = this.views.get(recipientToView(recipient) ?? "");
       if (view) {
         const id = slotKeyToString(ability_id);
         const existing = view.abilities.get(id);
         if (existing) {
-          existing.usages_remaining = usages_remaining;
+          existing.success_usages_remaining = success_usages_remaining;
+          existing.failure_usages_remaining = failure_usages_remaining;
           existing.iterations_to_reset = iterations_to_reset;
         } else {
-          let av: AbilityView = $state({ name: ability_name, usages_remaining, iterations_to_reset });
+          let av: AbilityView = $state({ name: ability_name, success_usages_remaining, failure_usages_remaining, iterations_to_reset });
           view.abilities.set(id, av);
         }
       }
@@ -638,6 +675,39 @@ export class GameState {
         });
       }
     }
+
+    if ("RevealTrueName" in cmd) {
+      const reveal = cmd.RevealTrueName;
+      // TODO(orgs): when the recipient actor is an organization, this should render in
+      // the org's shared info channel, gated by the same view perms as the org's lounge
+      // channel (so each member sees it iff they can see that channel) — not in a single
+      // player's view. Orgs aren't modeled on the frontend yet, so route to the player
+      // view for now (TrueNameInvite pushes this to the org actor, which has no view).
+      const channel = this.reveal_channel(recipientToView(recipient));
+      channel?.events.push({
+        timestamp,
+        data: {
+          RevealTrueName: {
+            target_id: slotKeyToString(reveal.target_id),
+            true_name: reveal.true_name,
+          }
+        }
+      });
+    }
+
+    if ("RevealNotebookHolding" in cmd) {
+      const reveal = cmd.RevealNotebookHolding;
+      const channel = this.reveal_channel(recipientToView(recipient));
+      channel?.events.push({
+        timestamp,
+        data: {
+          RevealNotebookHolding: {
+            target_id: slotKeyToString(reveal.target_id),
+            holding: reveal.holding,
+          }
+        }
+      });
+    }
   }
 
   private handle_response(response: ActionResponse, args?: Record<string, unknown>) {
@@ -659,6 +729,31 @@ export class GameState {
     const key = slotKeyToString(id);
     this.new_view(key);
     this.players.set(key, new_player(display_name));
+  }
+
+  // Resolve a channel key to its Channel. "info:*" keys are frontend-only, read-only
+  // info channels private to the viewer's own GameView; everything else is an
+  // engine-backed channel from the shared top-level map.
+  resolve_channel(viewer: string, key: string): Channel | undefined {
+    if (key.startsWith("info:")) {
+      const view = viewer === "Admin" ? this.system_view() : this.views.get(viewer);
+      return view?.info_channels.get(key);
+    }
+    return this.channels.get(key);
+  }
+
+  // The viewer's single shared, read-only info channel for reveal results, created
+  // lazily on first use. Returns undefined when the recipient maps to no known view
+  // (e.g. an org actor, which isn't modeled on the frontend yet).
+  private reveal_channel(view_key: string | undefined): Channel | undefined {
+    const view = view_key ? this.views.get(view_key) : undefined;
+    if (!view) return undefined;
+    let channel = view.info_channels.get(REVEAL_CHANNEL);
+    if (!channel) {
+      channel = new_channel("Info", "Reveals");
+      view.info_channels.set(REVEAL_CHANNEL, channel);
+    }
+    return channel;
   }
 
   find_abilities(viewer_key: string, name: string): string[] {

@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 pub use lawliet_types::ability::AbilityName;
 
 use crate::{
-    chargepool::{PoolLinkType, PoolSpecifier},
+    chargepool::{ChargeCondition, ChargeConditions, PoolLinkType, PoolSpecifier},
     common::{IterationCount, LinkWeight, Variant},
     config::{actor::ActorChargePoolName, world::WorldChargePoolName},
 };
@@ -27,10 +27,13 @@ pub enum ConfigPoolLinkDetails {
     World(WorldChargePoolName),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
+// no Ord: ChargeConditions (BitFlags) isn't ordered
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConfigPoolLink {
     pub weight: LinkWeight,
     pub link_type: PoolLinkType,
+    // when this link's pool is actually subtracted (checked to gate usage regardless)
+    pub condition: ChargeConditions,
     pub details: ConfigPoolLinkDetails,
 }
 
@@ -55,8 +58,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -70,8 +74,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Contact),
             }],
         },
@@ -82,8 +87,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 5,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Contact),
             }],
         },
@@ -94,8 +100,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Contact),
             }],
         },
@@ -106,8 +113,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Contact),
             }],
         },
@@ -118,8 +126,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 2,
                     reset_time: 1,
@@ -133,8 +142,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 2,
                     reset_time: 1,
@@ -148,8 +158,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: false,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 2,
@@ -163,8 +174,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 2,
@@ -179,8 +191,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -195,8 +208,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -210,8 +224,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: false,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -225,8 +240,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: false,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -240,8 +256,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -255,8 +272,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -270,8 +288,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: false,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: IterationCount::MAX,
@@ -285,8 +304,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -300,8 +320,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: IterationCount::MAX,
@@ -315,8 +336,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -330,8 +352,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: false,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -345,8 +368,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: false,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: IterationCount::MAX,
@@ -360,8 +384,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -375,8 +400,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: 1,
@@ -390,8 +416,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
                     charges: 1,
                     reset_time: IterationCount::MAX,
@@ -400,17 +427,18 @@ pub fn default_ability_config() -> AbilityConfigMap {
         },
     );
 
+    // TrueNameReveal and NotebookReveal share one actor pool ("shinigami eyes", 2/day).
+    // Both subtract on either outcome (each attempt is a use), so the pool is conditioned
+    // on Success | Failure.
     map.insert(
         identifier(AbilityName::TrueNameReveal, 0),
         AbilityConfig {
             require_presence: false,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
-                details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
-                    charges: 2,
-                    reset_time: 1,
-                }),
+                condition: ChargeConditions::all(),
+                details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::ShinigamiEyes),
             }],
         },
     );
@@ -420,12 +448,10 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: false,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
-                details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
-                    charges: 2,
-                    reset_time: 1,
-                }),
+                condition: ChargeConditions::all(),
+                details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::ShinigamiEyes),
             }],
         },
     );
@@ -435,8 +461,9 @@ pub fn default_ability_config() -> AbilityConfigMap {
         AbilityConfig {
             require_presence: true,
             default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
+                link_type: PoolLinkType::Restrictive,
                 weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
                 details: ConfigPoolLinkDetails::World(WorldChargePoolName::Prosecution),
             }],
         },
@@ -448,13 +475,15 @@ pub fn default_ability_config() -> AbilityConfigMap {
             require_presence: true,
             default_links: vec![
                 ConfigPoolLink {
-                    link_type: PoolLinkType::Limit,
+                    link_type: PoolLinkType::Restrictive,
                     weight: 1,
+                    condition: ChargeCondition::OnSuccess.into(),
                     details: ConfigPoolLinkDetails::World(WorldChargePoolName::Prosecution),
                 },
                 ConfigPoolLink {
-                    link_type: PoolLinkType::Limit,
+                    link_type: PoolLinkType::Restrictive,
                     weight: 1,
+                    condition: ChargeCondition::OnSuccess.into(),
                     details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Invite),
                 },
             ],
@@ -465,11 +494,27 @@ pub fn default_ability_config() -> AbilityConfigMap {
         identifier(AbilityName::TrueNameInvite, 0),
         AbilityConfig {
             require_presence: true,
-            default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Limit,
-                weight: 1,
-                details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Invite),
-            }],
+            default_links: vec![
+                ConfigPoolLink {
+                    link_type: PoolLinkType::Restrictive,
+                    weight: 1,
+                    condition: ChargeCondition::OnSuccess.into(),
+                    details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Invite),
+                },
+                // Dedicated per-ability "attempts" pool: caps how many true-name guesses
+                // the org gets, independent of the shared Invite pool. Spent on EVERY
+                // guess (success or failure) — that's the whole point of an attempt cap —
+                // while the shared Invite pool above is only spent on a correct guess.
+                ConfigPoolLink {
+                    link_type: PoolLinkType::Restrictive,
+                    weight: 1,
+                    condition: ChargeConditions::all(),
+                    details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
+                        charges: 3,
+                        reset_time: 1,
+                    }),
+                },
+            ],
         },
     );
 

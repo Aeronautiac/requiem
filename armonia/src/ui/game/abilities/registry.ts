@@ -15,6 +15,13 @@ import GunAbility from "./GunAbility.svelte";
 import AnonymousContactAbility from "./AnonymousContactAbility.svelte";
 import AnonymousAnnouncementAbility from "./AnonymousAnnouncementAbility.svelte";
 import PseudocideAbility from "./PseudocideAbility.svelte";
+import FabricateLoungeAbility from "./FabricateLoungeAbility.svelte";
+import FalseAnonymousContactAbility from "./FalseAnonymousContactAbility.svelte";
+import IppAbility from "./IppAbility.svelte";
+import ProsecuteAbility from "./ProsecuteAbility.svelte";
+import BackgroundCheckAbility from "./BackgroundCheckAbility.svelte";
+import TrueNameRevealAbility from "./TrueNameRevealAbility.svelte";
+import NotebookRevealAbility from "./NotebookRevealAbility.svelte";
 
 // Every ability UI component takes the ability instance's id and a callback to run
 // once the ability has been used (closes the menu).
@@ -38,6 +45,13 @@ export const ABILITY_UIS: Partial<
   AnonymousContact: AnonymousContactAbility,
   AnonymousAnnouncement: AnonymousAnnouncementAbility,
   Pseudocide: PseudocideAbility,
+  FabricateLounge: FabricateLoungeAbility,
+  FalseAnonymousContact: FalseAnonymousContactAbility,
+  Ipp: IppAbility,
+  Prosecute: ProsecuteAbility,
+  BackgroundCheck: BackgroundCheckAbility,
+  TrueNameReveal: TrueNameRevealAbility,
+  NotebookReveal: NotebookRevealAbility,
 };
 
 // "AnonymousContact" -> "Anonymous Contact"

@@ -378,8 +378,8 @@ mod ability_tests {
             },
         );
 
-        quick_link(&mut eng, 0, a1, pool, PoolLinkType::Limit, 1);
-        quick_link(&mut eng, 0, a2, pool, PoolLinkType::Limit, 5);
+        quick_link(&mut eng, 0, a1, pool, PoolLinkType::Restrictive, 1);
+        quick_link(&mut eng, 0, a2, pool, PoolLinkType::Restrictive, 5);
 
         let ability = get_ability(&eng, a1).unwrap();
         let limit = ability.get_usage_limit(&eng);
@@ -473,9 +473,9 @@ mod ability_tests {
             },
         );
 
-        quick_link(&mut eng, 0, a1, pool_1, PoolLinkType::Limit, 1);
-        quick_link(&mut eng, 0, a1, pool_2, PoolLinkType::Pool, 1);
-        quick_link(&mut eng, 0, a1, pool_3, PoolLinkType::Limit, 1);
+        quick_link(&mut eng, 0, a1, pool_1, PoolLinkType::Restrictive, 1);
+        quick_link(&mut eng, 0, a1, pool_2, PoolLinkType::Permissive, 1);
+        quick_link(&mut eng, 0, a1, pool_3, PoolLinkType::Restrictive, 1);
 
         let ability = get_ability(&eng, a1).unwrap();
         let limit = ability.get_usage_limit(&eng);
