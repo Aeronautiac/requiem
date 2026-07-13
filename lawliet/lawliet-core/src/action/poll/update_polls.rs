@@ -7,11 +7,11 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, ActionExt,
+        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, ActionExt, PollCleanup,
     },
     common::PollKey,
     helpers::get_poll,
-    poll::PolicyResult,
+    poll::{PollOutcome, PolicyResult},
 };
 
 pub use crate::action::{UpdatePolls, UpdatePollsResponse};
@@ -61,23 +61,25 @@ impl ActionInterface for UpdatePolls {
             }
         }
 
+        // All removals go through PollCleanup, which emits ClosePoll with the outcome and
+        // tears the poll down.
         for id in polls_to_cancel {
-            if mutate {
-                eng.world.remove_poll(id);
-            }
-            // TODO:
-            // - send command to frontend to acknowledge poll cancellation
+            Action::PollCleanup(PollCleanup {
+                poll_id: id,
+                outcome: PollOutcome::Cancelled,
+            })
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         for (id, action) in polls_to_reject {
             if let Some(mut act) = action {
                 act.handle(eng, ctx, &ActionActor::System, version, mutate)?;
             }
-            if mutate {
-                eng.world.remove_poll(id);
-            }
-            // TODO:
-            // - tell frontend to acknowledge poll rejection
+            Action::PollCleanup(PollCleanup {
+                poll_id: id,
+                outcome: PollOutcome::Rejected,
+            })
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         // the actions are guaranteed to succeed by this point. if they dont, something's wrong.
@@ -85,9 +87,11 @@ impl ActionInterface for UpdatePolls {
             if let Some(mut act) = action {
                 act.handle(eng, ctx, &ActionActor::System, version, mutate)?;
             }
-            if mutate {
-                eng.world.remove_poll(id);
-            }
+            Action::PollCleanup(PollCleanup {
+                poll_id: id,
+                outcome: PollOutcome::Accepted,
+            })
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         Ok(ActionResponse::UpdatePolls(UpdatePollsResponse {}))

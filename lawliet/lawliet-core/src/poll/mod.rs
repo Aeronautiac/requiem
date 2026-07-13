@@ -1,10 +1,10 @@
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 
 use crate::{
     action::Action,
-    common::{ActorKey, ChannelKey, PollWeight},
+    common::{ActorKey, PollWeight},
     engine::Engine,
-    helpers::get_voter_weight,
+    helpers::{get_channel, get_org, get_voter_weight},
     poll::policies::{
         resolution::{majority, winning_vote},
         voter::present,
@@ -37,7 +37,7 @@ mod policies;
 //
 // polls now have individual accept and reject actions
 
-pub use lawliet_types::poll::{VoterPolicy, PollPolicy, PollVisibility};
+pub use lawliet_types::poll::{PollOutcome, PollSubject, VoterPolicy, PollPolicy, PollVisibility};
 
 #[derive(PartialEq, Eq, Clone, Debug, Copy)]
 pub enum PolicyResult {
@@ -64,10 +64,16 @@ pub struct Poll {
     pub accept_payload: Option<Action>,
     pub reject_payload: Option<Action>,
     pub visibility: PollVisibility,
+    pub subject: PollSubject,
     pub update_policy: PollPolicy,
     pub timeout_policy: PollPolicy,
     pub voter_policy: VoterPolicy,
     pub votes: IndexMap<ActorKey, Vote>,
+    // Actors we've sent poll data to (via UpdatePollView). The frontend has no notion of
+    // scope visibility ("present"), so when one of these actors can no longer view the poll
+    // we must actively tell them to hide it with a directed removal command, then drop them
+    // from this set. Without this the poll would stay visible on their client forever.
+    pub dirty: IndexSet<ActorKey>,
 }
 
 impl Poll {
@@ -75,6 +81,7 @@ impl Poll {
         accept_payload: Option<Action>,
         reject_payload: Option<Action>,
         visibility: PollVisibility,
+        subject: PollSubject,
         update_policy: PollPolicy,
         timeout_policy: PollPolicy,
         voter_policy: VoterPolicy,
@@ -83,10 +90,12 @@ impl Poll {
             accept_payload,
             reject_payload,
             visibility,
+            subject,
             update_policy,
             timeout_policy,
             voter_policy,
             votes: IndexMap::new(),
+            dirty: IndexSet::new(),
         }
     }
 
@@ -101,6 +110,20 @@ impl Poll {
     pub fn voter_policy(&self, eng: &Engine, voter_id: ActorKey) -> bool {
         match self.voter_policy {
             VoterPolicy::Present => present(self, eng, voter_id),
+        }
+    }
+
+    // Can this actor SEE the poll (scope access), independent of whether they may vote.
+    // Voting eligibility (`voter_policy`) is stricter — it also requires presence.
+    pub fn can_view(&self, eng: &Engine, id: ActorKey) -> bool {
+        match self.visibility {
+            PollVisibility::Org(org_id) => {
+                get_org(eng, org_id).is_ok_and(|org| org.has_member(id))
+            }
+            PollVisibility::Channel(channel_id) => {
+                get_channel(eng, channel_id).is_ok_and(|ch| ch.get_member(id).is_some())
+            }
+            PollVisibility::AllPresent => true,
         }
     }
 

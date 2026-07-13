@@ -6,6 +6,7 @@ use crate::{
     chargepool::PoolSpecifier,
 };
 
+pub use lawliet_types::organization::OrganizationName;
 pub use lawliet_types::world::{WorldChannelName, WorldChargePoolName};
 
 pub struct WorldChannelConfig {
@@ -17,6 +18,8 @@ pub struct WorldChannelConfig {
 pub struct WorldConfig {
     pub charge_pools: IndexMap<WorldChargePoolName, PoolSpecifier>,
     pub world_channels: IndexMap<WorldChannelName, WorldChannelConfig>,
+    // Organizations spawned once on world initialization (see CreateOrgs).
+    pub default_orgs: Vec<OrganizationName>,
 }
 
 impl WorldConfig {
@@ -67,6 +70,11 @@ impl WorldConfig {
         WorldConfig {
             charge_pools: pools,
             world_channels: channels,
+            default_orgs: vec![
+                OrganizationName::KK,
+                OrganizationName::TF,
+                OrganizationName::SPK,
+            ],
         }
     }
 }

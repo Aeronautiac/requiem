@@ -1,5 +1,5 @@
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import type { AbilityName, ActionRequest, ActorDisplay, ActorKey, ActionResponse, CommandPayload, CommandRecipient, GroupchatKey, NotebookKey, Role } from "./bindings";
+import type { AbilityName, ActionRequest, ActorDisplay, ActorKey, ActionResponse, CommandPayload, CommandRecipient, NotebookKey, OrganizationName, PollOutcome, PollSubject, PollVisibility, ProsecutionKey, ProsecutionPhaseView, Role } from "./bindings";
 import { slotKeyFromString, slotKeyToString } from "./bindings";
 import { Sequencer } from "./lib/protocol";
 import type { StreamingRouter, CommandBatch } from "./lib/protocol";
@@ -33,6 +33,17 @@ export type WorldEvent = {
   AnonymousAnnouncement: {
     content: string,
   }
+} | {
+  // A prosecution started, advanced a phase, or ended — derived on the frontend by diffing the
+  // per-view prosecution snapshot (start/advance) or from CloseProsecution (ended). phase is the
+  // phase being entered; on `ended` it's the last phase seen.
+  ProsecutionEvent: {
+    prosecution_id: string,
+    prosecutor_display: ActorDisplay,
+    defendant_display: ActorDisplay,
+    phase: ProsecutionPhaseView,
+    ended: boolean,
+  }
 }
 
 export type WriteEvent = {
@@ -63,7 +74,7 @@ export type ChannelPerms = {
 // "Info" is a frontend-only, read-only channel-like object (name reveals, autopsies,
 // …). Unlike News (a hybrid feed + real channel), you can't interact with it, and it
 // isn't backed by an engine channel — it lives per-view in GameView.info_channels.
-export type ChannelKind = "Raw" | "Lounge" | "Groupchat" | "Notebook" | "Role" | "World" | "Info";
+export type ChannelKind = "Raw" | "Lounge" | "Groupchat" | "Notebook" | "Role" | "World" | "Info" | "Org" | "Prosecution";
 export const CHANNEL_KINDS: ChannelKind[] = [
   "Raw",
   "Lounge",
@@ -72,6 +83,8 @@ export const CHANNEL_KINDS: ChannelKind[] = [
   "Role",
   "World",
   "Info",
+  "Org",
+  "Prosecution",
 ];
 
 
@@ -102,9 +115,46 @@ export type InfoEvent = {
   }
 }
 
+// A poll started (outcome null) or ended (outcome set), rendered inline in the poll's
+// scoped channel/news feed. Distinct from the Polls panel, which is where you actually vote.
+export type PollNoticeEvent = {
+  PollNotice: {
+    poll_id: string,
+    subject: PollSubject,
+    outcome: PollOutcome | null,
+  }
+}
+
 export type GameEvent = {
   timestamp: number,
-  data: { Message: Message } | { Write: WriteEvent } | WorldEvent | InfoEvent,
+  data: { Message: Message } | { Write: WriteEvent } | WorldEvent | InfoEvent | PollNoticeEvent,
+}
+
+// Shared, globally-held poll data (subject + scope + tally). Mirrors the engine's
+// UpdatePoll command. Visible-to-whom is decided per viewer by poll_views below.
+export type PollData = {
+  subject: PollSubject,
+  scope: PollVisibility,
+  accept: number,
+  reject: number,
+  potential: number,
+}
+
+// A viewer's personal relationship to a poll (from the directed UpdatePollView). Having
+// an entry at all means the viewer can see the poll; `eligible` is whether they may vote.
+export type PollView = {
+  eligible: boolean,
+  own_vote: boolean | null,
+}
+
+// Shared, globally-held prosecution snapshot (from the broadcast UpdateProsecution). The trial
+// channel and verdict poll ride their own command streams; trial_channel is just the id so the
+// UI can tag that channel as a prosecution channel. Per-viewer "am I frozen" lives on GameView.
+export type ProsecutionData = {
+  prosecutor_display: ActorDisplay,
+  defendant_display: ActorDisplay,
+  phase: ProsecutionPhaseView,
+  trial_channel: string | null,
 }
 
 export interface AbilityView {
@@ -117,27 +167,6 @@ export interface AbilityView {
   iterations_to_reset: number;
 }
 
-// world events are stored individually within each view
-// channels and similar are stored top level
-// when rendering, you must create a list of channel events (world events + viewable messages)
-// and render those rather than rendering directly
-//
-// anything that would be stored in a database should be stored top level
-// as a rule of thumb
-//
-// we can do away with the concept of an admin game view state with this in mind
-// admin can be treated as a viewer of everything and a valid viewing state, but it doesn't need its own local state.
-// that is a player specific thing.
-//
-// channel permissions can be stored within the channel object itself per actor
-//
-// its ok to transform data during a rendering pass. this is already bloated to hell (its web dev) and its not core logic.
-// its an interaction layer.
-// cases where this would need to be done are cases like rendering channel events where things like messages, world events, etc... should be combined into one list and then rendered.
-//
-// only channels which players have had view permissions for at some point should be rendered
-
-// what a specific player can see
 // A single member of a channel, as seen by one viewer. Membership is per-view
 // because the same actor can be shown under different displays to different viewers
 // (deception). Keyed by display key -> member.
@@ -170,6 +199,18 @@ export class GameView {
   abilities = new SvelteMap<string, AbilityView>();
   // gc keys this viewer owns (from GcOwnerStatus). Drives the group-chat controls.
   owned_gcs = new SvelteSet<string>();
+  // poll id -> this viewer's personal view of a poll they can see (from UpdatePollView).
+  // The shared poll data lives in GameState.polls; this is just eligibility + own vote.
+  poll_views = new SvelteMap<string, PollView>();
+  // prosecution id -> this viewer's latest received snapshot (from UpdateProsecution). Per-view
+  // rather than global so that each view diffs the stream IT receives: a phase change vs the
+  // stored entry is what emits a news event, and an absent player replaying deferred updates in
+  // order reproduces the same ordered news timeline. Drives both the Prosecutions panel and news.
+  prosecutions = new SvelteMap<string, ProsecutionData>();
+  // prosecution ids this viewer is currently frozen on (from FreezeProsecutionView): they lost
+  // presence, so their snapshot above is stale until a live update replays. Any UpdateProsecution
+  // they receive clears the id. Purely a "viewing frozen state" UI flag.
+  frozen_prosecutions = new SvelteSet<string>();
 
   // structuredClone can't clone a GameView: it drops the class prototype and
   // turns the SvelteMaps into plain Maps (losing reactivity), and can throw on
@@ -198,6 +239,15 @@ export class GameView {
     for (const gc of this.owned_gcs) {
       copy.owned_gcs.add(gc);
     }
+    for (const [id, pv] of this.poll_views) {
+      copy.poll_views.set(id, { ...pv });
+    }
+    for (const [id, pd] of this.prosecutions) {
+      copy.prosecutions.set(id, { ...pd });
+    }
+    for (const id of this.frozen_prosecutions) {
+      copy.frozen_prosecutions.add(id);
+    }
     for (const event of this.events) {
       copy.events.push(event);
     }
@@ -209,6 +259,13 @@ export class GameView {
     }
     return copy;
   }
+}
+
+// Whether two prosecution phase-views are the same. Subphases collapse into the view already
+// (Grace/Presentation both read as e.g. Trial:Prosecutor), so this is what "the phase changed".
+export function phaseViewEqual(a: ProsecutionPhaseView, b: ProsecutionPhaseView): boolean {
+  if (typeof a === "string" || typeof b === "string") return a === b;
+  return a.Trial === b.Trial;
 }
 
 // Stable map key for an ActorDisplay (the tagged union isn't usable as a key directly).
@@ -237,6 +294,38 @@ export interface Player {
 export function new_player(display_name: string): Player {
   let player: Player = $state({ display_name });
   return player;
+}
+
+// A first-class org actor, held globally (like channels). Members and abilities arrive
+// on directed Actor(org) commands but are stored globally; a viewer is shown the org and
+// its contents iff they're a member (all members see the full list). `abilities` mirrors
+// the org's UpdateAbilityView stream, keyed by ability id.
+export interface Org {
+  name: OrganizationName;
+  channel_id: string; // backing channel key
+  members: SvelteSet<string>; // org member player ids (dead members included)
+  abilities: SvelteMap<string, AbilityView>;
+}
+
+export function new_org(name: OrganizationName, channel_id: string): Org {
+  return {
+    name,
+    channel_id,
+    members: new SvelteSet<string>(),
+    abilities: new SvelteMap<string, AbilityView>(),
+  };
+}
+
+// Human-readable org names for the terse config codes.
+const ORG_NAMES: Record<OrganizationName, string> = {
+  NULL: "Null",
+  KK: "Kira's Kingdom",
+  TF: "Task Force",
+  SPK: "SPK",
+};
+
+export function orgDisplayName(name: OrganizationName): string {
+  return ORG_NAMES[name] ?? name;
 }
 
 // Channels must be $state proxies, not plain objects: SvelteMap only tracks its
@@ -276,6 +365,10 @@ export class GameState {
   #channel_to_notebook = new SvelteMap<string, string>();
   #notebook_to_channel = new SvelteMap<string, string>();
   #channel_to_gc = new SvelteMap<string, string>();
+  #channel_to_org = new SvelteMap<string, string>();
+  // trial channel key -> prosecution id. Not for rendering (that's driven by ChannelKind
+  // "Prosecution"); this is so an action taken from within the channel can find its prosecution.
+  #channel_to_prosecution = new SvelteMap<string, string>();
   // The real News channel's key once one exists (set in MapWorldChannel). $state so
   // that views resolving news's backing channel recompute the moment it's assigned —
   // otherwise selecting news before the channel exists never picks up its perms.
@@ -284,6 +377,12 @@ export class GameState {
   channels = new SvelteMap<string, Channel>();
   players = new SvelteMap<string, Player>();
   views = new SvelteMap<string, GameView>();
+  // poll id -> shared poll data (subject, scope, tally). Held globally like channels;
+  // per-viewer visibility is decided by each view's poll_views entries.
+  polls = new SvelteMap<string, PollData>();
+  // org id -> org (name, backing channel, members, abilities). Held globally; a viewer
+  // is shown an org iff they're a member. See Org.
+  orgs = new SvelteMap<string, Org>();
 
   // Transport is injected (attach). The router is the swap seam; the client model
   // doesn't care whether it's Tauri or a websocket to the server.
@@ -390,6 +489,32 @@ export class GameState {
         if (cmd.GcOwnerStatus.owner) view?.owned_gcs.add(gc_key);
         else view?.owned_gcs.delete(gc_key);
       }
+      return;
+    }
+
+    // Register an org and its backing channel (an "Org"-kind channel, mirroring MapGc).
+    if ("MapOrg" in cmd) {
+      const { org_id, channel_id, org_name } = cmd.MapOrg;
+      const channel_key = slotKeyToString(channel_id);
+      const org_key = slotKeyToString(org_id);
+
+      this.channels.set(channel_key, new_channel("Org", orgDisplayName(org_name)));
+      this.#channel_to_org.set(channel_key, org_key);
+      this.orgs.set(org_key, new_org(org_name, channel_key));
+      return;
+    }
+
+    // Org membership (global, all members see the full list). The command carries the
+    // org id directly, so no recipient mapping is needed.
+    if ("AddOrgMember" in cmd) {
+      const { player_id, org_id } = cmd.AddOrgMember;
+      this.orgs.get(slotKeyToString(org_id))?.members.add(slotKeyToString(player_id));
+      return;
+    }
+
+    if ("RemoveOrgMember" in cmd) {
+      const { player_id, org_id } = cmd.RemoveOrgMember;
+      this.orgs.get(slotKeyToString(org_id))?.members.delete(slotKeyToString(player_id));
       return;
     }
 
@@ -571,25 +696,125 @@ export class GameState {
 
     if ("UpdateAbilityView" in cmd) {
       const { ability_id, ability_name, success_usages_remaining, failure_usages_remaining, iterations_to_reset } = cmd.UpdateAbilityView;
-      const view = this.views.get(recipientToView(recipient) ?? "");
-      if (view) {
+      // An org-owned ability is directed to Actor(org); route it to the org's shared
+      // ability list rather than a player view.
+      const abilities = this.abilities_for_recipient(recipient);
+      if (abilities) {
         const id = slotKeyToString(ability_id);
-        const existing = view.abilities.get(id);
+        const existing = abilities.get(id);
         if (existing) {
           existing.success_usages_remaining = success_usages_remaining;
           existing.failure_usages_remaining = failure_usages_remaining;
           existing.iterations_to_reset = iterations_to_reset;
         } else {
           let av: AbilityView = $state({ name: ability_name, success_usages_remaining, failure_usages_remaining, iterations_to_reset });
-          view.abilities.set(id, av);
+          abilities.set(id, av);
         }
       }
       return;
     }
 
     if ("RemoveAbility" in cmd) {
+      this.abilities_for_recipient(recipient)?.delete(slotKeyToString(cmd.RemoveAbility.ability_id));
+      return;
+    }
+
+    // Shared poll data (global). First sighting drops a "started" notice into the poll's
+    // scoped channel; later UpdatePolls just refresh the tally.
+    if ("UpdatePoll" in cmd) {
+      const { poll_id, subject, scope, accept, reject, potential } = cmd.UpdatePoll;
+      const key = slotKeyToString(poll_id);
+      if (!this.polls.has(key)) {
+        this.poll_notice(scope, key, subject, null, timestamp);
+      }
+      this.polls.set(key, { subject, scope, accept, reject, potential });
+      return;
+    }
+
+    // A poll concluded: drop the shared data and every viewer's personal view, and drop a
+    // resolution notice into its scoped channel.
+    if ("ClosePoll" in cmd) {
+      const { poll_id, outcome } = cmd.ClosePoll;
+      const key = slotKeyToString(poll_id);
+      const poll = this.polls.get(key);
+      if (poll) this.poll_notice(poll.scope, key, poll.subject, outcome, timestamp);
+      this.polls.delete(key);
+      for (const view of this.views.values()) view.poll_views.delete(key);
+      return;
+    }
+
+    // This player's personal view of a poll they can see (eligibility + their own vote).
+    if ("UpdatePollView" in cmd) {
+      const { poll_id, eligible, own_vote } = cmd.UpdatePollView;
       const view = this.views.get(recipientToView(recipient) ?? "");
-      view?.abilities.delete(slotKeyToString(cmd.RemoveAbility.ability_id));
+      view?.poll_views.set(slotKeyToString(poll_id), { eligible, own_vote });
+      return;
+    }
+
+    // This player lost view of the poll's scope: drop their personal view so the poll
+    // disappears from their Polls panel. The shared data stays for other viewers.
+    if ("RemovePollView" in cmd) {
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      view?.poll_views.delete(slotKeyToString(cmd.RemovePollView.poll_id));
+      return;
+    }
+
+    // This viewer's prosecution snapshot. Globally, tag the trial channel ("Prosecution" kind for
+    // rendering + a channel->prosecution mapping for acting on it). Per-view: store the snapshot,
+    // clear the frozen notice, and emit a news event when the phase differs from what this view
+    // last held (a start when it's a new prosecution, an advance otherwise). Per-view diffing is
+    // what makes an absent player's deferred replay reproduce the ordered news timeline.
+    if ("UpdateProsecution" in cmd) {
+      const { prosecution_id, prosecutor_display, defendant_display, phase, trial_channel } = cmd.UpdateProsecution;
+      const key = slotKeyToString(prosecution_id);
+      const channelKey = trial_channel ? slotKeyToString(trial_channel) : null;
+      if (channelKey) {
+        this.#channel_to_prosecution.set(channelKey, key);
+        if (!this.channels.has(channelKey)) {
+          this.channels.set(channelKey, new_channel("Prosecution", `trial-${prosecution_id.idx}v${prosecution_id.version}`));
+        }
+      }
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      if (view) {
+        view.frozen_prosecutions.delete(key);
+        const prev = view.prosecutions.get(key);
+        view.prosecutions.set(key, { prosecutor_display, defendant_display, phase, trial_channel: channelKey });
+        if (!prev || !phaseViewEqual(prev.phase, phase)) {
+          view.events.push({
+            timestamp,
+            data: { ProsecutionEvent: { prosecution_id: key, prosecutor_display, defendant_display, phase, ended: false } },
+          });
+        }
+      }
+      return;
+    }
+
+    // The prosecution ended. Per-view (so absent players get it deferred, in order): if this view
+    // knew the prosecution, drop a terminal news event using its last-held displays, forget it,
+    // and untag its channel. Also clear the frozen flag.
+    if ("CloseProsecution" in cmd) {
+      const key = slotKeyToString(cmd.CloseProsecution.prosecution_id);
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      if (view) {
+        const prev = view.prosecutions.get(key);
+        if (prev) {
+          view.events.push({
+            timestamp,
+            data: { ProsecutionEvent: { prosecution_id: key, prosecutor_display: prev.prosecutor_display, defendant_display: prev.defendant_display, phase: prev.phase, ended: true } },
+          });
+          if (prev.trial_channel) this.#channel_to_prosecution.delete(prev.trial_channel);
+          view.prosecutions.delete(key);
+        }
+        view.frozen_prosecutions.delete(key);
+      }
+      return;
+    }
+
+    // This viewer lost presence: they're viewing frozen prosecution state until a live update
+    // replays. Purely a UI notice; the snapshot itself is untouched.
+    if ("FreezeProsecutionView" in cmd) {
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      view?.frozen_prosecutions.add(slotKeyToString(cmd.FreezeProsecutionView.prosecution_id));
       return;
     }
 
@@ -756,6 +981,34 @@ export class GameState {
     return channel;
   }
 
+  // Push a poll notice — "started" when outcome is null, else the resolution — into the
+  // channel the poll's scope maps to: a channel directly, the world/news feed for
+  // AllPresent, or (once orgs exist) the org's channel. No-op if that channel is unknown.
+  private poll_notice(
+    scope: PollVisibility,
+    poll_id: string,
+    subject: PollSubject,
+    outcome: PollOutcome | null,
+    timestamp: number,
+  ) {
+    let channel_key: string | undefined;
+    if (scope === "AllPresent") {
+      channel_key = this.news_channel_id ?? undefined;
+    } else if ("Channel" in scope) {
+      channel_key = slotKeyToString(scope.Channel);
+    } else {
+      // Org-scoped: route to the org's backing channel.
+      channel_key = this.orgs.get(slotKeyToString(scope.Org))?.channel_id;
+    }
+    if (!channel_key) return;
+    const channel = this.channels.get(channel_key);
+    if (!channel) return;
+    channel.events.push({
+      timestamp,
+      data: { PollNotice: { poll_id, subject, outcome } },
+    });
+  }
+
   find_abilities(viewer_key: string, name: string): string[] {
     const result: string[] = [];
     for (const [id, av] of this.views.get(viewer_key)?.abilities ?? []) {
@@ -785,9 +1038,29 @@ export class GameState {
     if ("Raw" in display)
       return this.players.get(slotKeyToString(display.Raw))?.display_name ?? "Unknown";
     if ("Role" in display) return display.Role;
-    // TODO: orgs aren't modeled on the frontend yet. Once they are, resolve Org to
-    // the org's name (display.Org is its actor key) the way Role resolves to its name.
-    return "Org";
+    // Org display: resolve to the org's name (display.Org is its actor key).
+    const org = this.orgs.get(slotKeyToString(display.Org));
+    return org ? orgDisplayName(org.name) : "Org";
+  }
+
+  // The abilities map a directed ability command targets: an org's shared list when the
+  // recipient is a known org, otherwise the player view's own list.
+  private abilities_for_recipient(
+    recipient: CommandRecipient,
+  ): SvelteMap<string, AbilityView> | undefined {
+    const key = recipientToView(recipient) ?? "";
+    return this.orgs.get(key)?.abilities ?? this.views.get(key)?.abilities;
+  }
+
+  // The org backing a channel, if it is an org channel. Returns the string org key.
+  org_key_for_channel(channel_key: string): string | undefined {
+    return this.#channel_to_org.get(channel_key);
+  }
+
+  // The prosecution a channel is the trial channel of, if any. For acting on the prosecution
+  // from within its channel (rendering is driven by the "Prosecution" ChannelKind instead).
+  prosecution_key_for_channel(channel_key: string): string | undefined {
+    return this.#channel_to_prosecution.get(channel_key);
   }
 }
 

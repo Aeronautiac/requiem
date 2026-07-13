@@ -147,6 +147,15 @@ export type PollVisibility =
   | { Channel: ChannelKey }
   | "AllPresent";
 
+// What a poll is about. The org/channel is carried by the poll's scope (visibility), so
+// subjects never repeat it. Generic is the pre-rendered fallback.
+export type PollSubject =
+  | { OrgAbility: AbilityBehaviour }
+  | { CivilianArrest: ActorKey }
+  | { Generic: string };
+
+export type PollOutcome = "Accepted" | "Rejected" | "Inconclusive" | "Cancelled";
+
 export type AnonymousLoungeRoleDisplay = "Dynamic" | { Static: Role };
 
 export type LoungeVariant =
@@ -161,6 +170,15 @@ export type BugSource =
 export type ProsecutionSource =
   | "None"
   | { Ability: AbilityKey };
+
+// which side holds the floor during the trial phase
+export type TrialPhaseView = "Prosecutor" | "Defense" | "Debate";
+
+// client-facing snapshot of where a prosecution is in its lifecycle
+export type ProsecutionPhaseView =
+  | "Custody"
+  | { Trial: TrialPhaseView }
+  | "Voting";
 
 export type KidnappingType =
   | "Anonymous"
@@ -198,13 +216,15 @@ export type AbilityBehaviour =
   | { FalseAnonymousContact: { target: ActorKey; role: Role } }
   | { Ipp: { target: ActorKey } }
   | { Prosecute: { target: ActorKey } }
+  | { AnonymousProsecute: { target: ActorKey } }
   | { TrueNameInvite: { target: ActorKey; true_name: string } }
   | { ForceInvite: { target: ActorKey } }
   | { BackgroundCheck: { target: ActorKey } }
   | { Outsource: { invitee: ActorKey; defendant: ActorKey } }
   | { LeaderResign: { successor: ActorKey | null } }
   | { TrueNameReveal: { target: ActorKey } }
-  | { NotebookReveal: { target: ActorKey } };
+  | { NotebookReveal: { target: ActorKey } }
+  | { CivilianArrest: { target: ActorKey } };
 
 // ////////////////////////////////////////////////////////////
 // ACTION STRUCTS
@@ -480,6 +500,7 @@ export type UpdateContactChannels = {
 // -- engine --
 
 export type Null = Record<string, never>;
+export type Crash = Record<string, never>;
 
 export type ScheduleJob = {
   timestamp: number;
@@ -613,6 +634,7 @@ export type AddVote = {
 export type CreatePoll = {
   voter_policy: VoterPolicy;
   visibility: PollVisibility;
+  subject: PollSubject;
   update_policy: PollPolicy;
   timeout_policy: PollPolicy;
   accept_payload: Action | null;
@@ -743,6 +765,7 @@ export type Action =
   | { CreateAndGivePassive: CreateAndGivePassive }
   | { TakeNotebook: TakeNotebook }
   | { Null: Null }
+  | { Crash: Crash }
   | { SetBorrowersToOwners: SetBorrowersToOwners }
   | { SetBooksDormant: SetBooksDormant }
   | { ReturnDormantBooks: ReturnDormantBooks }
@@ -833,6 +856,7 @@ export type ActionRequest = {
 // ////////////////////////////////////////////////////////////
 
 export type ActionError =
+  | "EngineAlreadyInitialized"
   | "ActorNotFound"
   | "ActorIsDead"
   | "ActorIsAlive"
@@ -929,7 +953,7 @@ export type Command =
   | { KidnapReveal: { kidnapper: ActorKey | null } }
   | { PseudocideRevival: { target_id: ActorKey } }
   | { AnonymousAnnouncement: { content: string } }
-  | { MapOrg: { org_id: ActorKey; actor_id: ActorKey } }
+  | { MapOrg: { org_id: ActorKey; channel_id: ChannelKey; org_name: OrganizationName } }
   | { ActorState: { state: States; actor_id: ActorKey } }
   | { AddOrgMember: { player_id: ActorKey; org_id: ActorKey } }
   | { RemoveOrgMember: { player_id: ActorKey; org_id: ActorKey } }
@@ -958,7 +982,19 @@ export type Command =
   | { RemoveAbility: { ability_id: AbilityKey } }
   | { RevealAutopsyMessages: { target_id: ActorKey; range: number; redact_names: boolean } }
   | { RevealTrueName: { target_id: ActorKey; true_name: string } }
-  | { RevealNotebookHolding: { target_id: ActorKey; holding: boolean } };
+  | { RevealNotebookHolding: { target_id: ActorKey; holding: boolean } }
+  | { UpdatePoll: { poll_id: PollKey; subject: PollSubject; scope: PollVisibility; accept: number; reject: number; potential: number } }
+  | { ClosePoll: { poll_id: PollKey; outcome: PollOutcome } }
+  | { UpdatePollView: { poll_id: PollKey; eligible: boolean; own_vote: boolean | null } }
+  | { RemovePollView: { poll_id: PollKey } }
+  // prosecutions: broadcast to system + base immediately, deferred to players (never dropped, so
+  // absent players replay the ordered timeline). trial_channel tags a channel as a prosecution
+  // channel so it renders differently; the channel/poll contents ride their own command streams.
+  | { UpdateProsecution: { prosecution_id: ProsecutionKey; prosecutor_display: ActorDisplay; defendant_display: ActorDisplay; phase: ProsecutionPhaseView; trial_channel: ChannelKey | null } }
+  | { CloseProsecution: { prosecution_id: ProsecutionKey } }
+  // directed: you were receiving live updates but lost presence — you're viewing frozen state
+  // until the deferred updates replay (an UpdateProsecution clears it)
+  | { FreezeProsecutionView: { prosecution_id: ProsecutionKey } };
 
 export type CommandRecipient = "System" | "BasePlayer" | {
   Actor: ActorKey

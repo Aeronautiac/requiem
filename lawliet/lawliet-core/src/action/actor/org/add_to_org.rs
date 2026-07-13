@@ -8,6 +8,7 @@ use lawliet_types::{
     action::{SetMember, UpdateContactChannels},
     actor::ActorDisplay,
     channel::{ChannelMember, ChannelPermissions},
+    command::{Command, CommandRecipient},
 };
 
 use crate::{
@@ -67,6 +68,18 @@ impl ActionInterface for AddToOrg {
             let player_data = get_player_mut(eng, self.actor_id).expect("already validated player");
             player_data.orgs.insert(self.org_id);
         }
+
+        // Surface the org membership. The org member list is the same for everyone right
+        // now, so this is undirected (System); the frontend keys it by org_id. This is the
+        // org member list, distinct from the org channel's member list (SetMember below).
+        ctx.push_cmd(
+            Command::AddOrgMember {
+                player_id: self.actor_id,
+                org_id: self.org_id,
+            },
+            CommandRecipient::System,
+            eng.time,
+        );
 
         Action::SetMember(SetMember {
             player_id: self.actor_id,

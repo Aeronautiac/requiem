@@ -50,15 +50,19 @@
 * TODO: commands
 */
 
+use indexmap::indexset;
+
 use crate::{
-    ChannelKey, Time,
+    ActorKey, ChannelKey, Time,
     action::{
-        ActionInterface, ActionResult, Action, ActionActor, ActionRequest, ActionResponse, CreateChannel, CreatePoll, ProsecutionVoteRes,
+        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionRequest, ActionResponse, CreateChannel, CreatePoll, ProsecutionVoteRes, SetMember,
     },
-    common::{JobID, ProsecutionKey},
+    actor::ActorDisplay,
+    channel::{ChannelMember, ChannelPermissions},
+    common::{JobID, ProsecutionKey, Version},
     engine::Engine,
     helpers::{get_prosecution, get_prosecution_mut},
-    poll::{PollPolicy, PollVisibility, VoterPolicy},
+    poll::{PollPolicy, PollSubject, PollVisibility, VoterPolicy},
     prosecution::{ProsecutionPhase, TrialPhase, TrialSubphase},
 };
 
@@ -70,6 +74,31 @@ fn schedule_advance(eng: &mut Engine, prosecution_id: ProsecutionKey, delay: Tim
     })
 }
 
+// Seed a key participant onto the freshly created trial channel with empty perms and a fixed
+// display. The trailing UpdateProsecutions step grants the real view/send perms, preserving this
+// display rather than falling back to Raw.
+fn seed_member(
+    eng: &mut Engine,
+    ctx: &mut ActionContext,
+    version: Version,
+    mutate: bool,
+    channel_id: ChannelKey,
+    player_id: ActorKey,
+    display: ActorDisplay,
+) -> ActionResult {
+    Action::SetMember(SetMember {
+        player_id,
+        channel_id,
+        settings: Some(ChannelMember {
+            perms: ChannelPermissions::EMPTY,
+            displays: indexset![display],
+        }),
+    })
+    .handle(eng, ctx, &ActionActor::System, version, mutate)
+}
+
+// Channel perms and the client-facing broadcast are handled centrally by UpdateProsecutions in
+// the trailing Update step, so this only advances the phase and reschedules the timer.
 fn handle_trial_phase(
     eng: &mut Engine,
     mutate: bool,
@@ -108,12 +137,13 @@ impl ActionInterface for AdvanceProsecution {
 
         let prosecution = get_prosecution(eng, self.prosecution_id)?;
         match &prosecution.phase {
-            ProsecutionPhase::Custody {
-                prosecutor_ready,
-                defense_ready,
-                timeout_job_id,
-            } => {
+            ProsecutionPhase::Custody { timeout_job_id, .. } => {
                 let job_id = *timeout_job_id;
+                let prosecutor_id = prosecution.prosecution.prosecutor;
+                let prosecutor_display = prosecution.prosecution.prosecutor_display;
+                let defendant_id = prosecution.defense.defendant;
+                let defendant_display = prosecution.defense.defendant_display;
+                let lawyer_id = prosecution.defense.lawyer.as_ref().map(|l| l.actor_id);
 
                 let channel_response = Action::CreateChannel(CreateChannel { loggable: true })
                     .handle(eng, ctx, actor, version, mutate)?;
@@ -121,9 +151,6 @@ impl ActionInterface for AdvanceProsecution {
                     unreachable!();
                 };
                 let channel_id = data.id;
-
-                // TODO:
-                // evaluate trial channel view perms for every player (new action)
 
                 if mutate {
                     eng.jobs.cancel_id(job_id);
@@ -140,6 +167,26 @@ impl ActionInterface for AdvanceProsecution {
                         channel_id,
                         timeout_job_id: job_id,
                     };
+
+                    // Seed the key participants with their displays and empty perms. The trailing
+                    // UpdateProsecutions step grants view/send perms across all present players.
+                    seed_member(
+                        eng, ctx, version, mutate, channel_id, prosecutor_id, prosecutor_display,
+                    )?;
+                    seed_member(
+                        eng, ctx, version, mutate, channel_id, defendant_id, defendant_display,
+                    )?;
+                    if let Some(lawyer_id) = lawyer_id {
+                        seed_member(
+                            eng,
+                            ctx,
+                            version,
+                            mutate,
+                            channel_id,
+                            lawyer_id,
+                            ActorDisplay::Raw(lawyer_id),
+                        )?;
+                    }
                 }
             }
             ProsecutionPhase::Trial {
@@ -193,10 +240,7 @@ impl ActionInterface for AdvanceProsecution {
                             },
                         ),
                     },
-                    TrialPhase::Debate {
-                        prosecutor_done,
-                        defense_done,
-                    } => {
+                    TrialPhase::Debate { .. } => {
                         let response = Action::CreatePoll(CreatePoll {
                             accept_payload: Box::new(Some(Action::ProsecutionVoteRes(
                                 ProsecutionVoteRes {
@@ -211,6 +255,7 @@ impl ActionInterface for AdvanceProsecution {
                                 },
                             ))),
                             voter_policy: VoterPolicy::Present,
+                            subject: PollSubject::Generic("Trial verdict".to_string()),
                             update_policy: PollPolicy::AlwaysInconclusive,
                             timeout_policy: PollPolicy::WinningVote,
                             visibility: PollVisibility::AllPresent,
@@ -231,7 +276,10 @@ impl ActionInterface for AdvanceProsecution {
                         if mutate {
                             let prosecution = get_prosecution_mut(eng, self.prosecution_id)
                                 .expect("prosecution was already validated");
-                            prosecution.phase = ProsecutionPhase::Voting { poll_id: id };
+                            prosecution.phase = ProsecutionPhase::Voting {
+                                poll_id: id,
+                                channel_id,
+                            };
                         }
                     }
                 }

@@ -38,6 +38,8 @@ impl ActionInterface for AddVote {
             poll.add_vote(player_id, self.accept);
         }
 
+        super::broadcast_poll(eng, ctx, self.poll_id, mutate);
+
         Ok(ActionResponse::AddVote(AddVoteResponse {}))
     }
 }

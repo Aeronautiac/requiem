@@ -19,16 +19,19 @@
 * - TODO: commands
 */
 
+use indexmap::IndexSet;
+
 use crate::{
-    ActorKey,
     action::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionRequest, ActionResponse, AdvanceProsecution, SetCustody,
     },
-    actor::{ActorDisplay, modifier::Modifier},
+    actor::modifier::Modifier,
     common::{ProsecutionKey, Version},
     engine::Engine,
     helpers::{get_actor, require_player},
-    prosecution::{Prosecution, ProsecutionDefense, ProsecutionPhase, ProsecutionSource},
+    prosecution::{
+        Prosecution, ProsecutionDefense, ProsecutionPhase, ProsecutionProsecutor,
+    },
 };
 
 pub use crate::action::{StartProsecution, StartProsecutionResponse};
@@ -71,9 +74,13 @@ impl ActionInterface for StartProsecution {
 
             let prosecution_id = eng.world.add_prosecution(Prosecution {
                 source: self.source,
-                prosecutor: self.prosecutor_id,
+                prosecution: ProsecutionProsecutor {
+                    prosecutor: self.prosecutor_id,
+                    prosecutor_display: self.prosecutor_display,
+                },
                 defense: ProsecutionDefense {
                     defendant: self.defendant_id,
+                    defendant_display: self.defendant_display,
                     lawyer: None,
                 },
                 phase: ProsecutionPhase::Custody {
@@ -82,6 +89,7 @@ impl ActionInterface for StartProsecution {
                     timeout_job_id: 0,
                 },
                 autonomous: self.autonomous,
+                dirty: IndexSet::new(),
             });
 
             let job_id = eng.jobs.push(ActionRequest {
@@ -106,6 +114,8 @@ impl ActionInterface for StartProsecution {
         } else {
             ProsecutionKey::default()
         };
+
+        // The custody announcement is broadcast by UpdateProsecutions in the trailing Update step.
 
         Ok(ActionResponse::StartProsecution(StartProsecutionResponse {
             id,

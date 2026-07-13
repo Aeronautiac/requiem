@@ -5,8 +5,8 @@
 
 use crate::{
     action::{
-        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        InitializeWorld, SetRandomSeed,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, InitializeWorld, SetRandomSeed,
     },
     common::Version,
     engine::Engine,
@@ -25,10 +25,18 @@ impl ActionInterface for InitializeEngine {
     ) -> ActionResult {
         actor.admin_or_system()?;
 
+        if eng.initialized {
+            return Err(ActionError::EngineAlreadyInitialized);
+        }
+
         Action::SetRandomSeed(SetRandomSeed { seed: self.seed })
             .handle(eng, ctx, actor, version, mutate)?;
 
         Action::InitializeWorld(InitializeWorld {}).handle(eng, ctx, actor, version, mutate)?;
+
+        if mutate {
+            eng.initialized = true;
+        }
 
         Ok(ActionResponse::InitializeEngine(
             InitializeEngineResponse {},

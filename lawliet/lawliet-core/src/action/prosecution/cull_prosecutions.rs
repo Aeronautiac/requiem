@@ -47,7 +47,7 @@ impl ActionInterface for CullProsecutions {
             .prosecutions
             .iter()
             .filter_map(|(key, prosecution)| {
-                let prosecutor = get_actor(eng, prosecution.prosecutor)
+                let prosecutor = get_actor(eng, prosecution.prosecution.prosecutor)
                     .expect("prosecutor must be a valid actor");
                 let defendant = get_actor(eng, prosecution.defense.defendant)
                     .expect("defendant must be a valid actor");
@@ -75,7 +75,7 @@ impl ActionInterface for CullProsecutions {
                                         let owner = get_actor(eng, owner_id)
                                             .expect("ability owner must be a valid actor");
                                         if let ActorType::Org(org) = &owner.actor_type {
-                                            if !org.members.contains_key(&prosecution.prosecutor) {
+                                            if !org.members.contains_key(&prosecution.prosecution.prosecutor) {
                                                 break 'check true;
                                             }
                                         }

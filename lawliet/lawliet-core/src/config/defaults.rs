@@ -28,6 +28,8 @@ pub struct DefaultConfig {
     pub presentation_grace_timeout: Time,
     pub presentation_timeout: Time,
     pub kidnap_time: Time,
+    pub civ_arrest_time: Time,      // how long a civilian arrest incarcerates the target
+    pub civ_arrest_vote_time: Time, // how long a civilian arrest poll stays open
     pub autopsy_window: Time,
     pub autopsy_redaction: bool,
     pub prosecution_autonomous: bool, // whether the plain Prosecute ability files autonomous trials
@@ -59,6 +61,8 @@ pub fn default_defaults() -> DefaultConfig {
         custody_timeout: hrs(4),
         trial_vote_duration: hrs(6),
         kidnap_time: hrs(24),
+        civ_arrest_time: hrs(24),
+        civ_arrest_vote_time: hrs(6),
         autopsy_window: hrs(6),
         autopsy_redaction: false,
         prosecution_autonomous: true,

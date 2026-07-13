@@ -44,7 +44,7 @@ impl ActionInterface for SignalReady {
         let caller = player_id(actor).expect("already validated as player");
 
         let prosecution = get_prosecution(eng, self.prosecution_id)?;
-        let is_prosecutor = prosecution.prosecutor == caller;
+        let is_prosecutor = prosecution.prosecution.prosecutor == caller;
         let is_defendant = prosecution.defense.defendant == caller;
 
         if !is_prosecutor && !is_defendant {

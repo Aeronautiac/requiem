@@ -5,14 +5,19 @@
 * Remember that an org is just a variant of an actor
 */
 
-use lawliet_types::action::CreateChannel;
+use lawliet_types::{
+    action::CreateChannel,
+    command::{Command, CommandRecipient},
+};
 
 use crate::{
     action::{
-        Action, ActionInterface, ActionResponse, CreateAndGiveOrgAbility, CreateAndGivePassive,
+        Action, ActionInterface, ActionResponse, AddChargePool, CreateAndGiveOrgAbility,
+        CreateAndGivePassive,
     },
     actor::organization::{LeadershipStruct, OrgAbility},
     common::ActorKey,
+    helpers::{get_actor_mut, get_charge_pool_mut},
 };
 
 use crate::action::ActionActor;
@@ -36,6 +41,7 @@ impl ActionInterface for CreateOrg {
             .expect("Organization unimplemented!");
         let abilities = org_config.abilities.clone();
         let passives = org_config.passives.clone();
+        let charge_pools = org_config.charge_pools.clone();
 
         let channel_response = Action::CreateChannel(CreateChannel { loggable: true })
             .handle(eng, ctx, actor, version, mutate)?;
@@ -64,7 +70,33 @@ impl ActionInterface for CreateOrg {
             ActorKey::default()
         };
 
+        ctx.push_cmd(
+            Command::MapOrg {
+                org_id: id,
+                channel_id,
+                org_name: self.name,
+            },
+            CommandRecipient::System,
+            eng.time,
+        );
+
         if mutate {
+            // Pools must exist before the abilities that link to them (mirrors add_player).
+            for (name, specifier) in charge_pools {
+                let pool_response = Action::AddChargePool(AddChargePool {
+                    base_charges: specifier.charges,
+                    base_reset_time: specifier.reset_time,
+                })
+                .handle(eng, ctx, actor, version, mutate)?;
+                let ActionResponse::AddChargePool(data) = pool_response else {
+                    unreachable!()
+                };
+                let pool = get_charge_pool_mut(eng, data.id)?;
+                pool.on_link();
+                let org_actor = get_actor_mut(eng, id)?;
+                org_actor.pool_map.insert(name, data.id);
+            }
+
             for ability in abilities {
                 let settings = OrgAbility {
                     require_roles: ability.require_roles.into_iter().collect(),

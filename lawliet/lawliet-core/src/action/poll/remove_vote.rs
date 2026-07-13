@@ -38,6 +38,8 @@ impl ActionInterface for RemoveVote {
             poll.remove_vote(player_id);
         }
 
+        super::broadcast_poll(eng, ctx, self.poll_id, mutate);
+
         Ok(ActionResponse::RemoveVote(RemoveVoteResponse {}))
     }
 }

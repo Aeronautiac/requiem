@@ -17,7 +17,7 @@ use crate::{
     lounge::LoungeVariant,
     organization::{LeadershipTransferPolicies, OrgAbility, OrganizationName},
     passive::PassiveType,
-    poll::{PollPolicy, PollVisibility, VoterPolicy},
+    poll::{PollOutcome, PollPolicy, PollSubject, PollVisibility, VoterPolicy},
     prosecution::ProsecutionSource,
     role::Role,
     world::{OverrideSource, WorldChannelName, WorldChannelOverride},
@@ -25,6 +25,7 @@ use crate::{
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ActionError {
+    EngineAlreadyInitialized,
     ActorNotFound,
     ActorIsDead,
     ActorIsAlive,
@@ -648,6 +649,13 @@ pub struct NullResponse {}
 pub struct Null {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct CrashResponse {}
+
+// Debug/testing action: panics the engine on purpose so the crash path can be exercised.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct Crash {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct ScheduleJobResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -686,6 +694,19 @@ pub struct ReleaseIncarcerationResponse {}
 pub struct ReleaseIncarceration {
     pub incarceration_id: IncarcerationKey,
     pub forced: bool,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct TimedIncarcerationResponse {}
+
+// Incarcerate a player and schedule their automatic release after `duration`. Unifies
+// CreateIncarceration + a ScheduleJob(ReleaseIncarceration) into one action so it can be
+// used as a single poll payload (e.g. the civilian arrest vote's accept action).
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct TimedIncarceration {
+    pub victim_id: ActorKey,
+    pub source: IncarcerationSource,
+    pub duration: Time,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -917,6 +938,7 @@ pub struct CreatePollReponse {
 pub struct CreatePoll {
     pub voter_policy: VoterPolicy,
     pub visibility: PollVisibility,
+    pub subject: PollSubject,
     pub update_policy: PollPolicy,
     pub timeout_policy: PollPolicy,
     pub accept_payload: Box<Option<Action>>,
@@ -930,7 +952,8 @@ pub struct PollCleanupResponse {}
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct PollCleanup {
     pub poll_id: PollKey,
-    pub cancelled: bool,
+    // how the poll ended, so the frontend can drop it with the right resolution notice.
+    pub outcome: PollOutcome,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -968,10 +991,24 @@ pub struct AdvanceProsecution {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateProsecutionChannelsResponse {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateProsecutionChannels {
+    pub prosecution_id: ProsecutionKey,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct CullProsecutionsResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct CullProsecutions {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateProsecutionsResponse {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateProsecutions {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct ProsecutionVoteResResponse {}
@@ -1160,6 +1197,7 @@ pub enum Action {
     TakeNotebook(TakeNotebook),
     SetNotebookPossession(SetNotebookPossession),
     Null(Null),
+    Crash(Crash),
     SetBorrowersToOwners(SetBorrowersToOwners),
     SetBooksDormant(SetBooksDormant),
     ReturnDormantBooks(ReturnDormantBooks),
@@ -1208,6 +1246,8 @@ pub enum Action {
     StartProsecution(StartProsecution),
     SetCustody(SetCustody),
     AdvanceProsecution(AdvanceProsecution),
+    UpdateProsecutionChannels(UpdateProsecutionChannels),
+    UpdateProsecutions(UpdateProsecutions),
     SignalReady(SignalReady),
     SelectLawyer(SelectLawyer),
     CullProsecutions(CullProsecutions),
@@ -1227,6 +1267,7 @@ pub enum Action {
     UpdatePrisonChannel(UpdatePrisonChannel),
     CreateIncarceration(CreateIncarceration),
     ReleaseIncarceration(ReleaseIncarceration),
+    TimedIncarceration(TimedIncarceration),
     CullIncarcerations(CullIncarcerations),
     CreatePersonalChannel(CreatePersonalChannel),
 }
@@ -1266,6 +1307,7 @@ pub enum ActionResponse {
     TakeNotebook(TakeNotebookResponse),
     SetNotebookPossession(SetNotebookPossessionResponse),
     Null(NullResponse),
+    Crash(CrashResponse),
     SetBorrowersToOwners(SetBorrowersToOwnersResponse),
     SetBooksDormant(SetBooksDormantResponse),
     ReturnDormantBooks(ReturnDormantBooksResponse),
@@ -1314,6 +1356,8 @@ pub enum ActionResponse {
     StartProsecution(StartProsecutionResponse),
     SetCustody(SetCustodyResponse),
     AdvanceProsecution(AdvanceProsecutionResponse),
+    UpdateProsecutionChannels(UpdateProsecutionChannelsResponse),
+    UpdateProsecutions(UpdateProsecutionsResponse),
     SignalReady(SignalReadyResponse),
     SelectLawyer(SelectLawyerResponse),
     CullProsecutions(CullProsecutionsResponse),
@@ -1333,6 +1377,7 @@ pub enum ActionResponse {
     UpdatePrisonChannel(UpdatePrisonChannelResponse),
     CreateIncarceration(CreateIncarcerationResponse),
     ReleaseIncarceration(ReleaseIncarcerationResponse),
+    TimedIncarceration(TimedIncarcerationResponse),
     CullIncarcerations(CullIncarceratationsResponse),
 }
 

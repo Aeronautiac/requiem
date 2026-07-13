@@ -3,10 +3,7 @@
 */
 
 use crate::{
-    ProsecutionKey,
-    action::{
-        ActionInterface, Action, ActionActor, ActionResponse, Kill, TerminateProsecution,
-    },
+    action::{Action, ActionActor, ActionInterface, ActionResponse, Kill, TerminateProsecution},
     helpers::get_prosecution,
 };
 
@@ -28,7 +25,7 @@ impl ActionInterface for ProsecutionVoteRes {
             Action::Kill(Kill {
                 allow_link_chaining: true,
                 death_message: Some(eng.config.defaults.execution_death_message.clone()),
-                killer_id: Some(prosecution.prosecutor),
+                killer_id: Some(prosecution.prosecution.prosecutor),
                 target_id: prosecution.defense.defendant,
                 set_books_dormant: false,
                 sever_links: true,

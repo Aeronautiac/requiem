@@ -54,9 +54,11 @@
 // visible. Deferred commands handle the case where a player receives a visibility grant
 // for an already-archived object — the frontend should label it archived and block interaction.
 
-use crate::{ActorKey, ChannelKey, PollKey, common::JobID};
+use indexmap::IndexSet;
 
-pub use lawliet_types::prosecution::ProsecutionSource;
+use crate::{ActorKey, ChannelKey, PollKey, actor::ActorDisplay, common::JobID};
+
+pub use lawliet_types::prosecution::{ProsecutionPhaseView, ProsecutionSource, TrialPhaseView};
 
 #[derive(Debug)]
 pub struct Lawyer {
@@ -65,8 +67,19 @@ pub struct Lawyer {
 }
 
 #[derive(Debug)]
+pub struct ProsecutionProsecutor {
+    pub prosecutor: ActorKey,
+    // How the prosecutor appears in the trial channel. Seeded onto the channel member when the
+    // trial channel is created (Anonymous/Silent prosecutions pass a Mysterious display here).
+    pub prosecutor_display: ActorDisplay,
+}
+
+#[derive(Debug)]
 pub struct ProsecutionDefense {
     pub defendant: ActorKey,
+    // How the defendant appears in the trial channel. Seeded onto the channel member when the
+    // trial channel is created; currently always Raw (no anonymous-defendant mechanic).
+    pub defendant_display: ActorDisplay,
     pub lawyer: Option<Lawyer>,
 }
 
@@ -114,6 +127,9 @@ pub enum ProsecutionPhase {
 
     Voting {
         poll_id: PollKey,
+        // retained from the trial phase so the channel stays viewable (send revoked) during
+        // the vote, and the frontend can keep rendering the trial alongside the verdict poll.
+        channel_id: ChannelKey,
     },
 }
 
@@ -123,8 +139,34 @@ pub enum ProsecutionPhase {
 #[derive(Debug)]
 pub struct Prosecution {
     pub source: ProsecutionSource,
-    pub prosecutor: ActorKey,
+    pub prosecution: ProsecutionProsecutor,
     pub defense: ProsecutionDefense,
     pub phase: ProsecutionPhase,
     pub autonomous: bool,
+    // Players who were last sent a live prosecution update (i.e. were present). On the next
+    // broadcast, anyone in here who has since lost presence is sent a FreezeProsecutionView notice
+    // and dropped. Purely drives that "viewing frozen state" notice — actual updates are always
+    // delivered (deferred while absent), never gated on this set. Mirrors the poll dirty set.
+    pub dirty: IndexSet<ActorKey>,
+}
+
+impl Prosecution {
+    // Map the internal phase to the client-facing view and locate the trial channel (None during
+    // custody, before the channel exists).
+    pub fn phase_view(&self) -> (ProsecutionPhaseView, Option<ChannelKey>) {
+        match &self.phase {
+            ProsecutionPhase::Custody { .. } => (ProsecutionPhaseView::Custody, None),
+            ProsecutionPhase::Trial { phase, channel_id, .. } => {
+                let trial = match phase {
+                    TrialPhase::Prosecutor(_) => TrialPhaseView::Prosecutor,
+                    TrialPhase::Defense(_) => TrialPhaseView::Defense,
+                    TrialPhase::Debate { .. } => TrialPhaseView::Debate,
+                };
+                (ProsecutionPhaseView::Trial(trial), Some(*channel_id))
+            }
+            ProsecutionPhase::Voting { channel_id, .. } => {
+                (ProsecutionPhaseView::Voting, Some(*channel_id))
+            }
+        }
+    }
 }

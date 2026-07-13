@@ -4,9 +4,11 @@ use crate::{
     actor::organization::{
         LeadershipTransferPolicies, LeadershipTransferPolicy, OrgAbilityPolicies, OrgAbilityPolicy,
     },
+    chargepool::PoolSpecifier,
     common::MemberCount,
     config::{
         ability::{AbilityIdentifier, AbilityName},
+        actor::ActorChargePoolName,
         role::Role,
     },
     passive::PassiveType,
@@ -30,9 +32,26 @@ pub struct OrganizationConfig {
     pub leadership: Option<OrgLeadershipConfig>,
     pub abilities: Vec<OrgConfigAbility>,
     pub passives: Vec<PassiveType>,
+    // Charge pools created on the org actor at creation (before its abilities, which link
+    // to them). Orgs' invite abilities (ForceInvite/TrueNameInvite/Outsource) all draw on
+    // the shared Invite pool.
+    pub charge_pools: IndexMap<ActorChargePoolName, PoolSpecifier>,
 }
 
 pub type OrganizationConfigMap = IndexMap<OrganizationName, OrganizationConfig>;
+
+// The default set of org charge pools: a shared Invite pool, one invite per day.
+fn org_charge_pools() -> IndexMap<ActorChargePoolName, PoolSpecifier> {
+    let mut pools = IndexMap::new();
+    pools.insert(
+        ActorChargePoolName::Invite,
+        PoolSpecifier {
+            charges: 1,
+            reset_time: 1,
+        },
+    );
+    pools
+}
 
 pub fn default_org_config() -> OrganizationConfigMap {
     let mut map = IndexMap::new();
@@ -40,6 +59,7 @@ pub fn default_org_config() -> OrganizationConfigMap {
     map.insert(
         OrganizationName::NULL,
         OrganizationConfig {
+            charge_pools: org_charge_pools(),
             leadership: None,
             abilities: vec![],
             passives: vec![],
@@ -49,6 +69,7 @@ pub fn default_org_config() -> OrganizationConfigMap {
     map.insert(
         OrganizationName::KK,
         OrganizationConfig {
+            charge_pools: org_charge_pools(),
             leadership: None,
             abilities: vec![
                 OrgConfigAbility {
@@ -122,6 +143,7 @@ pub fn default_org_config() -> OrganizationConfigMap {
     map.insert(
         OrganizationName::TF,
         OrganizationConfig {
+            charge_pools: org_charge_pools(),
             leadership: Some(OrgLeadershipConfig {
                 transfer_policies: LeadershipTransferPolicy::Random.into(),
             }),
@@ -215,6 +237,7 @@ pub fn default_org_config() -> OrganizationConfigMap {
     map.insert(
         OrganizationName::SPK,
         OrganizationConfig {
+            charge_pools: org_charge_pools(),
             leadership: Some(OrgLeadershipConfig {
                 transfer_policies: LeadershipTransferPolicy::Random.into(),
             }),

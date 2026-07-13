@@ -60,6 +60,15 @@ pub enum AbilityBehaviour {
     LeaderResign(LeaderResign),
     TrueNameReveal(TrueNameReveal),
     NotebookReveal(NotebookReveal),
+    CivilianArrest(CivilianArrest),
+}
+
+// Open a public arrest vote against a player: any present player may vote, majority
+// passes immediately, and a timeout leaves it inconclusive. On success the target is
+// incarcerated for a configured duration and then automatically released.
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct CivilianArrest {
+    pub target: ActorKey,
 }
 
 // Org ability. Delegate a prosecution: invite `invitee` into the acting org and start a

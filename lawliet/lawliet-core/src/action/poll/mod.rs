@@ -5,6 +5,94 @@ pub mod poll_timeout;
 pub mod remove_vote;
 pub mod update_polls;
 
+use lawliet_types::command::{Command, CommandRecipient};
+use smallvec::SmallVec;
+
+use crate::{
+    action::ActionContext,
+    common::{ActorKey, PollKey},
+    engine::Engine,
+    helpers::{get_poll, get_poll_mut},
+};
+
+// Broadcast a poll's current state to the frontend: the shared data + tally globally
+// (UpdatePoll), then each scope-viewer's personal view — votability and their own vote
+// (UpdatePollView). Actors that were previously viewers but have since lost scope access
+// get a directed RemovePollView so their client hides the poll. Only emits on the mutate
+// pass; used on creation and after each vote.
+pub(crate) fn broadcast_poll(
+    eng: &mut Engine,
+    ctx: &mut ActionContext,
+    poll_id: PollKey,
+    mutate: bool,
+) {
+    if !mutate {
+        return;
+    }
+    let Ok(poll) = get_poll(eng, poll_id) else {
+        return;
+    };
+    let tally = poll.weights(eng);
+    let subject = poll.subject.clone();
+    let scope = poll.visibility;
+    ctx.push_cmd(
+        Command::UpdatePoll {
+            poll_id,
+            subject,
+            scope,
+            accept: tally.accept,
+            reject: tally.reject,
+            potential: tally.potential_total,
+        },
+        CommandRecipient::System,
+        eng.time,
+    );
+
+    // Personal views go to everyone who can see the poll's scope; `eligible` reflects
+    // whether they may actually vote right now. Each recipient becomes a tracked viewer.
+    let ids: SmallVec<[ActorKey; 16]> = eng.world.actors.keys().collect();
+    let mut viewers: SmallVec<[ActorKey; 16]> = SmallVec::new();
+    for id in ids {
+        let poll = get_poll(eng, poll_id).unwrap();
+        if !poll.can_view(eng, id) {
+            continue;
+        }
+        let eligible = poll.voter_policy(eng, id);
+        let own_vote = poll.votes.get(&id).map(|v| v.accept);
+        ctx.push_cmd(
+            Command::UpdatePollView {
+                poll_id,
+                eligible,
+                own_vote,
+            },
+            CommandRecipient::Actor(id),
+            eng.time,
+        );
+        viewers.push(id);
+    }
+
+    // Anyone we'd previously sent poll data to who is no longer a viewer has lost scope
+    // access: tell their client to hide the poll, then forget them.
+    let poll = get_poll(eng, poll_id).unwrap();
+    let dropped: SmallVec<[ActorKey; 8]> = poll
+        .dirty
+        .iter()
+        .filter(|id| !viewers.contains(id))
+        .copied()
+        .collect();
+    for id in &dropped {
+        ctx.push_cmd(
+            Command::RemovePollView { poll_id },
+            CommandRecipient::Actor(*id),
+            eng.time,
+        );
+    }
+
+    // The dirty set is now exactly the current viewers.
+    let poll = get_poll_mut(eng, poll_id).unwrap();
+    poll.dirty = viewers.into_iter().collect();
+}
+
 // - Polls should cancel themselves if the action attached to them is rejected (pass mutate false)
 // - The poll create action will check the attached action as well to gate initial creation
 // - Adding a vote to a poll should first evaluate the poll
@@ -42,7 +130,7 @@ mod poll_tests {
         engine::Engine,
         helpers::get_actor,
         passive::PassiveType,
-        poll::{PollPolicy, PollVisibility, VoterPolicy},
+        poll::{PollPolicy, PollSubject, PollVisibility, VoterPolicy},
         test_helpers::*,
     };
 
@@ -57,6 +145,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
@@ -86,6 +175,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
@@ -113,6 +203,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
@@ -139,6 +230,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
@@ -167,6 +259,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
@@ -191,6 +284,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
@@ -215,6 +309,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::Majority,
@@ -248,6 +343,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
@@ -271,6 +367,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
@@ -307,6 +404,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::WinningVote,
@@ -348,6 +446,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::WinningVote,
@@ -380,6 +479,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::Majority,
@@ -422,6 +522,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::Majority,
@@ -460,6 +561,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::Majority,
@@ -489,6 +591,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::Majority,
@@ -524,6 +627,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::WinningVote,
@@ -553,6 +657,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
@@ -577,6 +682,7 @@ mod poll_tests {
             0,
             CreatePoll {
                 voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::AlwaysInconclusive,

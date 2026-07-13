@@ -32,6 +32,7 @@ impl ActionInterface for CreatePoll {
                 *(self.accept_payload.clone()),
                 *(self.reject_payload.clone()),
                 self.visibility,
+                self.subject.clone(),
                 self.update_policy,
                 self.timeout_policy,
                 self.voter_policy,
@@ -50,6 +51,8 @@ impl ActionInterface for CreatePoll {
             })
             .handle(eng, ctx, actor, version, mutate)?;
         }
+
+        super::broadcast_poll(eng, ctx, id, mutate);
 
         Ok(ActionResponse::CreatePoll(CreatePollReponse { id }))
     }

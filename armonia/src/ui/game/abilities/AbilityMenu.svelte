@@ -13,22 +13,38 @@
     prettyAbility,
   } from "./registry";
 
+  // When `orgId` is set this menu drives that org's abilities (dispatching UseOrgAbility);
+  // otherwise it drives the current viewer's personal abilities. Same UI either way, so
+  // an org menu looks identical to the personal one — it's just a separate instance.
+  let { orgId }: { orgId?: string } = $props();
+
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
   let open = $state(false);
   let selectedId = $state<string | null>(null); // ability instance being configured
 
-  // The viewer's abilities, minus ones surfaced through a dedicated widget.
+  // The abilities this menu lists: an org's shared set, or the viewer's own.
+  const source = $derived(
+    orgId ? game.orgs.get(orgId)?.abilities : game.views.get(ui.viewer)?.abilities,
+  );
+
+  // The abilities, minus ones surfaced through a dedicated widget.
   const listed = $derived.by(() => {
-    const out: { id: string; name: AbilityName; usages: number; resets: number }[] =
-      [];
-    for (const [id, av] of game.views.get(ui.viewer)?.abilities ?? []) {
+    const out: {
+      id: string;
+      name: AbilityName;
+      successUsages: number;
+      failureUsages: number;
+      resets: number;
+    }[] = [];
+    for (const [id, av] of source ?? []) {
       if (EXCLUDED_ABILITIES.has(av.name)) continue;
       out.push({
         id,
         name: av.name,
-        usages: av.success_usages_remaining,
+        successUsages: av.success_usages_remaining,
+        failureUsages: av.failure_usages_remaining,
         resets: av.iterations_to_reset,
       });
     }
@@ -36,9 +52,7 @@
   });
 
   const selectedAbility = $derived(
-    selectedId
-      ? game.views.get(ui.viewer)?.abilities.get(selectedId)
-      : undefined,
+    selectedId ? source?.get(selectedId) : undefined,
   );
   const SelectedUi = $derived(
     selectedAbility ? ABILITY_UIS[selectedAbility.name] : undefined,
@@ -54,7 +68,7 @@
   <Dialog.Trigger
     class="h-8 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-200 hover:bg-neutral-800"
   >
-    Abilities
+    {orgId ? "Org abilities" : "Abilities"}
   </Dialog.Trigger>
   <Dialog.Content class="max-w-sm">
     {#if selectedId && SelectedUi && selectedAbility}
@@ -70,16 +84,17 @@
           {prettyAbility(selectedAbility.name)}
         </Dialog.Title>
       </Dialog.Header>
-      <SelectedUi abilityId={selectedId} onDone={close} />
+      <SelectedUi abilityId={selectedId} {orgId} onDone={close} />
     {:else}
       <Dialog.Header>
-        <Dialog.Title>Abilities</Dialog.Title>
+        <Dialog.Title>{orgId ? "Org abilities" : "Abilities"}</Dialog.Title>
       </Dialog.Header>
       <div class="flex flex-col gap-2">
         {#each listed as ab (ab.id)}
           <AbilityCard
             name={ab.name}
-            usages={ab.usages}
+            successUsages={ab.successUsages}
+            failureUsages={ab.failureUsages}
             resets={ab.resets}
             hasUi={ABILITY_UIS[ab.name] != null}
             onUse={() => (selectedId = ab.id)}

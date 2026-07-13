@@ -6,7 +6,7 @@
   import { now } from "../../time.svelte.ts";
   import type { GameEvent, GameState } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import type { ActionRequest, ActorDisplay } from "../../bindings";
+  import type { ActionRequest, ActorDisplay, PollSubject, ProsecutionPhaseView } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
   import Button from "$lib/components/ui/button/button.svelte";
@@ -104,6 +104,18 @@
     return game.players.get(id)?.display_name ?? "Unknown";
   }
 
+  // Short label for a poll notice rendered in-channel (the Polls panel is where you vote).
+  function poll_notice_text(subject: PollSubject): string {
+    if ("Generic" in subject) return subject.Generic;
+    if ("CivilianArrest" in subject) {
+      const nm = game.players.get(slotKeyToString(subject.CivilianArrest))?.display_name;
+      return nm ? `Arrest ${nm}` : "Civilian arrest";
+    }
+    const beh = subject.OrgAbility as Record<string, unknown>;
+    const name = Object.keys(beh)[0] ?? "";
+    return name.replace(/([a-z])([A-Z])/g, "$1 $2");
+  }
+
   function sender_display(): ActorDisplay {
     if (ui.viewer === "Admin") return "System";
     const chosen = available_displays.find(
@@ -123,6 +135,26 @@
     if ("Role" in display) return display.Role;
     if ("Org" in display) return "Org";
     return "Unknown";
+  }
+
+  // News-feed text for a prosecution start/advance/end (derived from the phase diff).
+  function prosecution_event_text(pe: {
+    prosecutor_display: ActorDisplay;
+    defendant_display: ActorDisplay;
+    phase: ProsecutionPhaseView;
+    ended: boolean;
+  }): string {
+    const prosecutor = display_string(pe.prosecutor_display);
+    const defendant = display_string(pe.defendant_display);
+    if (pe.ended) return `The prosecution of ${defendant} has ended.`;
+    const p = pe.phase;
+    if (p === "Custody") return `${prosecutor} is prosecuting ${defendant}.`;
+    if (p === "Voting") return `The verdict vote for ${defendant} has begun.`;
+    if (p.Trial === "Prosecutor")
+      return `The trial of ${defendant} has begun — the prosecution presents.`;
+    if (p.Trial === "Defense")
+      return `In the trial of ${defendant}, the defense presents.`;
+    return `The trial of ${defendant} has entered debate.`;
   }
 
   async function send_message() {
@@ -263,6 +295,13 @@
               description="Notebook Check"
               content={`${player_name(r.target_id)} is ${r.holding ? "" : "not "}currently holding a notebook.`}
             />
+          {:else if "PollNotice" in event.data}
+            {@const pn = event.data.PollNotice}
+            <Announcement
+              color="#6366f1"
+              description={pn.outcome ? `Vote ${pn.outcome}` : "Vote started"}
+              content={poll_notice_text(pn.subject)}
+            />
           {:else if "PseudocideRevival" in event.data}
             {@const r = event.data.PseudocideRevival}
             <Announcement
@@ -288,6 +327,13 @@
               color="#f59e0b"
               description="Kidnapping"
               content={`${player_name(k.target_id)} has been kidnapped.`}
+            />
+          {:else if "ProsecutionEvent" in event.data}
+            {@const pe = event.data.ProsecutionEvent}
+            <Announcement
+              color="#e11d48"
+              description={pe.ended ? "Prosecution Ended" : "Prosecution"}
+              content={prosecution_event_text(pe)}
             />
           {/if}
         {/each}

@@ -76,6 +76,7 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::LeaderResign(a) => a.ability_name(),
             AbilityBehaviour::TrueNameReveal(a) => a.ability_name(),
             AbilityBehaviour::NotebookReveal(a) => a.ability_name(),
+            AbilityBehaviour::CivilianArrest(a) => a.ability_name(),
         }
     }
 
@@ -136,6 +137,9 @@ impl AbilityInterface for AbilityBehaviour {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
             AbilityBehaviour::NotebookReveal(a) => {
+                a.handle(eng, ctx, actor, ability, version, mutate)
+            }
+            AbilityBehaviour::CivilianArrest(a) => {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
         }

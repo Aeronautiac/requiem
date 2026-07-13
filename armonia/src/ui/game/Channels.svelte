@@ -1,10 +1,7 @@
 <script lang="ts">
   import { getContext } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
-  import {
-    GAME_STATE_KEY,
-    CHANNEL_KINDS,
-  } from "../../game_state.svelte.ts";
+  import { GAME_STATE_KEY, CHANNEL_KINDS } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
   import type { GameState, ChannelKind } from "../../game_state.svelte.ts";
@@ -22,20 +19,29 @@
 
   // Human-readable category headings, keyed by ChannelKind.
   const KIND_LABELS: Record<ChannelKind, string> = {
-    Raw: "Direct",
     Lounge: "Lounges",
     Groupchat: "Group Chats",
     Notebook: "Notebooks",
     Role: "Roles",
     World: "World",
     Info: "Info",
+    Raw: "Misc",
+    Prosecution: "Trials",
+    // Orgs get their own membership-gated section below, not the generic category loop.
+    Org: "Organizations",
   };
 
   // World leads; News lives under it, so it always shows. The rest follow in their
   // canonical order.
   const CATEGORY_ORDER: ChannelKind[] = [
     "World",
-    ...CHANNEL_KINDS.filter((k) => k !== "World"),
+    "Role",
+    "Info",
+    "Notebook",
+    "Lounge",
+    "Groupchat",
+    "Prosecution",
+    "Raw",
   ];
 
   // only render the channels which you have had some positive perms for at some point
@@ -82,6 +88,22 @@
     return map;
   });
 
+  // Orgs the viewer may see: gated on view of the org's backing channel (Admin sees all),
+  // the same rule as every other channel. Each opens that channel; the org member/ability
+  // panel lives in the right sidebar.
+  const visible_orgs = $derived.by(() => {
+    const out: { key: string; name: string; channel: string }[] = [];
+    const view = ui.viewer === "Admin" ? undefined : game.views.get(ui.viewer);
+    for (const [key, org] of game.orgs) {
+      if (ui.viewer !== "Admin") {
+        const perms = view?.channel_views.get(org.channel_id)?.perms;
+        if (!perms?.had_positive) continue;
+      }
+      out.push({ key, name: game.channels.get(org.channel_id)?.name ?? "Org", channel: org.channel_id });
+    }
+    return out;
+  });
+
   // Categories start expanded.
   const collapsed = new SvelteSet<ChannelKind>();
 
@@ -123,12 +145,11 @@
 </script>
 
 <div class="flex flex-col p-2">
-  <!-- Every category is always rendered, even when empty, so players can see what
-       kinds of channels can appear. -->
   {#each CATEGORY_ORDER as kind}
     {@const keys = channel_categories.get(kind) ?? []}
     {@const open = !collapsed.has(kind)}
-    <section class="flex flex-col mt-1">
+    {#if keys.length > 0 || kind === "World"}
+      <section class="flex flex-col mt-1">
         <button
           class="flex items-center gap-1 px-2 py-1 text-xs font-medium uppercase tracking-wide text-neutral-500 hover:text-neutral-300"
           onclick={() => toggle(kind)}
@@ -174,7 +195,34 @@
               <FlashDisplay flash={gc_flash} />
             </div>
           {/if}
+        {/if}
+      </section>
+    {/if}
+  {/each}
+
+  {#if visible_orgs.length > 0}
+    {@const open = !collapsed.has("Org")}
+    <section class="flex flex-col mt-1">
+      <button
+        class="flex items-center gap-1 px-2 py-1 text-xs font-medium uppercase tracking-wide text-neutral-500 hover:text-neutral-300"
+        onclick={() => toggle("Org")}
+      >
+        <span class="text-[0.6rem]">{open ? "▾" : "▸"}</span>
+        {KIND_LABELS["Org"]}
+      </button>
+      {#if open}
+        {#each visible_orgs as org (org.key)}
+          <button
+            class="w-full text-left px-3 py-1 rounded text-sm hover:bg-neutral-800 {ui.selected_channel ===
+            org.channel
+              ? 'bg-neutral-800'
+              : ''} text-neutral-300"
+            onclick={() => ui.select_channel(org.channel)}
+          >
+            {org.name}
+          </button>
+        {/each}
       {/if}
     </section>
-  {/each}
+  {/if}
 </div>

@@ -14,7 +14,7 @@ use crate::{
 };
 
 pub use lawliet_types::ability::AnonymousContact;
-use lawliet_types::lounge::AnonymousLoungeRoleDisplay;
+use lawliet_types::{action::ActionError, lounge::AnonymousLoungeRoleDisplay};
 
 impl AbilityInterface for AnonymousContact {
     fn ability_name(&self) -> crate::config::ability::AbilityName {
@@ -34,6 +34,10 @@ impl AbilityInterface for AnonymousContact {
 
         let id = actor_id(actor).expect("expected valid actor id within anon contact ability");
         let role = get_player(eng, id)?.role;
+
+        if self.target == id {
+            return Err(ActionError::CannotContactSelf);
+        }
 
         Action::CreateLounge(CreateLounge {
             variant: LoungeVariant::Anonymous {

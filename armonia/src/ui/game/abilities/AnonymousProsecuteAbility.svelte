@@ -4,8 +4,7 @@
   import { UI_STATE_KEY } from "../../../ui_state.svelte.ts";
   import type { GameState } from "../../../game_state.svelte.ts";
   import type { UiState } from "../../../ui_state.svelte.ts";
-  import { slotKeyFromString, type Role } from "../../../bindings";
-  import { ROLES } from "../../../constants";
+  import { slotKeyFromString } from "../../../bindings";
   import { Flash } from "../../../flash.svelte.ts";
   import FlashDisplay from "../../Flash.svelte";
   import PlayerSelect from "./PlayerSelect.svelte";
@@ -17,17 +16,16 @@
   const ui = getContext<UiState>(UI_STATE_KEY);
 
   let target = $state("");
-  let role = $state<Role>(ROLES[0]);
   const flash = new Flash();
 
-  async function contact() {
+  async function prosecute() {
     if (!target) {
-      flash.set_error("Pick a target.");
+      flash.set_error("Pick a defendant.");
       return;
     }
     const err = await game.dispatch(
       useAbilityRequest(ui.viewer, abilityId, orgId, {
-        FalseAnonymousContact: { target: slotKeyFromString(target), role },
+        AnonymousProsecute: { target: slotKeyFromString(target) },
       }),
     );
     if (err) flash.set_error(err);
@@ -37,26 +35,15 @@
 
 <div class="flex flex-col gap-3">
   <p class="text-sm text-neutral-400">
-    Open an anonymous lounge with a player — they won't see who you are, and the
-    role you show them is one you choose to pose as.
+    Prosecute a player anonymously — they'll be put into custody and the trial is
+    filed under your role, not your identity.
   </p>
-  <PlayerSelect bind:value={target} placeholder="Target" />
-  <label class="flex flex-col gap-1 text-xs text-neutral-500">
-    Role to pose as
-    <select
-      bind:value={role}
-      class="w-full rounded-md bg-neutral-800 px-2 py-2 text-sm text-neutral-200"
-    >
-      {#each ROLES as r (r)}
-        <option value={r}>{r}</option>
-      {/each}
-    </select>
-  </label>
+  <PlayerSelect bind:value={target} placeholder="Defendant" />
   <button
-    class="rounded-md bg-purple-500 px-3 py-2 text-sm font-medium text-white hover:bg-purple-400"
-    onclick={contact}
+    class="rounded-md bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-500"
+    onclick={prosecute}
   >
-    Contact as {role}
+    Prosecute anonymously
   </button>
   <FlashDisplay {flash} />
 </div>

@@ -8,7 +8,7 @@
   import FlashDisplay from "../../Flash.svelte";
   import { useAbilityRequest, type AbilityUiProps } from "./registry";
 
-  let { abilityId, onDone }: AbilityUiProps = $props();
+  let { abilityId, onDone, orgId }: AbilityUiProps = $props();
 
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
@@ -22,7 +22,7 @@
       return;
     }
     const err = await game.dispatch(
-      useAbilityRequest(ui.viewer, abilityId, {
+      useAbilityRequest(ui.viewer, abilityId, orgId, {
         AnonymousAnnouncement: { content },
       }),
     );

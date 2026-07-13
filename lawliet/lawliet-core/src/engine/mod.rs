@@ -19,6 +19,8 @@ pub struct Engine {
     pub jobs: Jobs,
     pub deferred_commands: Vec<DeferredCommand>,
     pub rng_state: Pcg32,
+    // set once InitializeEngine has run; guards against re-initialization.
+    pub initialized: bool,
 }
 
 pub type ExecutionResult =
@@ -33,6 +35,7 @@ impl Engine {
             deferred_commands: vec![],
             time: 0,
             rng_state: Pcg32::seed_from_u64(0),
+            initialized: false,
         }
     }
 

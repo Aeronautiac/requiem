@@ -3,10 +3,7 @@
 * Create the world's base organizations
 */
 
-use crate::action::ActionActor;
-pub use crate::action::{
-        ActionInterface, ActionResponse,
-    };
+use crate::action::{Action, ActionActor, ActionInterface, ActionResponse, CreateOrg};
 
 pub use crate::action::{CreateOrgs, CreateOrgsResponse};
 
@@ -21,8 +18,10 @@ impl ActionInterface for CreateOrgs {
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;
 
-        // TODO:
-        // implement it
+        let orgs = eng.config.world_config.default_orgs.clone();
+        for name in orgs {
+            Action::CreateOrg(CreateOrg { name }).handle(eng, ctx, actor, version, mutate)?;
+        }
 
         Ok(ActionResponse::CreateOrgs(CreateOrgsResponse {}))
     }

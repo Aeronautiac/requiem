@@ -133,5 +133,20 @@
     }}>Update</Button
   >
 
+  <Button
+    variant="destructive"
+    onclick={async () => {
+      const err = await game.dispatch({
+        actor: "Admin",
+        timestamp: now(),
+        payload: { Crash: {} },
+      });
+      // A crash comes back as the "engine has crashed" string (the runtime is respawned
+      // and resaturated behind the scenes); surface it so the crash is actually visible.
+      if (err) flash.set_error(err);
+      else flash.set_success("No crash?");
+    }}>Crash</Button
+  >
+
   <FlashDisplay {flash} />
 </div>

@@ -3,7 +3,10 @@
 * Remove a player from an organization
 */
 
-use lawliet_types::action::SetMember;
+use lawliet_types::{
+    action::SetMember,
+    command::{Command, CommandRecipient},
+};
 
 use crate::{
     action::{Action, ActionError, ActionInterface, ActionResponse, UpdateKidnapChannels},
@@ -43,6 +46,16 @@ impl ActionInterface for RemoveFromOrg {
             let player = get_player_mut(eng, self.actor_id).expect("should already be validated");
             player.orgs.swap_remove(&self.org_id);
         }
+
+        // Undirected (System): the org member list is the same for everyone right now.
+        ctx.push_cmd(
+            Command::RemoveOrgMember {
+                player_id: self.actor_id,
+                org_id: self.org_id,
+            },
+            CommandRecipient::System,
+            eng.time,
+        );
 
         Action::SetMember(SetMember {
             player_id: self.actor_id,

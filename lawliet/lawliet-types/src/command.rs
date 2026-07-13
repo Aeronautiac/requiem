@@ -7,8 +7,12 @@ use crate::{
     channel::ChannelPermissions,
     common::{
         AbilityKey, ActorKey, AttemptCount, BugKey, ChannelKey, ChargeCount, GroupchatKey,
-        IterationCount, LoungeKey, NotebookKey, PassiveKey, Time,
+        IterationCount, LoungeKey, NotebookKey, PassiveKey, PollKey, PollWeight, ProsecutionKey,
+        Time,
     },
+    organization::OrganizationName,
+    poll::{PollOutcome, PollSubject, PollVisibility},
+    prosecution::ProsecutionPhaseView,
     role::Role,
     world::WorldChannelName,
 };
@@ -115,9 +119,9 @@ pub enum Command {
         actor_id: ActorKey,
     },
 
-    /////=<TARGETTED>=/////
-
-    // display a player as an org member
+    // display a player as an org member. carries the org id, so the frontend keys the
+    // update by it directly. the org member list is currently the same for everyone (no
+    // per-viewer variation yet), so this is undirected rather than a per-member broadcast.
     // this includes dead players and such as they are still considered org members
     AddOrgMember {
         player_id: ActorKey,
@@ -129,6 +133,8 @@ pub enum Command {
         player_id: ActorKey,
         org_id: ActorKey,
     },
+
+    /////=<TARGETTED>=/////
 
     ////////////////////////////////////////////////
     // COMMS //
@@ -158,6 +164,14 @@ pub enum Command {
     MapGc {
         gc_id: GroupchatKey,
         channel_id: ChannelKey,
+    },
+
+    // register an org on the frontend: its actor id, name, and backing channel (and any
+    // future org-level data). one unified command; global, like the other channel maps.
+    MapOrg {
+        org_id: ActorKey,
+        channel_id: ChannelKey,
+        org_name: OrganizationName,
     },
 
     // there is only one instance of every world channel. a frontend must keep this in mind.
@@ -361,4 +375,90 @@ pub enum Command {
     ////////////////////////////////////////////////
     // POLLS //
     ////////////////////////////////////////////////
+    // Poll data is split: the heavy, shared part (subject, scope, tally) is held globally
+    // on the frontend via UpdatePoll; the lightweight per-player part (can I vote, what did
+    // I vote) rides a directed UpdatePollView. The per-player split exists because a fresh
+    // client rebuilds purely from the command stream — a player's own vote can't be tracked
+    // client-side across a reconnect.
+
+    /////=<NO RECIPIENT>=/////
+
+    // create or refresh a poll's shared data. Held globally, keyed by poll id. Re-sent on
+    // each vote change to update the tally (counts only, never who voted).
+    UpdatePoll {
+        poll_id: PollKey,
+        subject: PollSubject,
+        scope: PollVisibility,
+        accept: PollWeight,
+        reject: PollWeight,
+        potential: PollWeight,
+    },
+
+    // a poll concluded; the frontend drops it (globally and from every view). outcome
+    // drives the resolution notice rendered in the poll's scoped location.
+    ClosePoll {
+        poll_id: PollKey,
+        outcome: PollOutcome,
+    },
+
+    /////=<TARGETTED>=/////
+
+    // this player's personal view of a poll: whether they may currently vote, and the vote
+    // they've cast (None until they cast one). Directed to players who can see the poll's
+    // scope; receiving one is what makes a player a "viewer" of the poll.
+    UpdatePollView {
+        poll_id: PollKey,
+        eligible: bool,
+        own_vote: Option<bool>,
+    },
+
+    // a viewer can no longer see the poll's scope: hide the poll for this player. The
+    // frontend can't reliably decide this itself — some scopes (e.g. "present") it has no
+    // notion of, and re-deriving the rest from channel membership would be brittle — so the
+    // engine tracks who it sent poll data to and directs a removal when access is lost.
+    RemovePollView {
+        poll_id: PollKey,
+    },
+
+    ////////////////////////////////////////////////
+    // PROSECUTIONS //
+    ////////////////////////////////////////////////
+    // Unlike polls, prosecution updates are never dropped when a player loses visibility: the
+    // ordered timeline matters (custody announcement → trial → verdict), so absent players
+    // receive the whole sequence deferred, replayed in order when presence returns. The trial
+    // channel and verdict poll are NOT owned by this protocol — their contents ride the channel
+    // and poll command streams respectively; any divergence there is an engine bug. UpdateProsecution
+    // does carry the trial channel id, but only so the frontend can tag that channel as a
+    // prosecution channel and render it differently.
+
+    // Recipients: sent to everyone — System and BasePlayer immediately, and each existing player
+    // too, with only the players receiving it deferred (held while they lack presence and replayed
+    // in order on return). The rigid "no recipient" vs "targeted" split below no longer describes
+    // reality; a command's recipients are documented per command from here on.
+
+    // Create or refresh a prosecution's client-facing snapshot, keyed by prosecution id. Custody
+    // doubles as the "someone is being prosecuted" announcement. trial_channel is None until the
+    // trial channel exists, then names it so the frontend can render it as a prosecution channel.
+    // Receiving one clears the frozen notice below.
+    UpdateProsecution {
+        prosecution_id: ProsecutionKey,
+        prosecutor_display: ActorDisplay,
+        defendant_display: ActorDisplay,
+        phase: ProsecutionPhaseView,
+        trial_channel: Option<ChannelKey>,
+    },
+
+    // The prosecution ended (verdict reached, terminated, etc.); the frontend drops it. Sent to
+    // everyone the same way as UpdateProsecution, so for absent players it lands (deferred) after
+    // any pending updates.
+    CloseProsecution {
+        prosecution_id: ProsecutionKey,
+    },
+
+    // Directed to a single player who was receiving live updates but has lost presence: they are
+    // now viewing frozen state. Purely a UI notice — the real updates are still queued and will
+    // replay in order on return (an UpdateProsecution is what clears this).
+    FreezeProsecutionView {
+        prosecution_id: ProsecutionKey,
+    },
 }

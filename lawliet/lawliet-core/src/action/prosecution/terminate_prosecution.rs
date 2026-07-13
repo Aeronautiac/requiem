@@ -15,13 +15,17 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, DestroyChannel, PollCleanup, SetCustody,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        DestroyChannel, PollCleanup, SetCustody,
     },
-    common::{ProsecutionKey, Version},
+    common::Version,
     engine::Engine,
     helpers::get_prosecution,
+    poll::PollOutcome,
     prosecution::ProsecutionPhase,
 };
+
+use super::broadcast_prosecution_close;
 
 pub use crate::action::{TerminateProsecution, TerminateProsecutionResponse};
 
@@ -46,11 +50,12 @@ impl ActionInterface for TerminateProsecution {
             ProsecutionPhase::Voting { .. } => None,
         };
         let trial_channel = match &prosecution.phase {
-            ProsecutionPhase::Trial { channel_id, .. } => Some(*channel_id),
+            ProsecutionPhase::Trial { channel_id, .. }
+            | ProsecutionPhase::Voting { channel_id, .. } => Some(*channel_id),
             _ => None,
         };
         let voting_poll = match &prosecution.phase {
-            ProsecutionPhase::Voting { poll_id } => Some(*poll_id),
+            ProsecutionPhase::Voting { poll_id, .. } => Some(*poll_id),
             _ => None,
         };
 
@@ -60,10 +65,12 @@ impl ActionInterface for TerminateProsecution {
             eng.jobs.cancel_id(job_id);
         }
 
-        if let Some(poll_id) = voting_poll {
+        if let Some(poll_id) = voting_poll
+            && eng.world.polls.contains_key(poll_id)
+        {
             Action::PollCleanup(PollCleanup {
                 poll_id,
-                cancelled: true,
+                outcome: PollOutcome::Cancelled,
             })
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
@@ -89,6 +96,9 @@ impl ActionInterface for TerminateProsecution {
             custody: false,
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+
+        // Tell everyone the prosecution ended before dropping it.
+        broadcast_prosecution_close(eng, ctx, self.prosecution_id, mutate);
 
         if mutate {
             eng.world.remove_prosecution(self.prosecution_id);

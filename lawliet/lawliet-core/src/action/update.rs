@@ -5,7 +5,7 @@
 */
 
 pub use crate::action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, DeferredCmds, UpdatePolls, CullProsecutions,
+        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, DeferredCmds, UpdatePolls, UpdateProsecutions,
     };
 
 pub use crate::action::{Update, UpdateResponse};
@@ -23,7 +23,7 @@ impl ActionInterface for Update {
 
         Action::DeferredCmds(DeferredCmds {}).handle(eng, ctx, actor, version, mutate)?;
         Action::UpdatePolls(UpdatePolls {}).handle(eng, ctx, actor, version, mutate)?;
-        Action::CullProsecutions(CullProsecutions {}).handle(eng, ctx, actor, version, mutate)?;
+        Action::UpdateProsecutions(UpdateProsecutions {}).handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::Update(UpdateResponse {}))
     }

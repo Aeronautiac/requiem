@@ -490,6 +490,21 @@ pub fn default_ability_config() -> AbilityConfigMap {
         },
     );
 
+    // ForceInvite adds a player to the org outright — it can't fail, so it draws only on
+    // the org's shared Invite pool (no attempts cap like TrueNameInvite needs).
+    map.insert(
+        identifier(AbilityName::ForceInvite, 0),
+        AbilityConfig {
+            require_presence: true,
+            default_links: vec![ConfigPoolLink {
+                link_type: PoolLinkType::Restrictive,
+                weight: 1,
+                condition: ChargeCondition::OnSuccess.into(),
+                details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Invite),
+            }],
+        },
+    );
+
     map.insert(
         identifier(AbilityName::TrueNameInvite, 0),
         AbilityConfig {

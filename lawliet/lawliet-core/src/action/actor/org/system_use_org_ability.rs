@@ -14,7 +14,7 @@ use crate::{
     common::{AbilityKey, ActorKey, PollKey},
     config::role::Role,
     helpers::{get_actor, get_org},
-    poll::{PollPolicy, PollVisibility, VoterPolicy},
+    poll::{PollPolicy, PollSubject, PollVisibility, VoterPolicy},
 };
 
 pub use crate::action::{SystemUseOrgAbility, SystemUseOrgAbilityResponse};
@@ -76,6 +76,7 @@ impl ActionInterface for SystemUseOrgAbility {
                 let response = Action::CreatePoll(CreatePoll {
                     voter_policy: VoterPolicy::Present,
                     visibility: PollVisibility::Org(self.org_id),
+                    subject: PollSubject::OrgAbility(self.ability_args.clone()),
                     update_policy: PollPolicy::Majority,
                     timeout_policy: PollPolicy::Majority,
                     accept_payload: Box::new(Some(Action::SystemUseOrgAbility(

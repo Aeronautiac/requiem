@@ -8,7 +8,7 @@ use lawliet_types::command::{Command, CommandRecipient};
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        AddChargePool, CreateChannel,
+        AddChargePool, CreateChannel, CreateOrgs,
     },
     helpers::get_charge_pool_mut,
 };
@@ -70,6 +70,9 @@ impl ActionInterface for InitializeWorld {
                 );
             }
         }
+
+        // Spawn the world's base organizations (KK, TF, SPK, …) once channels exist.
+        Action::CreateOrgs(CreateOrgs {}).handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::InitializeWorld(InitializeWorldResponse {}))
     }
