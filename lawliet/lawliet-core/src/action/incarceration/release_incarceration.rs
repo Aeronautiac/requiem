@@ -16,7 +16,7 @@ use crate::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, RemoveState,
     },
     actor::state::State,
-    common::{IncarcerationKey, Version},
+    common::Version,
     engine::Engine,
     helpers::{actor_owns_ability, get_incarceration},
     incarceration::IncarcerationSource,

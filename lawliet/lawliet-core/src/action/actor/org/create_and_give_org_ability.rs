@@ -3,14 +3,9 @@
 * Atomically create an ability and give it to an org
 */
 
-use crate::{
-    action::{
+use crate::action::{
         ActionInterface, Action, ActionResponse, AddAbility, GiveOrgAbility,
-    },
-    actor::organization::OrgAbility,
-    common::{AbilityKey, ActorKey, Variant},
-    config::ability::AbilityName,
-};
+    };
 
 use crate::action::ActionActor;
 pub use crate::action::{CreateAndGiveOrgAbility, CreateAndGiveOrgAbilityResponse};

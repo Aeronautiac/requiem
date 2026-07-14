@@ -10,8 +10,6 @@ use crate::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, CreateAndGiveAbility, CreateActorLinks, PurgeVolatiles, SeverLinks, CreateAndGiveNotebook, CreateAndGivePassive, SetWorldChannelOverride, UpdateWorldChannelPerms,
     },
     actor::player::OverrideSource,
-    common::ActorKey,
-    config::role::Role,
     helpers::{get_player_mut, get_role_config},
 };
 

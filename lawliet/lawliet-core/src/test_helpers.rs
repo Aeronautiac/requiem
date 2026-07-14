@@ -1,3 +1,6 @@
+// Test scaffolding: helpers exist for tests that may not all use every one.
+#![allow(dead_code)]
+
 use crate::{
     action::{
         actor::{add_state::AddState, player::give_role::GiveRole, remove_state::RemoveState},
@@ -490,7 +493,7 @@ pub fn use_org_ability(
     })
 }
 
-pub fn force_charges(eng: &mut Engine, time: Time, ability_id: AbilityKey, charges: ChargeCount) {
+pub fn force_charges(eng: &mut Engine, _time: Time, ability_id: AbilityKey, charges: ChargeCount) {
     quick_clear_links(eng, 0, ability_id);
     quick_pool(
         eng,

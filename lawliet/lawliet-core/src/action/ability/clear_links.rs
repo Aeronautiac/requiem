@@ -7,8 +7,7 @@ use crate::{
     action::{
         ActionInterface, Action, ActionResponse, RemoveLink,
     },
-    common::AbilityKey,
-    helpers::{get_ability_mut, get_charge_pool},
+    helpers::get_ability_mut,
 };
 
 use crate::action::ActionActor;

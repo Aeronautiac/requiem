@@ -7,8 +7,6 @@ use crate::{
     action::{
         ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
     },
-    chargepool::PoolLinkType,
-    common::{AbilityKey, ChargePoolKey, LinkWeight},
     helpers::{get_ability_mut, get_charge_pool, get_charge_pool_mut},
 };
 
@@ -18,9 +16,9 @@ impl ActionInterface for AddLink {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        ctx: &mut ActionContext,
+        _ctx: &mut ActionContext,
         actor: &ActionActor,
-        version: crate::common::Version,
+        _version: crate::common::Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;

@@ -7,11 +7,11 @@ pub use crate::action::{Null, NullResponse};
 impl ActionInterface for Null {
     fn handle(
         &mut self,
-        eng: &mut crate::engine::Engine,
-        ctx: &mut ActionContext,
-        actor: &ActionActor,
-        version: crate::common::Version,
-        mutate: bool,
+        _eng: &mut crate::engine::Engine,
+        _ctx: &mut ActionContext,
+        _actor: &ActionActor,
+        _version: crate::common::Version,
+        _mutate: bool,
     ) -> ActionResult {
         Ok(ActionResponse::Null(NullResponse {}))
     }

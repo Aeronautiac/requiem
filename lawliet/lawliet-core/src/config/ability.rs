@@ -8,12 +8,6 @@ use crate::{
     config::{actor::ActorChargePoolName, world::WorldChargePoolName},
 };
 
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy)]
-pub enum AbilityCategory {
-    Supernatural,
-    Physical,
-}
-
 #[derive(Hash, Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
 pub struct AbilityIdentifier {
     pub name: AbilityName,

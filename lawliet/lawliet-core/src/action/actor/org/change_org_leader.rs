@@ -11,7 +11,6 @@ use crate::{
     action::{
         ActionInterface, ActionError, ActionResponse,
     },
-    common::ActorKey,
     helpers::{get_actor, get_org, get_org_mut},
 };
 
@@ -22,9 +21,9 @@ impl ActionInterface for ChangeOrgLeader {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        ctx: &mut crate::action::ActionContext,
+        _ctx: &mut crate::action::ActionContext,
         actor: &ActionActor,
-        version: crate::common::Version,
+        _version: crate::common::Version,
         mutate: bool,
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;
@@ -42,7 +41,7 @@ impl ActionInterface for ChangeOrgLeader {
             if self.new_leader == leadership_struct.leader {
                 return Err(ActionError::AlreadyLeader);
             }
-            if let Some(leader) = &leadership_struct.leader {
+            if let Some(_leader) = &leadership_struct.leader {
                 // TODO:
                 // alert them of leadership change
             }

@@ -7,8 +7,7 @@ use crate::{
     action::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, UpdateBugVisibilities, UpdateContactChannels, UpdatePrisonChannel, UpdateKidnapChannels, UpdateWorldChannelPerms,
     },
-    actor::state::State,
-    common::{ActorKey, Version},
+    common::Version,
     engine::Engine,
     helpers::{get_actor_mut, get_player},
 };

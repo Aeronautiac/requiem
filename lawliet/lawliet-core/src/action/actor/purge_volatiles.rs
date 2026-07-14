@@ -7,7 +7,7 @@ use crate::{
     action::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, DestroyAbility, DestroyNotebook, DestroyPassive,
     },
-    common::{AbilityKey, ActorKey, NotebookKey, PassiveKey},
+    common::{AbilityKey, NotebookKey, PassiveKey},
     helpers::{get_ability, get_actor, get_notebook, get_passive},
 };
 

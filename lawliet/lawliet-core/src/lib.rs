@@ -126,6 +126,7 @@ mod ownership;
 mod passive;
 mod poll;
 mod prosecution;
+#[cfg(test)]
 mod test_helpers;
 mod world;
 

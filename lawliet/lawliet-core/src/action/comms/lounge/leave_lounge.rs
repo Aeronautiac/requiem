@@ -7,7 +7,6 @@ use crate::{
     action::{
         ActionInterface, Action, ActionResponse, RemoveFromLounge,
     },
-    common::LoungeKey,
     helpers::player_id,
 };
 

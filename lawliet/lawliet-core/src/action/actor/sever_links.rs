@@ -3,12 +3,9 @@
 * Sever every link to an actor ID
 */
 
-use crate::{
-    action::{
+use crate::action::{
         ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
-    },
-    common::ActorKey,
-};
+    };
 
 pub use crate::action::{SeverLinks, SeverLinksResponse};
 
@@ -16,10 +13,10 @@ impl ActionInterface for SeverLinks {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        ctx: &mut ActionContext,
+        _ctx: &mut ActionContext,
         actor: &ActionActor,
-        version: crate::common::Version,
-        mutate: bool,
+        _version: crate::common::Version,
+        _mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
 

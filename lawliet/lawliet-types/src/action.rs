@@ -91,6 +91,7 @@ pub enum ActionError {
     PersonalChannelLimitReached,
     MustChooseSuccessor,
     NoEyes,
+    CannotProsecuteSelf,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]

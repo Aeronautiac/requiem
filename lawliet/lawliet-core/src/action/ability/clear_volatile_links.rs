@@ -6,10 +6,9 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, RemoveLink, TryDeleteChargePool,
+        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, RemoveLink,
     },
-    common::AbilityKey,
-    helpers::{get_ability_mut, get_charge_pool_mut},
+    helpers::get_ability_mut,
 };
 
 pub use crate::action::{ClearVolatileLinks, ClearVolatileLinksResponse};

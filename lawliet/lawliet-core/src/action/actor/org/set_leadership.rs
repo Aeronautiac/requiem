@@ -7,8 +7,7 @@ use crate::{
     action::{
         ActionInterface, Action, ActionResponse, ChangeOrgLeader,
     },
-    actor::organization::{LeadershipStruct, LeadershipTransferPolicies},
-    common::ActorKey,
+    actor::organization::LeadershipStruct,
     helpers::get_org_mut,
 };
 

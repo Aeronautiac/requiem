@@ -1,7 +1,6 @@
 pub use lawliet_types::chargepool::{ChargeCondition, ChargeConditions, PoolLinkType};
 
 use crate::common::{ChargeCount, ChargePoolKey, IterationCount, LinkWeight};
-use std::cmp::max;
 
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
 pub struct PoolSpecifier {

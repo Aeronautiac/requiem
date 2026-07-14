@@ -3,13 +3,9 @@
 * Atomically create a passive and give it to an actor
 */
 
-use crate::{
-    action::{
+use crate::action::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, AddPassive, GivePassive,
-    },
-    common::{ActorKey, PassiveKey},
-    passive::PassiveType,
-};
+    };
 
 pub use crate::action::{CreateAndGivePassive, CreateAndGivePassiveResponse};
 

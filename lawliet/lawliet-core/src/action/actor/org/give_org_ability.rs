@@ -7,8 +7,6 @@ use crate::{
     action::{
         ActionInterface, Action, ActionResponse, GiveAbility,
     },
-    actor::organization::OrgAbility,
-    common::{AbilityKey, ActorKey},
     helpers::{get_org, get_org_mut},
 };
 

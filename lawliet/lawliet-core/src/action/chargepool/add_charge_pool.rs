@@ -8,7 +8,7 @@ use crate::{
         ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
     },
     chargepool::ChargePool,
-    common::{ChargeCount, ChargePoolKey, IterationCount},
+    common::ChargePoolKey,
 };
 
 pub use crate::action::{AddChargePool, AddChargePoolResponse};
@@ -17,9 +17,9 @@ impl ActionInterface for AddChargePool {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        ctx: &mut ActionContext,
+        _ctx: &mut ActionContext,
         actor: &ActionActor,
-        version: crate::common::Version,
+        _version: crate::common::Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;

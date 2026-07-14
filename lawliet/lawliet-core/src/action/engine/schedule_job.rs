@@ -4,9 +4,8 @@
 */
 
 use crate::{
-    Time,
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionRequest, ActionResponse,
+        ActionContext, ActionInterface, ActionResult, ActionActor, ActionRequest, ActionResponse,
     },
     common::Version,
     engine::Engine,
@@ -19,9 +18,9 @@ impl ActionInterface for ScheduleJob {
     fn handle(
         &mut self,
         eng: &mut Engine,
-        ctx: &mut ActionContext,
+        _ctx: &mut ActionContext,
         actor: &ActionActor,
-        version: Version,
+        _version: Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;

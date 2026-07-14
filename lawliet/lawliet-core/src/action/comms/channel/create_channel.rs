@@ -18,9 +18,9 @@ impl ActionInterface for CreateChannel {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        ctx: &mut crate::action::ActionContext,
+        _ctx: &mut crate::action::ActionContext,
         actor: &ActionActor,
-        version: crate::common::Version,
+        _version: crate::common::Version,
         mutate: bool,
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;

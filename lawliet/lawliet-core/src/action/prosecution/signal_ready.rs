@@ -23,7 +23,7 @@ use crate::{
     action::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionRequest, ActionResponse, AdvanceProsecution,
     },
-    common::{ProsecutionKey, Version},
+    common::Version,
     engine::Engine,
     helpers::{get_prosecution, get_prosecution_mut, player_id},
     prosecution::{ProsecutionPhase, TrialPhase},
@@ -58,15 +58,15 @@ impl ActionInterface for SignalReady {
             ProsecutionPhase::Custody {
                 prosecutor_ready,
                 defense_ready,
-                timeout_job_id,
+                timeout_job_id: _,
             } => {
                 defense_signalled = *defense_ready;
                 prosecutor_signalled = *prosecutor_ready;
             }
             ProsecutionPhase::Trial {
                 phase,
-                channel_id,
-                timeout_job_id,
+                channel_id: _,
+                timeout_job_id: _,
             } => {
                 if let TrialPhase::Debate {
                     prosecutor_done,
@@ -90,7 +90,7 @@ impl ActionInterface for SignalReady {
         if mutate && advance_debate {
             let ProsecutionPhase::Trial {
                 timeout_job_id,
-                phase,
+                phase: _,
                 channel_id,
             } = &prosecution.phase
             else {

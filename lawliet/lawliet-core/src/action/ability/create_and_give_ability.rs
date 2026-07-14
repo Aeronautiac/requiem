@@ -3,13 +3,9 @@
 * Atomically create an ability and give it to an actor
 */
 
-use crate::{
-    action::{
+use crate::action::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, AddAbility, GiveAbility,
-    },
-    common::{AbilityKey, ActorKey, Variant},
-    config::ability::AbilityName,
-};
+    };
 
 pub use crate::action::{CreateAndGiveAbility, CreateAndGiveAbilityResponse};
 

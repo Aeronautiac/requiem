@@ -3,12 +3,9 @@
 * Atomically create a notebook and give it to an actor
 */
 
-use crate::{
-    action::{
+use crate::action::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, AddNotebook, GiveNotebook,
-    },
-    common::{ActorKey, NotebookKey},
-};
+    };
 
 pub use crate::action::{CreateAndGiveNotebook, CreateAndGiveNotebookResponse};
 

@@ -425,6 +425,12 @@ export class GameState {
     const { exec_result } = execution;
 
     if (exec_result === "Crashed") {
+      // The transport still consumed a seq for this action, but a crash carries no
+      // commands to apply. Feed the Sequencer a no-op so `#last` advances past it —
+      // otherwise this seq is a permanent gap and every later batch (e.g. the next
+      // AddPlayer reply) stays buffered behind it, silently, even though the engine
+      // rebooted and is responding.
+      this.#seq.ingest({ seq, run: () => {} });
       return "The engine has crashed.";
     }
     const result = exec_result.Standard;

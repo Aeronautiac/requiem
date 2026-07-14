@@ -12,8 +12,8 @@ use crate::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, AddChargePool,
     },
     chargepool::{ChargeConditions, PoolLink},
-    common::{AbilityKey, Variant},
-    config::ability::{AbilityIdentifier, AbilityName, ConfigPoolLinkDetails},
+    common::AbilityKey,
+    config::ability::{AbilityIdentifier, ConfigPoolLinkDetails},
     helpers::get_charge_pool_mut,
 };
 

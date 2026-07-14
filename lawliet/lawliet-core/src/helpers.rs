@@ -1,3 +1,7 @@
+// Shared accessor/require API for actions. Not every helper has a caller yet — this is
+// an intentional surface, so dead code is allowed module-wide rather than per item.
+#![allow(dead_code)]
+
 use lawliet_types::{action::ActionContext, command::CommandRecipient};
 
 use crate::{

@@ -8,7 +8,7 @@ use crate::{
     action::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, ReleaseIncarceration,
     },
-    common::{AbilityKey, IncarcerationKey, Version},
+    common::{IncarcerationKey, Version},
     engine::Engine,
     incarceration::IncarcerationSource,
 };

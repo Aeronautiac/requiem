@@ -9,7 +9,7 @@ use crate::{
     },
     common::PassiveKey,
     ownership::OwnershipStruct,
-    passive::{Passive, PassiveType},
+    passive::Passive,
 };
 
 pub use crate::action::{AddPassive, AddPassiveResponse};
@@ -18,9 +18,9 @@ impl ActionInterface for AddPassive {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        ctx: &mut ActionContext,
+        _ctx: &mut ActionContext,
         actor: &ActionActor,
-        version: crate::common::Version,
+        _version: crate::common::Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;

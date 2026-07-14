@@ -4,9 +4,8 @@
 */
 
 use crate::{
-    Time,
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionRequest, ActionResponse, Revive,
+        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionRequest, ActionResponse,
     },
     common::Version,
     engine::Engine,
@@ -19,9 +18,9 @@ impl ActionInterface for ScheduleRevive {
     fn handle(
         &mut self,
         eng: &mut Engine,
-        ctx: &mut ActionContext,
+        _ctx: &mut ActionContext,
         actor: &ActionActor,
-        version: Version,
+        _version: Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;

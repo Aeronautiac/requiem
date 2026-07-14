@@ -7,7 +7,6 @@ use crate::{
     action::{
         ActionContext, ActionInterface, ActionResult, ActionActor, ActionError, ActionResponse,
     },
-    common::{ActorKey, PassiveKey},
     helpers::{get_actor, get_actor_mut, get_passive, get_passive_mut},
 };
 
@@ -17,9 +16,9 @@ impl ActionInterface for GivePassive {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        ctx: &mut ActionContext,
+        _ctx: &mut ActionContext,
         actor: &ActionActor,
-        version: crate::common::Version,
+        _version: crate::common::Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;

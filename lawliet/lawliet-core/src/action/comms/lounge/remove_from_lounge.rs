@@ -7,8 +7,7 @@ use crate::{
     action::{
         ActionInterface, Action, ActionError, ActionResponse, SetMember,
     },
-    common::{ActorKey, LoungeKey},
-    helpers::{get_channel, get_channel_mut, get_lounge, get_player, get_player_mut},
+    helpers::{get_lounge, get_player, get_player_mut},
 };
 
 use crate::action::ActionActor;

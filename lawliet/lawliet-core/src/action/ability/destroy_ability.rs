@@ -9,7 +9,7 @@ use crate::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, RemoveLink, DestroyBug, CullIncarcerations, CullKidnappings,
     },
     bug::BugSource,
-    common::{AbilityKey, BugKey, ChargePoolKey},
+    common::{BugKey, ChargePoolKey},
     helpers::{get_ability, get_actor, get_actor_mut},
 };
 

@@ -7,7 +7,6 @@ use crate::{
     action::{
         ActionInterface, ActionError, ActionResponse,
     },
-    common::PollKey,
     helpers::{actor_id, get_poll, get_poll_mut},
 };
 
@@ -20,7 +19,7 @@ impl ActionInterface for RemoveVote {
         eng: &mut crate::engine::Engine,
         ctx: &mut crate::action::ActionContext,
         actor: &ActionActor,
-        version: crate::common::Version,
+        _version: crate::common::Version,
         mutate: bool,
     ) -> crate::action::ActionResult {
         actor.player_only()?;

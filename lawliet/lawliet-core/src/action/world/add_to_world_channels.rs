@@ -12,7 +12,7 @@ use crate::{
     },
     actor::ActorDisplay,
     channel::{ChannelMember, ChannelPermissions},
-    common::{ActorKey, ChannelKey},
+    common::ChannelKey,
     helpers::get_player,
 };
 

@@ -21,7 +21,7 @@ use crate::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, AddState,
     },
     actor::{modifier::Modifier, state::State},
-    common::{ActorKey, IncarcerationKey, Version},
+    common::{IncarcerationKey, Version},
     engine::Engine,
     helpers::{get_ability, get_actor, require_player},
     incarceration::{Incarceration, IncarcerationSource},

@@ -22,7 +22,7 @@ impl ActionInterface for SetNotebookPossession {
         &mut self,
         eng: &mut crate::engine::Engine,
         ctx: &mut ActionContext,
-        actor: &ActionActor,
+        _actor: &ActionActor,
         version: crate::common::Version,
         mutate: bool,
     ) -> ActionResult {

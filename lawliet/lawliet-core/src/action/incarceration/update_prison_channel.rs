@@ -6,7 +6,6 @@ Not incarcerated? Empty.
 */
 
 use crate::{
-    ActorKey,
     action::{
         ActionInterface, Action, ActionActor, ActionResponse, SetWorldChannelOverride,
     },

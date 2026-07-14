@@ -7,7 +7,6 @@ use crate::{
     action::{
         ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
     },
-    common::PassiveKey,
     helpers::{get_passive, get_actor, get_actor_mut},
 };
 

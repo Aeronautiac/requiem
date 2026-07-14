@@ -16,22 +16,20 @@
 * On execution:
 * - SetCustody { defendant, custody: true }
 * - store Prosecution in world, schedule custody timeout → AdvanceProsecution
-* - TODO: commands
 */
 
 use indexmap::IndexSet;
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionRequest, ActionResponse, AdvanceProsecution, SetCustody,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionRequest,
+        ActionResponse, ActionResult, AdvanceProsecution, SetCustody,
     },
     actor::modifier::Modifier,
     common::{ProsecutionKey, Version},
     engine::Engine,
     helpers::{get_actor, require_player},
-    prosecution::{
-        Prosecution, ProsecutionDefense, ProsecutionPhase, ProsecutionProsecutor,
-    },
+    prosecution::{Prosecution, ProsecutionDefense, ProsecutionPhase, ProsecutionProsecutor},
 };
 
 pub use crate::action::{StartProsecution, StartProsecutionResponse};
@@ -46,6 +44,10 @@ impl ActionInterface for StartProsecution {
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
+
+        if self.prosecutor_id == self.defendant_id {
+            return Err(ActionError::CannotProsecuteSelf);
+        }
 
         require_player(eng, self.prosecutor_id)?;
         if get_actor(eng, self.prosecutor_id)
