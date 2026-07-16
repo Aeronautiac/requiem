@@ -176,10 +176,15 @@ impl ActionExt for Action {
         actor: &ActionActor,
         version: Version,
     ) -> ActionResult {
+        // Keep ctx.mutate in lockstep with the pass so command pushes are enabled here and
+        // suppressed inside any nested validate probe (saved/restored so nesting is safe).
+        let prev = ctx.mutate;
+        ctx.mutate = true;
         let result = self.handle(eng, ctx, actor, version, true);
         Action::Update(Update {})
             .handle(eng, ctx, &ActionActor::System, version, true)
             .expect("Update action has failed");
+        ctx.mutate = prev;
         result
     }
 
@@ -190,6 +195,12 @@ impl ActionExt for Action {
         actor: &ActionActor,
         version: Version,
     ) -> ActionResult {
-        self.handle(eng, ctx, actor, version, false)
+        // A dry pass: suppress command pushes (restored after, so a probe run mid-execute
+        // doesn't leak the probed action's commands into the real stream).
+        let prev = ctx.mutate;
+        ctx.mutate = false;
+        let result = self.handle(eng, ctx, actor, version, false);
+        ctx.mutate = prev;
+        result
     }
 }

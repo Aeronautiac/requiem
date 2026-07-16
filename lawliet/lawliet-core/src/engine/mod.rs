@@ -86,7 +86,7 @@ impl Engine {
     // recursively execute sub-actions
     // return only top level result (with the combined command buffer)
     pub fn execute(&mut self, action: ActionRequest) -> ExecutionResult {
-        let mut ctx = ActionContext { commands: vec![] };
+        let mut ctx = ActionContext { commands: vec![], mutate: false };
 
         if action.timestamp < self.time {
             return Err((ActionError::TimeAlreadyPassed, ctx));

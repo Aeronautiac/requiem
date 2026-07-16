@@ -198,6 +198,13 @@ pub fn default_role_config() -> RoleConfigMap {
                     },
                     transferrable: false,
                 },
+                RoleAbility {
+                    identifier: AbilityIdentifier {
+                        name: AbilityName::Prosecute,
+                        variant: 0,
+                    },
+                    transferrable: false,
+                },
             ],
             passives: vec![
                 RolePassive {
@@ -271,6 +278,13 @@ pub fn default_role_config() -> RoleConfigMap {
                 RoleAbility {
                     identifier: AbilityIdentifier {
                         name: AbilityName::AnonymousContact,
+                        variant: 0,
+                    },
+                    transferrable: false,
+                },
+                RoleAbility {
+                    identifier: AbilityIdentifier {
+                        name: AbilityName::Prosecute,
                         variant: 0,
                     },
                     transferrable: false,

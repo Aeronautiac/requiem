@@ -14,6 +14,7 @@
   import Message from "./Message.svelte";
   import Announcement from "./Announcement.svelte";
   import NotebookWrite from "./NotebookWrite.svelte";
+  import NotebookPass from "./NotebookPass.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
@@ -85,6 +86,7 @@
     show_loggability && (is_admin || (current_perms?.loggability_control ?? false)),
   );
   let write_open = $state(false);
+  let pass_open = $state(false);
 
   // The displays the viewer may send as in the current channel (their "send as"
   // options, delivered by UpdateChannelView). Empty for admin (always sends as System).
@@ -428,6 +430,12 @@
               description="True Name"
               content={`Your true name is now ${event.data.TrueNameUpdate.true_name}.`}
             />
+          {:else if "NotebookReceived" in event.data}
+            <Announcement
+              color="#ef4444"
+              description="Notebook"
+              content="A notebook has come into your possession."
+            />
           {:else if "PollNotice" in event.data}
             {@const pn = event.data.PollNotice}
             <Announcement
@@ -567,6 +575,11 @@
           {#if notebook_id}
             <Button
               size="sm"
+              class="border border-neutral-700 bg-neutral-800 text-neutral-200 hover:bg-neutral-700"
+              onclick={() => (pass_open = true)}>Pass</Button
+            >
+            <Button
+              size="sm"
               class="bg-red-600 text-white hover:bg-red-700"
               onclick={() => (write_open = true)}>Write</Button
             >
@@ -576,6 +589,7 @@
 
       {#if notebook_id}
         <NotebookWrite bind:open={write_open} notebookId={notebook_id} />
+        <NotebookPass bind:open={pass_open} notebookId={notebook_id} />
       {/if}
     </div>
   {:else}

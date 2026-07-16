@@ -188,6 +188,8 @@ mod tests {
     #[test]
     fn repeated_role_change_purges_stale_ids() {
         let mut eng = Engine::new();
+        init_engine(&mut eng);
+
         let p1 = add_player(&mut eng, 0, Role::NewsAnchor, "p1"); // gains ability + passive
 
         give_role(&mut eng, 0, p1, Role::Civilian); // purges NewsAnchor volatiles
@@ -219,6 +221,7 @@ mod tests {
     #[test]
     fn l_watari_links() {
         let mut eng = Engine::new();
+        init_engine(&mut eng);
 
         let w_id_1 = add_player(&mut eng, 0, Role::Watari, "John Candlewick");
         let l_id = add_player(&mut eng, 3, Role::L, "John Pork");

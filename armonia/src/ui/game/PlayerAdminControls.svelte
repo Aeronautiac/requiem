@@ -33,7 +33,9 @@
   const info = $derived(game.player_info.get(id));
   const target = $derived(slotKeyFromString(id));
 
-  let role = $state<Role>(info?.role ?? "Civilian");
+  // The dropdown is for picking a NEW role; the current one is shown in the inspector below,
+  // so this just defaults rather than tracking `info` (which would only capture its initial value).
+  let role = $state<Role>("Civilian");
   let true_name = $state("");
 
   async function run(payload: Action, ok: string) {

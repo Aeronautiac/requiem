@@ -1164,10 +1164,21 @@ pub struct UpdateWorldChannelPerms {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionContext {
     pub commands: Vec<CommandPayload>,
+    // Whether we're on the mutating (execute) pass. Command pushes are suppressed on the
+    // dry/validate pass, so a resolvability probe that validates an action without committing it
+    // (e.g. update_polls checking a poll's payload) doesn't leak that action's commands into the
+    // stream. Kept in lockstep with the `mutate` handle param by ActionExt::validate/execute.
+    // Internal only — not part of the wire format.
+    #[serde(skip)]
+    pub mutate: bool,
 }
 
 impl ActionContext {
     pub fn push_cmd(&mut self, cmd: Command, recipient: CommandRecipient, time: Time) {
+        // Dry (validate) passes must not emit commands.
+        if !self.mutate {
+            return;
+        }
         self.commands.push(CommandPayload {
             timestamp: time,
             recipient,

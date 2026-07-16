@@ -140,6 +140,10 @@ export type InfoEvent = {
   TrueNameUpdate: {
     true_name: string,
   }
+} | {
+  // The viewer received a notebook (any source — pass, gift, role grant). Derived on the
+  // frontend from gaining read access to a notebook channel; no engine command backs it.
+  NotebookReceived: Record<string, never>,
 }
 
 // A poll started (outcome null) or ended (outcome set), rendered inline in the poll's
@@ -687,6 +691,13 @@ export class GameState {
           members: existing?.members ?? new SvelteMap(),
           displays: cmd.UpdateChannelView.displays,
         });
+
+        // Notify the viewer when they RECEIVE a notebook (any source): a notebook channel
+        // going from no-read to read means the book is now in their hands. Frontend-derived,
+        // no engine command. Fires once per gain (not on refreshes while already held).
+        if (read && !(old_perms?.read ?? false) && this.#channel_to_notebook.has(channel_id)) {
+          this.push_notif(recipient, timestamp, { NotebookReceived: {} });
+        }
       }
       return;
     }
