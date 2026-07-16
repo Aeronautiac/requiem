@@ -106,6 +106,7 @@ impl ActionInterface for Action {
             Action::DestroyChannel(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::SetMember(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::SetLoggable(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::SetTrueName(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CreateLounge(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::UpdateContactChannels(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::LeaveLounge(a) => a.handle(eng, ctx, actor, version, mutate),

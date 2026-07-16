@@ -117,7 +117,8 @@ impl ActionInterface for CreateLounge {
             };
 
             let lounge_id: LoungeKey = eng.world.add_lounge(lounge);
-            eng.world
+            let contact_id = eng
+                .world
                 .register_contact_channel(ContactChannel::Lounge(lounge_id));
 
             for participant in participants {
@@ -144,6 +145,7 @@ impl ActionInterface for CreateLounge {
                     Command::MapLounge {
                         lounge_id,
                         channel_id,
+                        contact_id,
                     },
                     CommandRecipient::System,
                     eng.time,

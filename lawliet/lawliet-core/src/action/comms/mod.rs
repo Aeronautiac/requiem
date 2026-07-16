@@ -303,7 +303,7 @@ mod comms_tests {
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient.is_system()
-                && matches!(&p.cmd, Command::MapGc { gc_id, channel_id: cid }
+                && matches!(&p.cmd, Command::MapGc { gc_id, channel_id: cid, .. }
                     if *gc_id == data.id && *cid == channel_id)
         }));
     }
@@ -478,7 +478,7 @@ mod comms_tests {
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient.is_system()
-                && matches!(&p.cmd, Command::MapLounge { lounge_id, channel_id }
+                && matches!(&p.cmd, Command::MapLounge { lounge_id, channel_id, .. }
                     if *lounge_id == data.lounge_id && *channel_id == data.channel_id)
         }));
     }
@@ -591,6 +591,58 @@ mod comms_tests {
         assert!(ctx.commands.iter().any(|p| {
             p.recipient.is_system()
                 && matches!(&p.cmd, Command::NewBug { bug_key } if *bug_key == data.id)
+        }));
+    }
+
+    #[test]
+    fn create_bug_notifies_target_with_context() {
+        use lawliet_types::bug::BugContext;
+
+        // Custody bug -> target is notified with the Custody context.
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let (_, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateBug(CreateBug {
+                    target_id: p1,
+                    source: BugSource::Custody,
+                }),
+            })
+            .unwrap();
+        assert!(ctx.commands.iter().any(|p| {
+            p.recipient == CommandRecipient::Actor(p1)
+                && matches!(&p.cmd, Command::Bugged { context: BugContext::Custody })
+        }));
+
+        // Ability bug -> target is notified with the Explicit context, and the owner-identifying
+        // ability key is stripped (the target learns *that* they're bugged, never *who* by).
+        let owner = add_player(&mut eng, 0, Role::Civilian, "owner");
+        let ab = quick_ability(
+            &mut eng,
+            0,
+            CreateAndGiveAbility {
+                actor_id: owner,
+                ability_name: AbilityName::Gun,
+                variant: 0,
+                transferrable: false,
+                volatile: false,
+            },
+        );
+        let (_, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateBug(CreateBug {
+                    target_id: p1,
+                    source: BugSource::Ability(ab),
+                }),
+            })
+            .unwrap();
+        assert!(ctx.commands.iter().any(|p| {
+            p.recipient == CommandRecipient::Actor(p1)
+                && matches!(&p.cmd, Command::Bugged { context: BugContext::Explicit })
         }));
     }
 

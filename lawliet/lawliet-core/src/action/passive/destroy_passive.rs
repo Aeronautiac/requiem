@@ -3,10 +3,13 @@
 * Fully destroy a passive: remove from the owning actor's cache, then remove from the world.
 */
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
     action::{
         ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
     },
+    command::Command,
     helpers::{get_passive, get_actor, get_actor_mut},
 };
 
@@ -16,7 +19,7 @@ impl ActionInterface for DestroyPassive {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        _ctx: &mut ActionContext,
+        ctx: &mut ActionContext,
         actor: &ActionActor,
         _version: crate::common::Version,
         mutate: bool,
@@ -35,6 +38,14 @@ impl ActionInterface for DestroyPassive {
                 get_actor_mut(eng, owner_id)
                     .expect("passive owner does not exist: engine invariant violated")
                     .remove_passive(self.passive_id);
+                // drop it from the owner's observable list
+                ctx.push_cmd(
+                    Command::RemovePassive {
+                        passive_id: self.passive_id,
+                    },
+                    CommandRecipient::Actor(owner_id),
+                    eng.time,
+                );
             }
             eng.world.remove_passive(self.passive_id);
         }

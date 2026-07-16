@@ -5,8 +5,9 @@
 */
 
 pub use crate::action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, DeferredCmds, UpdatePolls, UpdateProsecutions,
-    };
+    Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+    DeferredCmds, UpdatePolls, UpdateProsecutions,
+};
 
 pub use crate::action::{Update, UpdateResponse};
 
@@ -22,7 +23,8 @@ impl ActionInterface for Update {
         actor.admin_or_system()?;
 
         Action::UpdatePolls(UpdatePolls {}).handle(eng, ctx, actor, version, mutate)?;
-        Action::UpdateProsecutions(UpdateProsecutions {}).handle(eng, ctx, actor, version, mutate)?;
+        Action::UpdateProsecutions(UpdateProsecutions {})
+            .handle(eng, ctx, actor, version, mutate)?;
         // DeferredCmds runs LAST: the update steps above queue this cycle's deferred commands
         // (e.g. a prosecution's UpdateProsecution broadcast). Flushing before them would hold
         // those commands until the next Update, so a freshly-started prosecution wouldn't reach

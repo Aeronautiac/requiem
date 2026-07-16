@@ -1,5 +1,5 @@
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import type { AbilityName, ActionRequest, ActorDisplay, ActorKey, ActionResponse, CommandPayload, CommandRecipient, NotebookKey, OrganizationName, PollOutcome, PollSubject, PollVisibility, ProsecutionKey, ProsecutionPhaseView, Role } from "./bindings";
+import type { AbilityName, ActionRequest, ActorDisplay, ActorKey, ActionResponse, BugContext, BugKey, CommandPayload, CommandRecipient, NotebookKey, OrganizationName, PassiveType, PollOutcome, PollSubject, PollVisibility, ProsecutionKey, ProsecutionPhaseView, Role } from "./bindings";
 import { slotKeyFromString, slotKeyToString } from "./bindings";
 import { Sequencer } from "./lib/protocol";
 import type { StreamingRouter, CommandBatch } from "./lib/protocol";
@@ -67,29 +67,39 @@ export type ChannelPerms = {
   had_positive: boolean; // if any perm here has been positive, this is set permanently
 }
 
-// world is a generic world channel type for things like prison
-// a role channel may be a world channel, but it is stronger than the world category
-// these categories are used only for display and hold no significance outside of it
-// key world channels should get their own data at a higher level and point to the lower level channel
-// "Info" is a frontend-only, read-only channel-like object (name reveals, autopsies,
-// …). Unlike News (a hybrid feed + real channel), you can't interact with it, and it
-// isn't backed by an engine channel — it lives per-view in GameView.info_channels.
-export type ChannelKind = "Raw" | "Lounge" | "Groupchat" | "Notebook" | "Role" | "World" | "Info" | "Org" | "Prosecution";
-export const CHANNEL_KINDS: ChannelKind[] = [
-  "Raw",
-  "Lounge",
-  "Groupchat",
-  "Notebook",
-  "Role",
-  "World",
-  "Info",
-  "Org",
-  "Prosecution",
+// A channel carries two orthogonal axes:
+//   - `category`: WHERE it renders in the sidebar (grouping/heading only, no behaviour).
+//   - `kind`:     HOW it behaves, independent of where it's shown. A kind confers inherent
+//                 properties (read-only, non-interactable, …) that hold in any category.
+// This split lets, e.g., the read-only Notifications feed (kind "Info") live in the same
+// "Personal" category as user-created, sendable personal channels (kind "Standard").
+
+// Sidebar grouping only. "World" leads (News lives under it); "Role" is a stronger world
+// channel; "Personal" collects the per-viewer Notifications feed and user-made personal
+// channels. Categories hold no significance beyond display.
+export type ChannelCategory =
+  | "Raw" | "Lounge" | "Groupchat" | "Notebook" | "Role"
+  | "World" | "Org" | "Prosecution" | "Bug" | "Personal";
+export const CHANNEL_CATEGORIES: ChannelCategory[] = [
+  "Raw", "Lounge", "Groupchat", "Notebook", "Role",
+  "World", "Org", "Prosecution", "Bug", "Personal",
 ];
+
+// Behavioural type: inherent properties a channel carries regardless of category. Only
+// properties that can't be derived elsewhere live here — a channel that merely has an
+// associated object (a notebook, a group chat) stays "Standard" and is recognised via its
+// mapping (notebook_for_channel / gc_key_for_channel), not a dedicated kind.
+//   - "Standard": an ordinary channel; sendability follows engine perms.
+//   - "Info":     a frontend-only, read-only feed (name reveals, bug alerts). Not engine-backed;
+//                 lives per-view in GameView.info_channels. Always readable, never sendable.
+//   - "Bug":      a surveillance feed of a bug's relayed messages. Read-only, non-interactable;
+//                 held globally (game.bugs, "bug:*"), shown per GameView.visible_bugs.
+export type ChannelKind = "Standard" | "Info" | "Bug";
 
 
 export type Channel = {
   kind: ChannelKind;
+  category: ChannelCategory;
   name: string;
   archived: boolean;
   events: GameEvent[];
@@ -112,6 +122,23 @@ export type InfoEvent = {
   RevealNotebookHolding: {
     target_id: string,
     holding: boolean,
+  }
+} | {
+  // The viewer was told they've been bugged (directed Bugged command). A personal event, so
+  // it lands in the personal Notifications info channel — NOT News (which is world events).
+  // context says why (explicit ability vs custody); who planted it is intentionally unknown.
+  Bugged: {
+    context: BugContext,
+  }
+} | {
+  // The viewer's own role was (re)assigned — "your role is now X" in their notifications log.
+  RoleUpdate: {
+    role: Role,
+  }
+} | {
+  // The viewer's own true name was set — "your true name is now X".
+  TrueNameUpdate: {
+    true_name: string,
   }
 }
 
@@ -167,6 +194,13 @@ export interface AbilityView {
   iterations_to_reset: number;
 }
 
+// A passive a viewer holds. No charges/usages, but the type itself may carry data (e.g.
+// VoteAmplification's multiplier), so this is the full PassiveType. Observable-only,
+// rendered in the Passives panel beside abilities.
+export interface PassiveView {
+  type: PassiveType;
+}
+
 // A single member of a channel, as seen by one viewer. Membership is per-view
 // because the same actor can be shown under different displays to different viewers
 // (deception). Keyed by display key -> member.
@@ -197,6 +231,8 @@ export class GameView {
   // autopsies, …). Keyed by a synthetic "info:*" key; not engine channels.
   info_channels = new SvelteMap<string, Channel>();
   abilities = new SvelteMap<string, AbilityView>();
+  // passive id -> the passive this viewer holds (from UpdatePassiveView). Observable list.
+  passives = new SvelteMap<string, PassiveView>();
   // gc keys this viewer owns (from GcOwnerStatus). Drives the group-chat controls.
   owned_gcs = new SvelteSet<string>();
   // poll id -> this viewer's personal view of a poll they can see (from UpdatePollView).
@@ -211,6 +247,10 @@ export class GameView {
   // presence, so their snapshot above is stale until a live update replays. Any UpdateProsecution
   // they receive clears the id. Purely a "viewing frozen state" UI flag.
   frozen_prosecutions = new SvelteSet<string>();
+  // bug channel keys ("bug:*") this viewer may currently see, from SetBugVisibility. The bug
+  // logs themselves are global (GameState.bugs); this is the per-viewer visibility gate. Cleared
+  // for everyone by ClearBugVisibily and dropped from all views by DeleteBug.
+  visible_bugs = new SvelteSet<string>();
 
   // structuredClone can't clone a GameView: it drops the class prototype and
   // turns the SvelteMaps into plain Maps (losing reactivity), and can throw on
@@ -236,6 +276,9 @@ export class GameView {
     for (const [id, ability] of this.abilities) {
       copy.abilities.set(id, $state.snapshot(ability));
     }
+    for (const [id, pv] of this.passives) {
+      copy.passives.set(id, { ...pv });
+    }
     for (const gc of this.owned_gcs) {
       copy.owned_gcs.add(gc);
     }
@@ -248,11 +291,14 @@ export class GameView {
     for (const id of this.frozen_prosecutions) {
       copy.frozen_prosecutions.add(id);
     }
+    for (const key of this.visible_bugs) {
+      copy.visible_bugs.add(key);
+    }
     for (const event of this.events) {
       copy.events.push(event);
     }
     for (const [key, ch] of this.info_channels) {
-      const copy_ch = new_channel(ch.kind, ch.name);
+      const copy_ch = new_channel(ch.kind, ch.category, ch.name);
       copy_ch.archived = ch.archived;
       for (const event of ch.events) copy_ch.events.push(event);
       copy.info_channels.set(key, copy_ch);
@@ -289,6 +335,14 @@ export function hasPositivePerms(perms: number): boolean {
 
 export interface Player {
   display_name: string;
+}
+
+// Admin-facing per-player facts, populated from the System copy of the personal-info commands
+// (RoleUpdate / TrueNameUpdate). In the real server only the host receives the System copy, so
+// this stays empty on ordinary player clients. Surfaced when admin inspects a player.
+export interface PlayerInfo {
+  role?: Role;
+  true_name?: string;
 }
 
 export function new_player(display_name: string): Player {
@@ -332,14 +386,23 @@ export function orgDisplayName(name: OrganizationName): string {
 // own get/set, not deep mutations to stored values. Without this, channel.events.push
 // and channel.archived = true don't trigger reactivity, so views go stale until
 // something else (e.g. switching channels) forces a recompute.
-export function new_channel(kind: ChannelKind, name: string): Channel {
-  let channel: Channel = $state({ kind, name, archived: false, events: [] });
+export function new_channel(kind: ChannelKind, category: ChannelCategory, name: string): Channel {
+  let channel: Channel = $state({ kind, category, name, archived: false, events: [] });
   return channel;
 }
 
-// Synthetic key of the single shared, read-only info channel that collects reveal
-// results (true names, notebook holdings, …).
-export const REVEAL_CHANNEL = "info:reveals";
+// Synthetic key of the single, per-viewer read-only Notifications info channel. It is the one
+// place directed-at-you personal events land: reveal results (true names, notebook holdings)
+// and bug alerts ("you've been bugged"). NOT News (world events), and NOT a "personal channel"
+// (that's a real engine channel). Add new personal event kinds here, don't spawn a second one.
+export const NOTIF_CHANNEL = "info:notifs";
+
+// Namespaced channel key for a bug's surveillance feed. Bugs live in their own BugKey slot
+// space, which can collide with real ChannelKeys, so the "bug:" prefix keeps them separate
+// in the (channel-keyed) resolve path.
+export function bugChannelKey(bug_id: BugKey): string {
+  return `bug:${slotKeyToString(bug_id)}`;
+}
 
 // Maps a command recipient to the key of the view it targets. Actor recipients
 // key by their slot; the string variants map to the standing views: System is the
@@ -366,9 +429,13 @@ export class GameState {
   #notebook_to_channel = new SvelteMap<string, string>();
   #channel_to_gc = new SvelteMap<string, string>();
   #channel_to_org = new SvelteMap<string, string>();
-  // trial channel key -> prosecution id. Not for rendering (that's driven by ChannelKind
-  // "Prosecution"); this is so an action taken from within the channel can find its prosecution.
+  // trial channel key -> prosecution id. Not for rendering (that's driven by the "Prosecution"
+  // channel category); this is so an action taken from within the channel can find its prosecution.
   #channel_to_prosecution = new SvelteMap<string, string>();
+  // channel key -> whether the channel is currently loggable (a global channel property from
+  // SetChannelLoggable). Kept separate from the Channel object so it lands regardless of
+  // whether the establishing Map* command has arrived yet.
+  #channel_loggable = new SvelteMap<string, boolean>();
   // The real News channel's key once one exists (set in MapWorldChannel). $state so
   // that views resolving news's backing channel recompute the moment it's assigned —
   // otherwise selecting news before the channel exists never picks up its perms.
@@ -376,6 +443,10 @@ export class GameState {
   news_channel_id = $state<string | null>(null);
   channels = new SvelteMap<string, Channel>();
   players = new SvelteMap<string, Player>();
+  // admin-facing per-player facts (role, true name) from the System copy of personal-info
+  // commands. Keyed by player id. Only populated on the admin/host client; read when admin
+  // inspects a player.
+  player_info = new SvelteMap<string, PlayerInfo>();
   views = new SvelteMap<string, GameView>();
   // poll id -> shared poll data (subject, scope, tally). Held globally like channels;
   // per-viewer visibility is decided by each view's poll_views entries.
@@ -383,6 +454,10 @@ export class GameState {
   // org id -> org (name, backing channel, members, abilities). Held globally; a viewer
   // is shown an org iff they're a member. See Org.
   orgs = new SvelteMap<string, Org>();
+  // bug channel key ("bug:*") -> the bug's surveillance feed (a read-only Channel of the
+  // relayed messages). Held globally like channels; per-viewer visibility is each view's
+  // visible_bugs. The relayed AddBugMessage stream is System-directed, hence global here.
+  bugs = new SvelteMap<string, Channel>();
 
   // Transport is injected (attach). The router is the swap seam; the client model
   // doesn't care whether it's Tauri or a websocket to the server.
@@ -466,20 +541,22 @@ export class GameState {
 
   private handle_command({ recipient, cmd, timestamp }: CommandPayload) {
     if ("MapLounge" in cmd) {
-      const { lounge_id, channel_id } = cmd.MapLounge;
-      const name = `lounge-${lounge_id.idx}v${lounge_id.version}`;
+      const { channel_id, contact_id } = cmd.MapLounge;
+      // Lounges are identified by their contact-channel id.
+      const name = `lounge-${contact_id}`;
 
-      this.channels.set(slotKeyToString(channel_id), new_channel("Lounge", name));
+      this.channels.set(slotKeyToString(channel_id), new_channel("Standard", "Lounge", name));
 
       return;
     }
 
     if ("MapGc" in cmd) {
-      const { gc_id, channel_id } = cmd.MapGc;
+      const { gc_id, channel_id, contact_id } = cmd.MapGc;
       const channel_key = slotKeyToString(channel_id);
-      const name = `groupchat-${gc_id.idx}v${gc_id.version}`;
+      // Same shape as lounges for now (custom gc names arrive with the server).
+      const name = `groupchat-${contact_id}`;
 
-      this.channels.set(channel_key, new_channel("Groupchat", name));
+      this.channels.set(channel_key, new_channel("Standard", "Groupchat", name));
       this.#channel_to_gc.set(channel_key, slotKeyToString(gc_id));
 
       return;
@@ -504,7 +581,7 @@ export class GameState {
       const channel_key = slotKeyToString(channel_id);
       const org_key = slotKeyToString(org_id);
 
-      this.channels.set(channel_key, new_channel("Org", orgDisplayName(org_name)));
+      this.channels.set(channel_key, new_channel("Standard", "Org", orgDisplayName(org_name)));
       this.#channel_to_org.set(channel_key, org_key);
       this.orgs.set(org_key, new_org(org_name, channel_key));
       return;
@@ -531,7 +608,7 @@ export class GameState {
 
       this.channels.set(
         slotKeyToString(channel_id),
-        new_channel("Notebook", "Death Notebook" + '-' + notebook_id.idx + 'v' + notebook_id.version),
+        new_channel("Standard", "Notebook", "Death Notebook" + '-' + notebook_id.idx + 'v' + notebook_id.version),
       );
       this.#channel_to_notebook.set(channel_key, notebook_key);
       this.#notebook_to_channel.set(notebook_key, channel_key);
@@ -542,9 +619,11 @@ export class GameState {
     if ("MapWorldChannel" in cmd) {
       const { channel_name, channel_id } = cmd.MapWorldChannel;
 
-      let kind: ChannelKind = "World";
+      // World channels are ordinary (sendable-per-perms) channels; only their sidebar
+      // grouping varies — L & Watari sits under Roles, the rest under World.
+      let category: ChannelCategory = "World";
       if (channel_name == "LAndWatari") {
-        kind = "Role";
+        category = "Role";
       }
 
       const key = slotKeyToString(channel_id);
@@ -555,8 +634,20 @@ export class GameState {
         this.news_channel_id = key;
       }
 
-      this.channels.set(key, new_channel(kind, channel_name));
+      this.channels.set(key, new_channel("Standard", category, channel_name));
 
+      return;
+    }
+
+    // Register a personal channel: a real, sendable channel private to its owner. Global like
+    // the other channel maps; per-viewer visibility falls out of channel-view perms (only the
+    // owner is a member). Kind "Personal" so the sidebar groups it with the info feeds.
+    if ("MapPersonalChannel" in cmd) {
+      const { channel_id } = cmd.MapPersonalChannel;
+      const key = slotKeyToString(channel_id);
+      if (!this.channels.has(key)) {
+        this.channels.set(key, new_channel("Standard", "Personal", `personal-${channel_id.idx}v${channel_id.version}`));
+      }
       return;
     }
 
@@ -608,6 +699,13 @@ export class GameState {
       return;
     }
 
+    // A channel's global loggability (initial value on creation, then on each toggle).
+    if ("SetChannelLoggable" in cmd) {
+      const { channel_id, loggable } = cmd.SetChannelLoggable;
+      this.#channel_loggable.set(slotKeyToString(channel_id), loggable);
+      return;
+    }
+
     // RemoveChannel is per-player: the target player is no longer a member (e.g. a
     // notebook that transferred away), so drop the channel from THAT player's view
     // only. The channel still exists globally for whoever else holds it — deleting it
@@ -626,7 +724,9 @@ export class GameState {
     // DeleteChannel removes the channel globally (system-directed); the channel
     // ceases to exist for everyone.
     if ("DeleteChannel" in cmd) {
-      this.channels.delete(slotKeyToString(cmd.DeleteChannel.channel_id));
+      const key = slotKeyToString(cmd.DeleteChannel.channel_id);
+      this.channels.delete(key);
+      this.#channel_loggable.delete(key);
       return;
     }
 
@@ -725,6 +825,21 @@ export class GameState {
       return;
     }
 
+    // A passive the recipient now holds. Directed to the owner's player view (orgs don't
+    // display passives yet, so an org recipient resolves to no view and is dropped).
+    if ("UpdatePassiveView" in cmd) {
+      const { passive_id, passive_type } = cmd.UpdatePassiveView;
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      view?.passives.set(slotKeyToString(passive_id), { type: passive_type });
+      return;
+    }
+
+    if ("RemovePassive" in cmd) {
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      view?.passives.delete(slotKeyToString(cmd.RemovePassive.passive_id));
+      return;
+    }
+
     // Shared poll data (global). First sighting drops a "started" notice into the poll's
     // scoped channel; later UpdatePolls just refresh the tally.
     if ("UpdatePoll" in cmd) {
@@ -777,7 +892,7 @@ export class GameState {
       if (channelKey) {
         this.#channel_to_prosecution.set(channelKey, key);
         if (!this.channels.has(channelKey)) {
-          this.channels.set(channelKey, new_channel("Prosecution", `trial-${prosecution_id.idx}v${prosecution_id.version}`));
+          this.channels.set(channelKey, new_channel("Standard", "Prosecution", `trial-${prosecution_id.idx}v${prosecution_id.version}`));
         }
       }
       const view = this.views.get(recipientToView(recipient) ?? "");
@@ -914,30 +1029,110 @@ export class GameState {
       // channel (so each member sees it iff they can see that channel) — not in a single
       // player's view. Orgs aren't modeled on the frontend yet, so route to the player
       // view for now (TrueNameInvite pushes this to the org actor, which has no view).
-      const channel = this.reveal_channel(recipientToView(recipient));
-      channel?.events.push({
-        timestamp,
-        data: {
-          RevealTrueName: {
-            target_id: slotKeyToString(reveal.target_id),
-            true_name: reveal.true_name,
-          }
-        }
+      this.push_notif(recipient, timestamp, {
+        RevealTrueName: {
+          target_id: slotKeyToString(reveal.target_id),
+          true_name: reveal.true_name,
+        },
       });
     }
 
     if ("RevealNotebookHolding" in cmd) {
       const reveal = cmd.RevealNotebookHolding;
-      const channel = this.reveal_channel(recipientToView(recipient));
-      channel?.events.push({
-        timestamp,
-        data: {
-          RevealNotebookHolding: {
-            target_id: slotKeyToString(reveal.target_id),
-            holding: reveal.holding,
-          }
-        }
+      this.push_notif(recipient, timestamp, {
+        RevealNotebookHolding: {
+          target_id: slotKeyToString(reveal.target_id),
+          holding: reveal.holding,
+        },
       });
+    }
+
+    // A bug was created (System-directed). Register its global surveillance feed. The
+    // target is deliberately not carried — identity leaks only through relayed message
+    // displays — so the feed is named by the bug's slot.
+    if ("NewBug" in cmd) {
+      const key = bugChannelKey(cmd.NewBug.bug_key);
+      if (!this.bugs.has(key)) {
+        this.bugs.set(key, new_channel("Bug", "Bug", `bug-${cmd.NewBug.bug_key.idx}v${cmd.NewBug.bug_key.version}`));
+      }
+      return;
+    }
+
+    // A relayed message captured by a bug (System-directed → stored globally). Rendered like
+    // any channel message; the sender display is the target's own, which is what reveals them.
+    if ("AddBugMessage" in cmd) {
+      const { bug_key, display, content } = cmd.AddBugMessage;
+      const bug = this.bugs.get(bugChannelKey(bug_key));
+      bug?.events.push({ timestamp, data: { Message: { sender_display: display, content } } });
+      return;
+    }
+
+    // The bug is no longer active: its feed goes read-only-archived but stays visible.
+    if ("ArchiveBug" in cmd) {
+      const bug = this.bugs.get(bugChannelKey(cmd.ArchiveBug.bug_key));
+      if (bug) bug.archived = true;
+      return;
+    }
+
+    // Hide a bug from everyone at once (visibility revoked globally). The feed itself stays;
+    // only the per-viewer visibility is cleared.
+    if ("ClearBugVisibily" in cmd) {
+      const key = bugChannelKey(cmd.ClearBugVisibily.bug_id);
+      for (const view of this.views.values()) view.visible_bugs.delete(key);
+      return;
+    }
+
+    // The bug should never have existed: drop the feed and every viewer's visibility of it.
+    if ("DeleteBug" in cmd) {
+      const key = bugChannelKey(cmd.DeleteBug.bug_id);
+      this.bugs.delete(key);
+      for (const view of this.views.values()) view.visible_bugs.delete(key);
+      return;
+    }
+
+    // Per-viewer bug visibility (directed to the owner / custody viewer). Grants or revokes
+    // this viewer's access to the bug's feed.
+    if ("SetBugVisibility" in cmd) {
+      const { bug_id, visible } = cmd.SetBugVisibility;
+      const view = this.views.get(recipientToView(recipient) ?? "");
+      if (view) {
+        const key = bugChannelKey(bug_id);
+        if (visible) view.visible_bugs.add(key);
+        else view.visible_bugs.delete(key);
+      }
+      return;
+    }
+
+    // The viewer was told they've been bugged (directed to the target). A personal event, so
+    // it lands in their Notifications info channel — never News. Context only (never who).
+    if ("Bugged" in cmd) {
+      this.push_notif(recipient, timestamp, { Bugged: { context: cmd.Bugged.context } });
+      return;
+    }
+
+    // Personal-info commands go to two explicit recipients: the player copy (Actor) lands in
+    // their Notifications log (and System's per-player mirror); the System copy feeds the
+    // admin per-player inspector (player_info).
+    if ("RoleUpdate" in cmd) {
+      const { target_id, role } = cmd.RoleUpdate;
+      if (recipient === "System") {
+        const key = slotKeyToString(target_id);
+        this.player_info.set(key, { ...this.player_info.get(key), role });
+      } else {
+        this.push_notif(recipient, timestamp, { RoleUpdate: { role } });
+      }
+      return;
+    }
+
+    if ("TrueNameUpdate" in cmd) {
+      const { target_id, true_name } = cmd.TrueNameUpdate;
+      if (recipient === "System") {
+        const key = slotKeyToString(target_id);
+        this.player_info.set(key, { ...this.player_info.get(key), true_name });
+      } else {
+        this.push_notif(recipient, timestamp, { TrueNameUpdate: { true_name } });
+      }
+      return;
     }
   }
 
@@ -970,21 +1165,55 @@ export class GameState {
       const view = viewer === "Admin" ? this.system_view() : this.views.get(viewer);
       return view?.info_channels.get(key);
     }
+    // Bug feeds are global (visibility is gated per-viewer at the list level, see Channels).
+    if (key.startsWith("bug:")) {
+      return this.bugs.get(key);
+    }
     return this.channels.get(key);
   }
 
-  // The viewer's single shared, read-only info channel for reveal results, created
-  // lazily on first use. Returns undefined when the recipient maps to no known view
-  // (e.g. an org actor, which isn't modeled on the frontend yet).
-  private reveal_channel(view_key: string | undefined): Channel | undefined {
+  // The viewer's single read-only Notifications info channel — the one home for every
+  // directed personal event (reveals, bug alerts). Created lazily on first use. Returns
+  // undefined when the recipient maps to no known view (e.g. an org actor, not modeled yet).
+  private notif_channel(view_key: string | undefined): Channel | undefined {
     const view = view_key ? this.views.get(view_key) : undefined;
     if (!view) return undefined;
-    let channel = view.info_channels.get(REVEAL_CHANNEL);
+    let channel = view.info_channels.get(NOTIF_CHANNEL);
     if (!channel) {
-      channel = new_channel("Info", "Reveals");
-      view.info_channels.set(REVEAL_CHANNEL, channel);
+      channel = new_channel("Info", "Personal", "Notifications");
+      view.info_channels.set(NOTIF_CHANNEL, channel);
     }
     return channel;
+  }
+
+  // System's read-only mirror of one player's notifications, keyed per player so admin can
+  // see every player's notification log side by side. Lives in the System view's info
+  // channels under "info:notifs:<playerId>", named "notifications-<playername>".
+  private system_player_notif_channel(player_key: string): Channel {
+    const key = `${NOTIF_CHANNEL}:${player_key}`;
+    const view = this.system_view();
+    let channel = view.info_channels.get(key);
+    if (!channel) {
+      const name = this.players.get(player_key)?.display_name ?? player_key;
+      channel = new_channel("Info", "Personal", `Notifications-${name}`);
+      view.info_channels.set(key, channel);
+    }
+    return channel;
+  }
+
+  // Route a directed personal notification event into the recipient player's own
+  // Notifications channel AND System's per-player mirror of it (so admin sees everyone's).
+  private push_notif(
+    recipient: CommandRecipient,
+    timestamp: number,
+    data: InfoEvent,
+  ) {
+    this.notif_channel(recipientToView(recipient))?.events.push({ timestamp, data });
+    const player_key = recipientToPlayer(recipient);
+    // only real players get a System mirror (skip org actors, which have no player entry)
+    if (player_key && this.players.has(player_key)) {
+      this.system_player_notif_channel(player_key).events.push({ timestamp, data });
+    }
   }
 
   // Push a poll notice — "started" when outcome is null, else the resolution — into the
@@ -1063,8 +1292,14 @@ export class GameState {
     return this.#channel_to_org.get(channel_key);
   }
 
+  // Whether a channel is currently loggable (messages here can be autopsied / relayed to
+  // bugs). A global channel property; defaults to false until a SetChannelLoggable arrives.
+  is_channel_loggable(channel_key: string): boolean {
+    return this.#channel_loggable.get(channel_key) ?? false;
+  }
+
   // The prosecution a channel is the trial channel of, if any. For acting on the prosecution
-  // from within its channel (rendering is driven by the "Prosecution" ChannelKind instead).
+  // from within its channel (rendering is driven by the "Prosecution" channel category instead).
   prosecution_key_for_channel(channel_key: string): string | undefined {
     return this.#channel_to_prosecution.get(channel_key);
   }

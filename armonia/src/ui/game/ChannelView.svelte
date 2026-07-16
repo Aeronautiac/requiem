@@ -4,11 +4,12 @@
   import { GAME_STATE_KEY, displayKey } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
-  import type { GameEvent, GameState } from "../../game_state.svelte.ts";
+  import type { GameEvent, GameState, WriteEvent } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
   import type { ActionRequest, ActorDisplay, PollSubject, ProsecutionPhaseView } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
+  import { formatDuration } from "$lib/utils";
   import Button from "$lib/components/ui/button/button.svelte";
   import Message from "./Message.svelte";
   import Announcement from "./Announcement.svelte";
@@ -48,6 +49,9 @@
   // Info channels are frontend-only, read-only feeds (name reveals, autopsies): you
   // can never send in one, and their owner can always read them (no engine perms).
   const is_info = $derived(current_channel?.kind === "Info");
+  // Bug feeds are read-only surveillance logs: never interactable, and always readable to
+  // whoever the feed was listed for (visibility is gated when it's shown in the sidebar).
+  const is_bug = $derived(current_channel?.kind === "Bug");
   const archived = $derived(current_channel?.archived ?? false);
   // You can only send in a channel that actually exists. For news with no backing
   // channel this is false, so it isn't interactable — only the event log shows.
@@ -56,14 +60,29 @@
     current_channel != null &&
       !archived &&
       !is_info &&
+      !is_bug &&
       (is_admin || (current_perms?.send ?? false)),
   );
-  const can_read = $derived(is_info || is_admin || (current_perms?.read ?? false));
-  const is_notebook = $derived(current_channel?.kind === "Notebook");
+  const can_read = $derived(is_info || is_bug || is_admin || (current_perms?.read ?? false));
+  // Notebook-ness isn't a channel kind — it's derived from the channel->notebook mapping.
+  // A non-undefined notebook_id both identifies the channel as a notebook and gives the
+  // Write affordance its target.
   const notebook_id = $derived(
     backing_channel_id
       ? game.notebook_for_channel(backing_channel_id)
       : undefined,
+  );
+  // Loggability is a global channel property (SetChannelLoggable). Show it, and let a viewer
+  // with loggability control flip it. Synthetic info/bug feeds aren't engine channels, so the
+  // control never applies there.
+  const loggable = $derived(
+    backing_channel_id ? game.is_channel_loggable(backing_channel_id) : false,
+  );
+  // Show the status on any real engine channel (info/bug feeds aren't engine channels);
+  // it becomes an interactive toggle only for viewers with loggability control.
+  const show_loggability = $derived(current_channel != null && !is_info && !is_bug);
+  const can_control_loggability = $derived(
+    show_loggability && (is_admin || (current_perms?.loggability_control ?? false)),
   );
   let write_open = $state(false);
 
@@ -137,6 +156,57 @@
     return "Unknown";
   }
 
+  // Discord-style chunking: a message is a "continuation" (its sender header is dropped)
+  // when the immediately preceding rendered event is ALSO a message, from the same display,
+  // within this window. Any non-message event in between breaks the chain — the run must be
+  // uninterrupted. Each message stays its own row (own hover, own timestamp); only the header
+  // is suppressed.
+  const GROUP_WINDOW_MS = 45_000;
+  function is_grouped_message(
+    prev: GameEvent | undefined,
+    curr: GameEvent,
+  ): boolean {
+    if (!prev || !("Message" in prev.data) || !("Message" in curr.data)) return false;
+    if (
+      displayKey(prev.data.Message.sender_display) !==
+      displayKey(curr.data.Message.sender_display)
+    )
+      return false;
+    return curr.timestamp - prev.timestamp <= GROUP_WINDOW_MS;
+  }
+
+  // A notebook write, rendered with everything a viewer holding the book needs: who wrote,
+  // the name written, the outcome (lethal / target saved / no match), any death note, and
+  // the writer's remaining successes/attempts. success=true means the name matched a real
+  // player; target_saved means the kill didn't land (write immunity, or an earlier pending
+  // death on that target was cancelled by this write).
+  function write_event_text(w: WriteEvent): string {
+    const lines = [`${player_name(w.user_id)} wrote the name "${w.true_name}".`];
+    if (!w.success) {
+      lines.push("Outcome: the name matched no one — no effect.");
+    } else if (w.target_saved) {
+      lines.push(
+        "Outcome: valid name, but the target was saved (write immunity, or a pending death was cancelled).",
+      );
+    } else if (w.delay > 0) {
+      lines.push(`Outcome: lethal — the target dies in ${formatDuration(w.delay)}.`);
+    } else {
+      lines.push("Outcome: lethal — the target dies immediately.");
+    }
+    if (w.message) lines.push(`Note: ${w.message}`);
+    lines.push(
+      `Successes left: ${w.successes_remaining} · Attempts left: ${w.attempts_remaining}`,
+    );
+    return lines.join("\n");
+  }
+
+  // Colour by outcome: red = lethal, amber = valid-but-saved, grey = no match.
+  function write_event_color(w: WriteEvent): string {
+    if (!w.success) return "#6b7280";
+    if (w.target_saved) return "#f59e0b";
+    return "#ef4444";
+  }
+
   // News-feed text for a prosecution start/advance/end (derived from the phase diff).
   function prosecution_event_text(pe: {
     prosecutor_display: ActorDisplay;
@@ -175,6 +245,20 @@
     await game.dispatch(request);
     message_content = "";
     console.log("message sent");
+  }
+
+  async function toggle_loggable() {
+    if (!backing_channel_id) return;
+    await game.dispatch({
+      actor: viewerToActor(ui.viewer),
+      timestamp: now(),
+      payload: {
+        SetLoggable: {
+          channel_id: slotKeyFromString(backing_channel_id),
+          loggable: !loggable,
+        },
+      },
+    });
   }
 
   // based on the context, choose which events to include, push them into a unified list, and then sort the list
@@ -254,20 +338,48 @@
             archived
           </span>
         {/if}
+
+        <!-- Loggability status, top-right. A toggle for viewers with loggability control,
+             otherwise a read-only badge. -->
+        {#if show_loggability}
+          {@const cls = loggable
+            ? "bg-amber-600/20 text-amber-400"
+            : "bg-neutral-800 text-neutral-500"}
+          {#if can_control_loggability}
+            <button
+              class="ml-auto rounded px-2 py-0.5 text-xs font-medium hover:brightness-125 {cls}"
+              title="Toggle whether messages sent here can be logged (autopsied / relayed to bugs)"
+              onclick={toggle_loggable}
+            >
+              Logging {loggable ? "on" : "off"}
+            </button>
+          {:else}
+            <span
+              class="ml-auto rounded px-2 py-0.5 text-xs font-medium {cls}"
+              title="Whether messages sent here can be logged (autopsied / relayed to bugs)"
+            >
+              Logging {loggable ? "on" : "off"}
+            </span>
+          {/if}
+        {/if}
       </header>
 
       <main bind:this={scroller} class="min-h-0 overflow-y-auto py-4">
-        {#each events as event (event)}
+        {#each events as event, i (event)}
           {#if "Message" in event.data}
             <Message
               sender={display_string(event.data.Message.sender_display)}
               content={event.data.Message.content}
               timestamp={event.timestamp}
+              grouped={is_grouped_message(events[i - 1], event)}
             />
           {:else if "Write" in event.data}
-            <div class="px-4 py-1 text-xs italic text-neutral-500">
-              Notebook write
-            </div>
+            {@const w = event.data.Write}
+            <Announcement
+              color={write_event_color(w)}
+              description="Notebook Write"
+              content={write_event_text(w)}
+            />
           {:else if "Death" in event.data}
             {@const d = event.data.Death}
             <Announcement
@@ -294,6 +406,27 @@
               color="#3b82f6"
               description="Notebook Check"
               content={`${player_name(r.target_id)} is ${r.holding ? "" : "not "}currently holding a notebook.`}
+            />
+          {:else if "Bugged" in event.data}
+            {@const b = event.data.Bugged}
+            <Announcement
+              color="#eab308"
+              description="Surveillance"
+              content={b.context === "Custody"
+                ? "You are bugged: your messages are being monitored while you are in custody."
+                : "You have been bugged. Your messages are being monitored."}
+            />
+          {:else if "RoleUpdate" in event.data}
+            <Announcement
+              color="#8b5cf6"
+              description="Role"
+              content={`Your role is now ${event.data.RoleUpdate.role}.`}
+            />
+          {:else if "TrueNameUpdate" in event.data}
+            <Announcement
+              color="#8b5cf6"
+              description="True Name"
+              content={`Your true name is now ${event.data.TrueNameUpdate.true_name}.`}
             />
           {:else if "PollNotice" in event.data}
             {@const pn = event.data.PollNotice}
@@ -408,6 +541,14 @@
                   >
                 </div>
               </form>
+            {:else if is_bug}
+              <div
+                class="rounded-lg bg-neutral-800/50 px-4 py-2.5 text-center text-sm italic text-neutral-500"
+              >
+                {archived
+                  ? "This surveillance feed is no longer active."
+                  : "Read-only surveillance feed."}
+              </div>
             {:else if archived}
               <div
                 class="rounded-lg bg-neutral-800/50 px-4 py-2.5 text-center text-sm italic text-neutral-500"
@@ -423,7 +564,7 @@
             {/if}
           </div>
 
-          {#if is_notebook && notebook_id}
+          {#if notebook_id}
             <Button
               size="sm"
               class="bg-red-600 text-white hover:bg-red-700"
@@ -431,11 +572,9 @@
             >
           {/if}
         </div>
-
-        <!-- TODO: toggle loggability -->
       </footer>
 
-      {#if is_notebook && notebook_id}
+      {#if notebook_id}
         <NotebookWrite bind:open={write_open} notebookId={notebook_id} />
       {/if}
     </div>

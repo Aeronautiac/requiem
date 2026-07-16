@@ -34,19 +34,19 @@ impl ActionInterface for CreateGroupchat {
         };
         let channel_id = data.id;
 
-        let id = if mutate {
+        let (id, contact_id) = if mutate {
             let gc_id = eng.world.add_groupchat(Groupchat::new(channel_id));
-            eng.world
-                .register_contact_channel(ContactChannel::Gc(gc_id));
-            gc_id
+            let contact_id = eng.world.register_contact_channel(ContactChannel::Gc(gc_id));
+            (gc_id, contact_id)
         } else {
-            GroupchatKey::default()
+            (GroupchatKey::default(), 0)
         };
 
         ctx.push_cmd(
             Command::MapGc {
                 gc_id: id,
                 channel_id,
+                contact_id,
             },
             CommandRecipient::System,
             eng.time,

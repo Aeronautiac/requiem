@@ -93,12 +93,23 @@ pub fn default_ability_config() -> AbilityConfigMap {
         identifier(AbilityName::AnonymousContact, 0),
         AbilityConfig {
             require_presence: true,
-            default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Restrictive,
-                weight: 1,
-                condition: ChargeCondition::OnSuccess.into(),
-                details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Contact),
-            }],
+            default_links: vec![
+                ConfigPoolLink {
+                    link_type: PoolLinkType::Restrictive,
+                    weight: 1,
+                    condition: ChargeCondition::OnSuccess.into(),
+                    details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Contact),
+                },
+                ConfigPoolLink {
+                    link_type: PoolLinkType::Restrictive,
+                    weight: 1,
+                    condition: ChargeCondition::OnSuccess.into(),
+                    details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
+                        charges: 1,
+                        reset_time: 1,
+                    }),
+                },
+            ],
         },
     );
 
@@ -106,12 +117,23 @@ pub fn default_ability_config() -> AbilityConfigMap {
         identifier(AbilityName::FalseAnonymousContact, 0),
         AbilityConfig {
             require_presence: true,
-            default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Restrictive,
-                weight: 1,
-                condition: ChargeCondition::OnSuccess.into(),
-                details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Contact),
-            }],
+            default_links: vec![
+                ConfigPoolLink {
+                    link_type: PoolLinkType::Restrictive,
+                    weight: 1,
+                    condition: ChargeCondition::OnSuccess.into(),
+                    details: ConfigPoolLinkDetails::Actor(ActorChargePoolName::Contact),
+                },
+                ConfigPoolLink {
+                    link_type: PoolLinkType::Restrictive,
+                    weight: 1,
+                    condition: ChargeCondition::OnSuccess.into(),
+                    details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
+                        charges: 1,
+                        reset_time: 1,
+                    }),
+                },
+            ],
         },
     );
 

@@ -548,6 +548,18 @@ pub struct SetLoggable {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetTrueNameResponse {}
+
+// Set (or change) a player's true name. Updates the name index and notifies the player
+// (and admin) of their current true name. Reused by initial player creation and, later, by
+// name-reroll effects.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetTrueName {
+    pub target_id: ActorKey,
+    pub true_name: String,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct SetMemberResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1233,6 +1245,7 @@ pub enum Action {
     DestroyChannel(DestroyChannel),
     SetMember(SetMember),
     SetLoggable(SetLoggable),
+    SetTrueName(SetTrueName),
     CreateLounge(CreateLounge),
     UpdateContactChannels(UpdateContactChannels),
     LeaveLounge(LeaveLounge),
@@ -1343,6 +1356,7 @@ pub enum ActionResponse {
     DestroyChannel(DestroyChannelResponse),
     SetMember(SetMemberResponse),
     SetLoggable(SetLoggableResponse),
+    SetTrueName(SetTrueNameResponse),
     CreateLounge(CreateLoungeResponse),
     UpdateContactChannels(UpdateContactChannelsResponse),
     LeaveLounge(LeaveLoungeResponse),

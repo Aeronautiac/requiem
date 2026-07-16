@@ -5,11 +5,14 @@
 * Changing a player's role destroys any of their volatile resources
 */
 
+use lawliet_types::command::CommandRecipient;
+
 use crate::{
     action::{
         ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, CreateAndGiveAbility, CreateActorLinks, PurgeVolatiles, SeverLinks, CreateAndGiveNotebook, CreateAndGivePassive, SetWorldChannelOverride, UpdateWorldChannelPerms,
     },
     actor::player::OverrideSource,
+    command::Command,
     helpers::{get_player_mut, get_role_config},
 };
 
@@ -95,6 +98,22 @@ impl ActionInterface for GiveRole {
             player_id: self.target_id,
         })
         .handle(eng, ctx, actor, version, mutate)?;
+
+        // Notify the player of their (new) role for their personal log, and mirror it to
+        // System so admin can inspect any player's role.
+        for recipient in [
+            CommandRecipient::Actor(self.target_id),
+            CommandRecipient::System,
+        ] {
+            ctx.push_cmd(
+                Command::RoleUpdate {
+                    target_id: self.target_id,
+                    role: self.role,
+                },
+                recipient,
+                eng.time,
+            );
+        }
 
         Ok(ActionResponse::GiveRole(GiveRoleResponse {}))
     }

@@ -167,6 +167,10 @@ export type BugSource =
   | { Ability: AbilityKey }
   | "Custody";
 
+// Target-facing bug context (see the engine's BugContext): why a bugged player is under
+// surveillance, with the owner deliberately stripped out.
+export type BugContext = "Explicit" | "Custody";
+
 export type ProsecutionSource =
   | "None"
   | { Ability: AbilityKey };
@@ -224,7 +228,8 @@ export type AbilityBehaviour =
   | { LeaderResign: { successor: ActorKey | null } }
   | { TrueNameReveal: { target: ActorKey } }
   | { NotebookReveal: { target: ActorKey } }
-  | { CivilianArrest: { target: ActorKey } };
+  | { CivilianArrest: { target: ActorKey } }
+  | { Bug: { target: ActorKey } };
 
 // ////////////////////////////////////////////////////////////
 // ACTION STRUCTS
@@ -452,6 +457,11 @@ export type SetLoggable = {
   loggable: boolean;
 };
 
+export type SetTrueName = {
+  target_id: ActorKey;
+  true_name: string;
+};
+
 export type SetMember = {
   player_id: ActorKey;
   channel_id: ChannelKey;
@@ -467,6 +477,10 @@ export type AddToGroupchat = {
 };
 
 export type CreateGroupchat = Record<string, never>;
+
+// Player action: create a personal channel (a private notepad / line to whoever bugged you).
+// Takes no args — the acting player is the owner.
+export type CreatePersonalChannel = Record<string, never>;
 
 export type RemoveFromGroupchat = {
   groupchat_id: GroupchatKey;
@@ -797,9 +811,11 @@ export type Action =
   | { CreateAndGiveOrgAbility: CreateAndGiveOrgAbility }
   | { SendMessage: SendMessage }
   | { CreateChannel: CreateChannel }
+  | { CreatePersonalChannel: CreatePersonalChannel }
   | { DestroyChannel: DestroyChannel }
   | { SetMember: SetMember }
   | { SetLoggable: SetLoggable }
+  | { SetTrueName: SetTrueName }
   | { CreateLounge: CreateLounge }
   | { UpdateContactChannels: UpdateContactChannels }
   | { LeaveLounge: LeaveLounge }
@@ -918,7 +934,8 @@ export type ActionError =
   | "CannotBeOwnLawyer"
   | "KidnappingNotFound"
   | "IncarcerationNotFound"
-  | "ActorHasStrengthenedPresence";
+  | "ActorHasStrengthenedPresence"
+  | "PersonalChannelLimitReached";
 
 // Only variants that carry meaningful data are included.
 export type ActionResponse =
@@ -958,16 +975,20 @@ export type Command =
   | { AddOrgMember: { player_id: ActorKey; org_id: ActorKey } }
   | { RemoveOrgMember: { player_id: ActorKey; org_id: ActorKey } }
   | { AddMessage: { content: string; channel_id: ChannelKey; sender_display: ActorDisplay } }
-  | { MapLounge: { lounge_id: LoungeKey; channel_id: ChannelKey } }
-  | { MapGc: { gc_id: GroupchatKey; channel_id: ChannelKey } }
+  | { MapLounge: { lounge_id: LoungeKey; channel_id: ChannelKey; contact_id: number } }
+  | { MapGc: { gc_id: GroupchatKey; channel_id: ChannelKey; contact_id: number } }
   | { MapWorldChannel: { channel_name: WorldChannelName; channel_id: ChannelKey } }
+  | { MapPersonalChannel: { channel_id: ChannelKey } }
   | { DeleteChannel: { channel_id: ChannelKey } }
   | { ArchiveChannel: { channel_id: ChannelKey } }
+  | { SetChannelLoggable: { channel_id: ChannelKey; loggable: boolean } }
   | { NewBug: { bug_key: BugKey } }
   | { AddBugMessage: { bug_key: BugKey; display: ActorDisplay; content: string } }
   | { ArchiveBug: { bug_key: BugKey } }
   | { ClearBugVisibily: { bug_id: BugKey } }
   | { DeleteBug: { bug_id: BugKey } }
+  // directed to the bug's target: you're under surveillance, and in what context (never by whom)
+  | { Bugged: { context: BugContext } }
   | { RemoveChannel: { channel_id: ChannelKey } }
   | { GcOwnerStatus: { owner: boolean; gc_id: GroupchatKey } }
   | { ShowChannelMember: { channel_id: ChannelKey; display: ActorDisplay; channel_perms: ChannelPermissions } }
@@ -980,9 +1001,13 @@ export type Command =
   | { AddContactLog: { passive_id: PassiveKey } }
   | { UpdateAbilityView: { ability_name: AbilityName; success_usages_remaining: number; failure_usages_remaining: number; iterations_to_reset: number; ability_id: AbilityKey; owner_id: ActorKey } }
   | { RemoveAbility: { ability_id: AbilityKey } }
+  | { UpdatePassiveView: { passive_type: PassiveType; passive_id: PassiveKey; owner_id: ActorKey } }
+  | { RemovePassive: { passive_id: PassiveKey } }
   | { RevealAutopsyMessages: { target_id: ActorKey; range: number; redact_names: boolean } }
   | { RevealTrueName: { target_id: ActorKey; true_name: string } }
   | { RevealNotebookHolding: { target_id: ActorKey; holding: boolean } }
+  | { RoleUpdate: { target_id: ActorKey; role: Role } }
+  | { TrueNameUpdate: { target_id: ActorKey; true_name: string } }
   | { UpdatePoll: { poll_id: PollKey; subject: PollSubject; scope: PollVisibility; accept: number; reject: number; potential: number } }
   | { ClosePoll: { poll_id: PollKey; outcome: PollOutcome } }
   | { UpdatePollView: { poll_id: PollKey; eligible: boolean; own_vote: boolean | null } }

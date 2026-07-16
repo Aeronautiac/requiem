@@ -1,9 +1,6 @@
-use std::{
-    collections::{BTreeMap, btree_map::Entry},
-    rc::Rc,
-};
+use std::rc::Rc;
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, map::Entry};
 use lawliet_types::common::{ID, IterationCount};
 use slotmap::SlotMap;
 
@@ -47,7 +44,7 @@ pub enum ContactChannel {
 pub struct World {
     pub blackout: bool,
     pub actors: SlotMap<ActorKey, Actor>,
-    pub player_names: BTreeMap<Rc<str>, ActorKey>, // a map of true names to actor ids
+    pub player_names: IndexMap<Rc<str>, ActorKey>, // a map of true names to actor ids
     pub abilities: SlotMap<AbilityKey, Ability>,
     pub notebooks: SlotMap<NotebookKey, Notebook>,
     pub passives: SlotMap<PassiveKey, Passive>,
@@ -75,7 +72,7 @@ impl World {
             actors: SlotMap::with_key(),
             abilities: SlotMap::with_key(),
             notebooks: SlotMap::with_key(),
-            player_names: BTreeMap::new(),
+            player_names: IndexMap::new(),
             passives: SlotMap::with_key(),
             charge_pools: SlotMap::with_key(),
             pool_map: IndexMap::new(),
@@ -147,6 +144,26 @@ impl World {
             }
             Entry::Occupied(_) => unreachable!(), // guarded by contains_key above
         }
+    }
+
+    // Rename a player: swap the name index over and update the player's stored true name.
+    // Names are normalized to lowercase, matching add_player / get_player_id_by_name.
+    // Returns false (renaming nothing) if the name is already held by a DIFFERENT player, or
+    // the id isn't a player; true once the rename is applied.
+    pub fn set_player_name(&mut self, id: ActorKey, new_name: &str) -> bool {
+        let normalized: Rc<str> = Rc::from(new_name.to_lowercase().as_str());
+        if let Some(existing) = self.player_names.get(normalized.as_ref())
+            && *existing != id
+        {
+            return false;
+        }
+        let Some(player) = self.get_player_mut(id) else {
+            return false;
+        };
+        let old = std::mem::replace(&mut player.true_name, normalized.clone());
+        self.player_names.swap_remove(old.as_ref());
+        self.player_names.insert(normalized, id);
+        true
     }
 
     pub fn add_org(

@@ -45,6 +45,16 @@ impl ActionInterface for CreateBug {
                 eng.time,
             );
 
+            // notify the target that they've been bugged, in what context, but never by
+            // whom (the source is collapsed to a coarse BugContext to strip the owner).
+            ctx.push_cmd(
+                Command::Bugged {
+                    context: self.source.into(),
+                },
+                CommandRecipient::Actor(self.target_id),
+                eng.time,
+            );
+
             bug_id
         } else {
             BugKey::default()

@@ -48,6 +48,7 @@ pub enum AbilityBehaviour {
     PublicKidnap(PublicKidnap),
     AnonymousProsecute(AnonymousProsecute),
     Autopsy(Autopsy),
+    Bug(Bug),
     CreateGroupchat(CreateGroupchat),
     FabricateLounge(FabricateLounge),
     FalseAnonymousContact(FalseAnonymousContact),

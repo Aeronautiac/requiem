@@ -4,4 +4,5 @@ pub mod give_role;
 pub mod kill;
 pub mod revive;
 pub mod schedule_kill;
+pub mod set_true_name;
 pub mod schedule_revive;

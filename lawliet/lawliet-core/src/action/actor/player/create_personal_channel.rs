@@ -1,15 +1,17 @@
 use indexmap::indexset;
 use lawliet_types::{
     action::{
-        Action, ActionError, ActionResponse, CreateChannel, CreatePersonalChannel,
+        Action, ActionActor, ActionError, ActionResponse, CreateChannel, CreatePersonalChannel,
         CreatePersonalChannelResponse, SetMember,
     },
     actor::ActorDisplay,
     channel::{ChannelMember, ChannelPermission},
+    command::CommandRecipient,
 };
 
 use crate::{
     action::ActionInterface,
+    command::Command,
     helpers::{actor_id, get_player, get_player_mut},
 };
 
@@ -30,17 +32,31 @@ impl ActionInterface for CreatePersonalChannel {
             return Err(ActionError::PersonalChannelLimitReached);
         }
 
-        let channel_response = Action::CreateChannel(CreateChannel { loggable: true })
-            .handle(eng, ctx, actor, version, mutate)?;
+        let channel_response = Action::CreateChannel(CreateChannel { loggable: false }).handle(
+            eng,
+            ctx,
+            &ActionActor::System,
+            version,
+            mutate,
+        )?;
         let ActionResponse::CreateChannel(data) = channel_response else {
             unreachable!();
         };
         let channel_id = data.id;
 
+        // Tag the freshly-created channel as a personal channel on the frontend. Must precede
+        // the SetMember below (whose UpdateChannelView references the channel), and mirrors how
+        // the other channel kinds announce themselves (MapGc, MapLounge, …). Global, like them.
+        ctx.push_cmd(
+            Command::MapPersonalChannel { channel_id },
+            CommandRecipient::System,
+            eng.time,
+        );
+
         if mutate {
             let player = get_player_mut(eng, player_id).expect("already validated");
             player.personal_channels.insert(channel_id);
-            player.personal_channel_charges -= 1;
+            player.personal_channel_charges = player.personal_channel_charges.saturating_sub(1);
 
             Action::SetMember(SetMember {
                 player_id,
@@ -52,7 +68,7 @@ impl ActionInterface for CreatePersonalChannel {
                     displays: indexset! { ActorDisplay::Raw(player_id) },
                 }),
             })
-            .handle(eng, ctx, actor, version, mutate)?;
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         Ok(ActionResponse::CreatePersonalChannel(

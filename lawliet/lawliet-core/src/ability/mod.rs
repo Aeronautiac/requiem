@@ -64,6 +64,7 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::PublicKidnap(a) => a.ability_name(),
             AbilityBehaviour::AnonymousProsecute(a) => a.ability_name(),
             AbilityBehaviour::Autopsy(a) => a.ability_name(),
+            AbilityBehaviour::Bug(a) => a.ability_name(),
             AbilityBehaviour::CreateGroupchat(a) => a.ability_name(),
             AbilityBehaviour::FabricateLounge(a) => a.ability_name(),
             AbilityBehaviour::FalseAnonymousContact(a) => a.ability_name(),
@@ -109,6 +110,7 @@ impl AbilityInterface for AbilityBehaviour {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
             AbilityBehaviour::Autopsy(a) => a.handle(eng, ctx, actor, ability, version, mutate),
+            AbilityBehaviour::Bug(a) => a.handle(eng, ctx, actor, ability, version, mutate),
             AbilityBehaviour::CreateGroupchat(a) => {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }

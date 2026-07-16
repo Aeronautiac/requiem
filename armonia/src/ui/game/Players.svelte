@@ -2,22 +2,17 @@
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
-  import { now } from "../../time.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import type { ActionRequest, ActorDisplay } from "../../bindings";
-  import { slotKeyFromString, slotKeyToString } from "../../bindings";
-  import { Flash } from "../../flash.svelte.ts";
-  import FlashDisplay from "../Flash.svelte";
-  import { viewerToActor } from "../../types";
+  import type { ActorDisplay } from "../../bindings";
+  import { slotKeyToString } from "../../bindings";
+  import Player from "./Player.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
-  let expanded = $state<string | null>(null);
   let channel_open = $state(true);
   let players_open = $state(true);
-  const flash = new Flash();
 
   // The channel whose members we show: the selected channel, or news's backing channel.
   const channel_id = $derived(
@@ -52,34 +47,6 @@
     [...game.players.entries()].filter(([id]) => !member_player_ids.has(id)),
   );
 
-  async function contact(target_id_str: string, ability_id_str: string) {
-    const request: ActionRequest = {
-      actor: viewerToActor(ui.viewer),
-      timestamp: now(),
-      payload: {
-        UseAbility: {
-          ability_id: slotKeyFromString(ability_id_str),
-          ability_args: {
-            Contact: { target_id: slotKeyFromString(target_id_str) },
-          },
-        },
-      },
-    };
-    const err = await game.dispatch(request);
-    if (err) {
-      flash.set_error(`Contact failed: ${err}`);
-    } else {
-      flash.set_success("Contact sent.");
-      expanded = null;
-    }
-  }
-
-  function contact_abilities() {
-    return [...(game.views.get(ui.viewer)?.abilities.entries() ?? [])].filter(
-      ([, av]) => av.name === "Contact",
-    );
-  }
-
   // send = bit 0, read = bit 1 (matches the UpdateChannelView perms parsing).
   function perms_label(perms: number): string {
     const parts: string[] = [];
@@ -96,40 +63,6 @@
       : null;
   }
 </script>
-
-<!-- A clickable person row: click to expand contact options for player `id`. `perms`
-     shows a read/send hint (channel members); pass null to omit it (other players). -->
-{#snippet contactRow(id: string, label: string, perms: number | null)}
-  <div class="rounded text-sm">
-    <button
-      class="flex w-full items-center justify-between px-2 py-1 rounded text-neutral-300 hover:bg-neutral-800"
-      onclick={() => {
-        expanded = expanded === id ? null : id;
-        flash.error = null;
-        flash.success = null;
-      }}
-    >
-      <span>{label}</span>
-      {#if perms !== null && perms_label(perms)}
-        <span class="text-xs text-neutral-600">{perms_label(perms)}</span>
-      {/if}
-    </button>
-
-    {#if expanded === id}
-      <div class="ml-2 mt-0.5 flex flex-col gap-0.5">
-        {#each contact_abilities() as [ability_id, av] (ability_id)}
-          <button
-            class="px-2 py-0.5 text-xs text-left rounded text-neutral-400 hover:bg-neutral-800"
-            onclick={() => contact(id, ability_id)}
-          >
-            Contact ({av.success_usages_remaining}, resets in {av.iterations_to_reset})
-          </button>
-        {/each}
-        <FlashDisplay {flash} />
-      </div>
-    {/if}
-  </div>
-{/snippet}
 
 <div class="flex flex-col gap-2 p-2">
   <!-- Channel-specific member list -->
@@ -151,13 +84,13 @@
         {#each members as [key, member] (key)}
           {@const pid = contact_target(member.display)}
           {#if pid}
-            {@render contactRow(
-              pid,
-              game.resolve_display(member.display),
-              member.perms,
-            )}
+            <Player
+              id={pid}
+              label={game.resolve_display(member.display)}
+              perms={member.perms}
+            />
           {:else}
-            <!-- anonymous/role member: nothing to contact -->
+            <!-- anonymous/role member: nothing to contact or inspect -->
             <div
               class="flex items-center justify-between px-2 py-1 text-sm text-neutral-300"
             >
@@ -186,7 +119,7 @@
 
     {#if players_open}
       {#each other_players as [id, player] (id)}
-        {@render contactRow(id, player.display_name, null)}
+        <Player {id} label={player.display_name} />
       {/each}
 
       {#if other_players.length === 0}

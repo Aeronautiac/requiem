@@ -7,6 +7,7 @@ use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
         ActionResult, AddChargePool, AddToWorldChannels, CreateAndGiveAbility, GiveRole,
+        SetTrueName,
     },
     common::{ActorKey, Version},
     engine::Engine,
@@ -77,6 +78,14 @@ impl ActionInterface for AddPlayer {
             Action::GiveRole(GiveRole {
                 target_id: player_id,
                 role: self.starting_role,
+            })
+            .handle(eng, ctx, actor, version, mutate)?;
+
+            // Emit the initial true-name notification (the name itself is already set by
+            // world.add_player above; this re-affirms it and notifies the player + admin).
+            Action::SetTrueName(SetTrueName {
+                target_id: player_id,
+                true_name: self.true_name.clone(),
             })
             .handle(eng, ctx, actor, version, mutate)?;
         }

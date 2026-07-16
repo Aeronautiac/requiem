@@ -11,6 +11,7 @@
   import { UI_STATE_KEY, UiState } from "../ui_state.svelte";
   import ViewSelect from "./game/ViewSelect.svelte";
   import AbilityMenu from "./game/abilities/AbilityMenu.svelte";
+  import PassivesPanel from "./game/PassivesPanel.svelte";
   import ChannelView from "./game/ChannelView.svelte";
   import AdminPanel from "./admin/AdminPanel.svelte";
 
@@ -42,6 +43,7 @@
   >
     <ViewSelect />
     <AbilityMenu />
+    <PassivesPanel />
     <AdminPanel />
   </div>
 </div>

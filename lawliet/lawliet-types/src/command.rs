@@ -4,13 +4,15 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ability::AbilityName,
     actor::{ActorDisplay, States},
+    bug::BugContext,
     channel::ChannelPermissions,
     common::{
-        AbilityKey, ActorKey, AttemptCount, BugKey, ChannelKey, ChargeCount, GroupchatKey,
+        AbilityKey, ActorKey, AttemptCount, BugKey, ChannelKey, ChargeCount, GroupchatKey, ID,
         IterationCount, LoungeKey, NotebookKey, PassiveKey, PollKey, PollWeight, ProsecutionKey,
         Time,
     },
     organization::OrganizationName,
+    passive::PassiveType,
     poll::{PollOutcome, PollSubject, PollVisibility},
     prosecution::ProsecutionPhaseView,
     role::Role,
@@ -154,16 +156,21 @@ pub enum Command {
         sender_display: ActorDisplay,
     },
 
-    // map a lounge id to a channel id
+    // map a lounge id to a channel id. contact_id is the lounge's strictly-increasing
+    // contact-channel id, used for display (e.g. "lounge-<contact_id>") and to reference the
+    // contact channel (tap-ins, contact logs).
     MapLounge {
         lounge_id: LoungeKey,
         channel_id: ChannelKey,
+        contact_id: ID,
     },
 
-    // map a gc id to a channel id
+    // map a gc id to a channel id. contact_id as in MapLounge (rendered like "<name> [<contact_id>]";
+    // no custom names yet, so a default name for now).
     MapGc {
         gc_id: GroupchatKey,
         channel_id: ChannelKey,
+        contact_id: ID,
     },
 
     // register an org on the frontend: its actor id, name, and backing channel (and any
@@ -180,6 +187,14 @@ pub enum Command {
         channel_name: WorldChannelName,
     },
 
+    // register a personal channel: a plain engine channel a player created for themselves
+    // (a notepad / a private line to whoever bugged them). Like the other channel maps this
+    // is global; only the owner holds perms for it, so per-viewer visibility falls out of the
+    // normal channel-view perms. Sent so the frontend can tag it as a personal channel.
+    MapPersonalChannel {
+        channel_id: ChannelKey,
+    },
+
     // delete a channel
     // the frontend must handle the cascading effects of handling things tied to the channel
     // (notebooks, groupchats, lounges, etc...)
@@ -190,6 +205,15 @@ pub enum Command {
     // can no longer send messages or similar, but you can still view if you have/are given view permissions
     ArchiveChannel {
         channel_id: ChannelKey,
+    },
+
+    // a channel's loggability status (whether messages here can be logged — autopsied,
+    // relayed to bugs, …). A global channel property, not per-viewer. Emitted with the
+    // channel's initial value on creation and again whenever it's toggled, so a viewer with
+    // loggability control can see and flip the current state.
+    SetChannelLoggable {
+        channel_id: ChannelKey,
+        loggable: bool,
     },
 
     NewBug {
@@ -217,6 +241,14 @@ pub enum Command {
     // basically, this bug should have never existed
     DeleteBug {
         bug_id: BugKey,
+    },
+
+    // DIRECTED (to the bug's target): notify a player that they are under surveillance and
+    // in what context (an explicit bug ability vs being held in custody). Deliberately omits
+    // who planted it — the target learns *that* they're bugged, never *who* bugged them. The
+    // owner side needs no equivalent: they simply receive the relayed AddBugMessage stream.
+    Bugged {
+        context: BugContext,
     },
 
     /////=<TARGETTED>=/////
@@ -353,6 +385,21 @@ pub enum Command {
         ability_id: AbilityKey,
     },
 
+    // a passive the recipient now holds. Like UpdateAbilityView but with no charges/usages;
+    // passive_type is the full typed value (some variants carry data, e.g. VoteAmplification's
+    // multiplier). Doubles as create-and-reveal. Directed to the owner.
+    UpdatePassiveView {
+        passive_type: PassiveType,
+        passive_id: PassiveKey,
+        owner_id: ActorKey,
+    },
+
+    // hide a passive from the recipient (transferred away or destroyed). Directed to the
+    // (former) owner.
+    RemovePassive {
+        passive_id: PassiveKey,
+    },
+
     // tell the frontend to display autopsy messages for a specific user. the frontend server will do the
     // querying and filtering, and the clients will handle the display of that info.
     RevealAutopsyMessages {
@@ -372,6 +419,25 @@ pub enum Command {
         target_id: ActorKey,
         holding: bool,
     },
+
+    ////////////////////////////////////////////////
+    // PERSONAL INFO //
+    ////////////////////////////////////////////////
+    // A player's own identity facts, emitted when they change. Dual-routed: to the player
+    // themselves (Actor(target)) so it lands in their notifications log ("your role is now
+    // X"), and to System so admin can inspect any player's current facts per-user. target_id
+    // is redundant for the player copy but is what keys the admin copy.
+
+    RoleUpdate {
+        target_id: ActorKey,
+        role: Role,
+    },
+
+    TrueNameUpdate {
+        target_id: ActorKey,
+        true_name: String,
+    },
+
     ////////////////////////////////////////////////
     // POLLS //
     ////////////////////////////////////////////////

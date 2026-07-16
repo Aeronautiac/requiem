@@ -3,10 +3,11 @@
 * Set the loggable status of a channel
 */
 
-use lawliet_types::{action::ActionError, channel::ChannelPermission};
+use lawliet_types::{action::ActionError, channel::ChannelPermission, command::CommandRecipient};
 
 use crate::{
     action::{ActionInterface, ActionResponse},
+    command::Command,
     helpers::{get_channel_mut, player_id},
 };
 
@@ -17,7 +18,7 @@ impl ActionInterface for SetLoggable {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        _ctx: &mut crate::action::ActionContext,
+        ctx: &mut crate::action::ActionContext,
         actor: &ActionActor,
         _version: crate::common::Version,
         mutate: bool,
@@ -44,8 +45,16 @@ impl ActionInterface for SetLoggable {
             channel.loggable = self.loggable
         }
 
-        // TODO:
-        // host command(s)
+        // Broadcast the new loggability so every viewer's channel UI reflects it. Global,
+        // like the initial value emitted from CreateChannel.
+        ctx.push_cmd(
+            Command::SetChannelLoggable {
+                channel_id: self.channel_id,
+                loggable: self.loggable,
+            },
+            CommandRecipient::System,
+            eng.time,
+        );
 
         Ok(ActionResponse::SetLoggable(SetLoggableResponse {}))
     }
