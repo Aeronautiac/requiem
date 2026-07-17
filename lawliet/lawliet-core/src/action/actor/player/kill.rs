@@ -50,10 +50,7 @@ impl ActionInterface for Kill {
 
         let mut notebook_transferred = false;
         let mut ability_transferred = false;
-        let mut next_actions: SmallVec<[Action; 8]> = smallvec![Action::AddState(AddState {
-            actor_id: self.target_id,
-            state: State::Dead
-        })];
+        let mut next_actions: SmallVec<[Action; 8]> = smallvec![];
         if let Some(killer_id) = self.killer_id {
             let killer = get_actor_mut(eng, killer_id)?;
 

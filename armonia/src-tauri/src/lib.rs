@@ -1,7 +1,7 @@
 /*
 * Armonia is a dev tool UI that directly hosts a lawliet instance with zero middleware. It is
 * designed for developers and allows for things like switching player perspectives, rewinding, etc.
-* It communicates with a lawliet runtime via Unix pipes.
+* It communicates with a lawliet runtime via pipes over the child's stdin/stdout.
 *
 * When networking middleware is added, the supervisor/coordinator here gets replaced by a network
 * client, and the Tauri commands stay the same from the frontend's perspective.
@@ -33,7 +33,7 @@ async fn supervisor_loop(fd_wrt: UnboundedSender<(ChildStdin, ChildStdout)>) {
                 .expect("failed to get current exe")
                 .parent()
                 .expect("failed to get parent path")
-                .join("lawliet-runtime"),
+                .join(format!("lawliet-runtime{}", std::env::consts::EXE_SUFFIX)),
         )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

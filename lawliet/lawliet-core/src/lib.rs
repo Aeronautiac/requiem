@@ -96,14 +96,18 @@
 * player's client.
 *
 * --- yagami (external) ---
-* hosts multiple lawliet instances and communicates via IPC. acts as persistence and routing layer.
+* yagami is the central server. it handles the platform/auth as well as hosting multiple lawliet
+* instances and communicates via IPC. it acts as persistence and routing layer to different clients.
 * game state is never snapshotted — it is reconstructed from a saved action log. action buffers
 * are flushed to postgres on timer, significant action, or full buffer. multithreaded process.
+* in the case that a frontend requires another server layer, the server may present itself as an
+* authoritative client to yagami and relay to its sub-clients.
 *
 * --- frontend protocol ---
-* frontends are dumb: they receive commands and errors and render accordingly. frontend servers
-* handle routing. response data structs are used internally (tests, sub-actions, yagami). each
-* frontend must support host controls and player game views.
+* frontends are dumb: they receive commands and errors and render accordingly.
+* response data structs are used in cases where a direct response to an action is necessary
+* (creating players and receiving their ids for instance). commands are used for everything else.
+* each frontend must support host controls and player game views.
 */
 
 mod ability;
