@@ -5,8 +5,8 @@
 
 use crate::{
     action::{
-        Action, ActionContext, ActionInterface, ActionResult, ActionActor, ActionError, ActionResponse,
-        SetNotebookPossession,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, SetNotebookPossession,
     },
     helpers::{get_notebook, get_notebook_mut},
 };

@@ -7,9 +7,7 @@
 use indexmap::IndexMap;
 
 use crate::{
-    action::{
-        ActionInterface, Action, ActionResponse, UpdateWorldChannelPerms,
-    },
+    action::{Action, ActionInterface, ActionResponse, UpdateWorldChannelPerms},
     actor::player::SourcedWorldChannelOverride,
     helpers::get_player_mut,
 };
@@ -36,15 +34,17 @@ impl ActionInterface for SetWorldChannelOverride {
                         .world_channel_overrides
                         .entry(self.channel_name)
                         .or_insert_with(IndexMap::new)
-                        .insert(self.source.clone(), SourcedWorldChannelOverride {
-                            priority: self.priority,
-                            data: data.clone(),
-                        });
+                        .insert(
+                            self.source.clone(),
+                            SourcedWorldChannelOverride {
+                                priority: self.priority,
+                                data: data.clone(),
+                            },
+                        );
                 }
                 None => {
-                    if let Some(channel_overrides) = player
-                        .world_channel_overrides
-                        .get_mut(&self.channel_name)
+                    if let Some(channel_overrides) =
+                        player.world_channel_overrides.get_mut(&self.channel_name)
                     {
                         channel_overrides.swap_remove(&self.source);
                     }

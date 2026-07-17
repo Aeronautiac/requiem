@@ -4,9 +4,7 @@
 */
 
 use crate::{
-    action::{
-        ActionInterface, Action, ActionResponse, GiveAbility,
-    },
+    action::{Action, ActionInterface, ActionResponse, GiveAbility},
     helpers::{get_org, get_org_mut},
 };
 

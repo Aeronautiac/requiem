@@ -4,9 +4,7 @@
 */
 
 use crate::{
-    action::{
-        ActionInterface, Action, ActionError, ActionResponse, SetMember,
-    },
+    action::{Action, ActionError, ActionInterface, ActionResponse, SetMember},
     helpers::{get_lounge, get_player, get_player_mut},
 };
 

@@ -5,7 +5,7 @@
 
 use crate::{
     action::{
-        Action, ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
         SetNotebookPossession,
     },
     common::{ActorKey, NotebookKey},
@@ -44,12 +44,18 @@ impl ActionInterface for ReturnDormantBooks {
         for (notebook_id, prev_holder) in affected {
             Action::SetNotebookPossession(SetNotebookPossession {
                 notebook_id,
-                from: if prev_holder != Some(self.actor_id) { prev_holder } else { None },
+                from: if prev_holder != Some(self.actor_id) {
+                    prev_holder
+                } else {
+                    None
+                },
                 to: Some(self.actor_id),
             })
             .handle(eng, ctx, actor, version, mutate)?;
         }
 
-        Ok(ActionResponse::ReturnDormantBooks(ReturnDormantBooksResponse {}))
+        Ok(ActionResponse::ReturnDormantBooks(
+            ReturnDormantBooksResponse {},
+        ))
     }
 }

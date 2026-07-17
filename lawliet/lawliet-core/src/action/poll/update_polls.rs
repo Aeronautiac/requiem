@@ -7,11 +7,12 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, ActionExt, PollCleanup,
+        Action, ActionActor, ActionContext, ActionExt, ActionInterface, ActionResponse,
+        ActionResult, PollCleanup,
     },
     common::PollKey,
     helpers::get_poll,
-    poll::{PollOutcome, PolicyResult},
+    poll::{PolicyResult, PollOutcome},
 };
 
 pub use crate::action::{UpdatePolls, UpdatePollsResponse};

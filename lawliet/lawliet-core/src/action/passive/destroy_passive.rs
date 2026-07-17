@@ -6,11 +6,9 @@
 use lawliet_types::command::CommandRecipient;
 
 use crate::{
-    action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
-    },
+    action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     command::Command,
-    helpers::{get_passive, get_actor, get_actor_mut},
+    helpers::{get_actor, get_actor_mut, get_passive},
 };
 
 pub use crate::action::{DestroyPassive, DestroyPassiveResponse};

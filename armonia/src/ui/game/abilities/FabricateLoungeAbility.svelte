@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../../game_state.svelte.ts";
+  import { CLIENT_KEY, type ClientState } from "../../../client.svelte.ts";
   import { UI_STATE_KEY } from "../../../ui_state.svelte.ts";
   import type { GameState } from "../../../game_state.svelte.ts";
   import type { UiState } from "../../../ui_state.svelte.ts";
@@ -13,6 +14,8 @@
   let { abilityId, onDone, orgId }: AbilityUiProps = $props();
 
   const game = getContext<GameState>(GAME_STATE_KEY);
+
+  const client = getContext<ClientState>(CLIENT_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
   let contactor = $state(""); // apparent initiator of the fake conversation
@@ -29,7 +32,7 @@
       flash.set_error("Pick two different players.");
       return;
     }
-    const err = await game.dispatch(
+    const err = await client.dispatch(
       useAbilityRequest(ui.viewer, abilityId, orgId, {
         FabricateLounge: {
           contactor_id: slotKeyFromString(contactor),

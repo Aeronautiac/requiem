@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
@@ -13,6 +14,8 @@
   import AbilityMenu from "./abilities/AbilityMenu.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
+
+  const client = getContext<ClientState>(CLIENT_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
   let open = $state(true);
@@ -55,7 +58,7 @@
   let add_og = $state(false);
 
   async function send(payload: ActionPayload, ok: string) {
-    const err = await game.dispatch({
+    const err = await client.dispatch({
       actor: viewerToActor(ui.viewer),
       timestamp: now(),
       payload,

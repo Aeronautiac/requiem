@@ -136,6 +136,7 @@ impl ActionInterface for Action {
             Action::UpdateBugVisibilities(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::ProsecutionVoteRes(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CreateKidnapping(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::Kidnap(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::ReleaseKidnapping(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CullKidnappings(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::UpdateKidnapChannels(a) => a.handle(eng, ctx, actor, version, mutate),

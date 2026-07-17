@@ -5,7 +5,8 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, DestroyAbility, DestroyNotebook, DestroyPassive,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        DestroyAbility, DestroyNotebook, DestroyPassive,
     },
     common::{AbilityKey, NotebookKey, PassiveKey},
     helpers::{get_ability, get_actor, get_notebook, get_passive},
@@ -29,19 +30,22 @@ impl ActionInterface for PurgeVolatiles {
         let mut remove_passives: Vec<PassiveKey> = vec![];
         let mut remove_notebooks: Vec<NotebookKey> = vec![];
         for id in target_actor.abilities.iter() {
-            let ability = get_ability(eng, *id).expect("actor references non-existent ability: engine invariant violated");
+            let ability = get_ability(eng, *id)
+                .expect("actor references non-existent ability: engine invariant violated");
             if ability.ownership_struct.volatile {
                 remove_abilities.push(*id);
             }
         }
         for id in target_actor.passives.iter() {
-            let passive = get_passive(eng, *id).expect("actor references non-existent passive: engine invariant violated");
+            let passive = get_passive(eng, *id)
+                .expect("actor references non-existent passive: engine invariant violated");
             if passive.ownership_struct.volatile {
                 remove_passives.push(*id);
             }
         }
         for id in target_actor.notebooks.iter() {
-            let notebook = get_notebook(eng, *id).expect("actor references non-existent notebook: engine invariant violated");
+            let notebook = get_notebook(eng, *id)
+                .expect("actor references non-existent notebook: engine invariant violated");
             if notebook.volatile {
                 remove_notebooks.push(*id);
             }

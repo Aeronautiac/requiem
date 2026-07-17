@@ -1,8 +1,6 @@
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import type { AbilityName, ActionRequest, ActorDisplay, ActorKey, ActionResponse, BugContext, BugKey, CommandPayload, CommandRecipient, NotebookKey, OrganizationName, PassiveType, PollOutcome, PollSubject, PollVisibility, ProsecutionKey, ProsecutionPhaseView, Role } from "./bindings";
+import type { AbilityName, ActorDisplay, ActorKey, ActionResponse, BugContext, BugKey, CommandPayload, CommandRecipient, NotebookKey, OrganizationName, PassiveType, PollOutcome, PollSubject, PollVisibility, ProsecutionKey, ProsecutionPhaseView, Role } from "./bindings";
 import { slotKeyFromString, slotKeyToString } from "./bindings";
-import { Sequencer } from "./lib/protocol";
-import type { StreamingRouter, CommandBatch } from "./lib/protocol";
 
 // store all messages and events in the top level, but give every view a copy 
 
@@ -22,11 +20,14 @@ export type WorldEvent = {
   }
 } | {
   Kidnapping: {
+    kidnapping_id: string,
     target_id: string,
-    duration: number,
+    duration: number | null, // null = indefinite (no scheduled auto-release)
   }
 } | {
   KidnapReveal: {
+    kidnapping_id: string,
+    victim: string | null, // resolved from the tracked kidnapping at handle time (null = unknown)
     kidnapper: string | null, // null = the kidnapper stayed anonymous
   }
 } | {
@@ -153,6 +154,7 @@ export type PollNoticeEvent = {
     poll_id: string,
     subject: PollSubject,
     outcome: PollOutcome | null,
+    opener: string | null, // resolved display name of who opened the vote (null = none/on close)
   }
 }
 
@@ -169,6 +171,7 @@ export type PollData = {
   accept: number,
   reject: number,
   potential: number,
+  opener: string | null, // resolved display name of who opened the vote (null = none)
 }
 
 // A viewer's personal relationship to a poll (from the directed UpdatePollView). Having
@@ -326,6 +329,18 @@ export function displayKey(d: ActorDisplay): string {
   return `Role:${d.Role}`;
 }
 
+// Human-readable label for an ActorDisplay. Canonical home for what ChannelView and
+// Prosecutions each still open-code as a local `display_string`; needs the players map to
+// resolve a Raw key to its name, so it takes one rather than closing over game state.
+export function actorLabel(d: ActorDisplay, players: ReadonlyMap<string, Player>): string {
+  if (d === "Mysterious") return "???";
+  if (d === "System") return "System";
+  if ("Raw" in d) return players.get(slotKeyToString(d.Raw))?.display_name ?? "Unknown";
+  if ("Role" in d) return d.Role;
+  if ("Org" in d) return "Org";
+  return "Unknown";
+}
+
 // Channel permission bits, mirroring ChannelPermission in the engine.
 export const PERM_SEND = 1;
 export const PERM_VIEW = 2;
@@ -412,7 +427,7 @@ export function bugChannelKey(bug_id: BugKey): string {
 // key by their slot; the string variants map to the standing views: System is the
 // admin view (world events emitted with include_system land here), BasePlayer is
 // the Base template. Returns undefined only for an unhandled recipient.
-function recipientToView(rec: CommandRecipient): string | undefined {
+export function recipientToView(rec: CommandRecipient): string | undefined {
   if (typeof rec !== "string") {
     return slotKeyToString(rec.Actor);
   }
@@ -440,6 +455,9 @@ export class GameState {
   // SetChannelLoggable). Kept separate from the Channel object so it lands regardless of
   // whether the establishing Map* command has arrived yet.
   #channel_loggable = new SvelteMap<string, boolean>();
+  // notebook key -> whether it's currently on loan (a global notebook property from
+  // NotebookBorrowingStatus). Shown in the notebook channel.
+  #notebook_borrowed = new SvelteMap<string, boolean>();
   // The real News channel's key once one exists (set in MapWorldChannel). $state so
   // that views resolving news's backing channel recompute the moment it's assigned —
   // otherwise selecting news before the channel exists never picks up its perms.
@@ -462,13 +480,10 @@ export class GameState {
   // relayed messages). Held globally like channels; per-viewer visibility is each view's
   // visible_bugs. The relayed AddBugMessage stream is System-directed, hence global here.
   bugs = new SvelteMap<string, Channel>();
-
-  // Transport is injected (attach). The router is the swap seam; the client model
-  // doesn't care whether it's Tauri or a websocket to the server.
-  #router: StreamingRouter | null = null;
-  // All state changes — replies to our own requests AND pushed external-action
-  // batches — funnel through one ordered pipe so they can never race into a desync.
-  #seq = new Sequencer();
+  // kidnapping id -> tracked kidnapping (victim + optional auto-release duration). Populated
+  // by the Kidnapping world event; the KidnapReveal event references the id to resolve the
+  // victim, and this is the hook for a future live-countdown timer. Held globally like bugs.
+  kidnappings = new SvelteMap<string, { victim: string; duration: number | null }>();
 
   constructor() {
     this.views.set("Base", new GameView());
@@ -476,58 +491,6 @@ export class GameState {
     // channel perms (see is_admin), so its perms/abilities stay empty. It exists
     // to hold the state authority can't cover, like the world-event stream.
     this.views.set("System", new GameView());
-  }
-
-  // Wire up the transport. Pushed external-action command batches are fed into the
-  // same seq-ordered pipe as our own replies. Returns nothing; call once at startup.
-  attach(router: StreamingRouter) {
-    this.#router = router;
-    router.onCommands((batch: CommandBatch) =>
-      this.#seq.ingest({
-        seq: batch.seq,
-        run: () => this.apply_batch(batch.commands),
-      }),
-    );
-  }
-
-  // Fire this client's own action. Returns an error string on failure (for UX), or
-  // void on success. The reply's state effect (response data + commands) is applied
-  // through the same seq-ordered pipe as external batches — never inline — so a reply
-  // that arrives ahead of a still-pending external batch waits its turn instead of
-  // desyncing. The error, being UX only, is read and returned immediately.
-  async dispatch(
-    request: ActionRequest,
-    args?: Record<string, unknown>,
-  ): Promise<string | void> {
-    if (!this.#router) throw new Error("dispatch before attach");
-    const { seq, execution } = await this.#router.sendAction(request);
-    const { exec_result } = execution;
-
-    if (exec_result === "Crashed") {
-      // The transport still consumed a seq for this action, but a crash carries no
-      // commands to apply. Feed the Sequencer a no-op so `#last` advances past it —
-      // otherwise this seq is a permanent gap and every later batch (e.g. the next
-      // AddPlayer reply) stays buffered behind it, silently, even though the engine
-      // rebooted and is responding.
-      this.#seq.ingest({ seq, run: () => {} });
-      return "The engine has crashed.";
-    }
-    const result = exec_result.Standard;
-    if ("Err" in result) {
-      // Even on failure the engine returns catchup commands (job-queue world
-      // progression) that must still be applied. Only then surface the error.
-      const [error, context] = result.Err;
-      this.#seq.ingest({ seq, run: () => this.apply_batch(context.commands) });
-      return String(error);
-    }
-    const [response, context] = result.Ok;
-    this.#seq.ingest({
-      seq,
-      run: () => {
-        this.handle_response(response, args);
-        this.apply_batch(context.commands);
-      },
-    });
   }
 
   // Apply a batch of commands in push order. The public seam the Sequencer drives;
@@ -717,6 +680,13 @@ export class GameState {
       return;
     }
 
+    // Whether a notebook is currently on loan (emitted on each possession change).
+    if ("NotebookBorrowingStatus" in cmd) {
+      const { notebook_id, borrowed } = cmd.NotebookBorrowingStatus;
+      this.#notebook_borrowed.set(slotKeyToString(notebook_id), borrowed);
+      return;
+    }
+
     // RemoveChannel is per-player: the target player is no longer a member (e.g. a
     // notebook that transferred away), so drop the channel from THAT player's view
     // only. The channel still exists globally for whoever else holds it — deleting it
@@ -854,12 +824,15 @@ export class GameState {
     // Shared poll data (global). First sighting drops a "started" notice into the poll's
     // scoped channel; later UpdatePolls just refresh the tally.
     if ("UpdatePoll" in cmd) {
-      const { poll_id, subject, scope, accept, reject, potential } = cmd.UpdatePoll;
+      const { poll_id, subject, scope, accept, reject, potential, opener } = cmd.UpdatePoll;
       const key = slotKeyToString(poll_id);
+      const opener_name = opener ? this.actor_name(slotKeyToString(opener)) : null;
+      // First sight = the vote just opened; drop the "vote started" notice into its scoped
+      // channel (later UpdatePolls are tally refreshes).
       if (!this.polls.has(key)) {
-        this.poll_notice(scope, key, subject, null, timestamp);
+        this.poll_notice(scope, key, subject, null, timestamp, opener_name);
       }
-      this.polls.set(key, { subject, scope, accept, reject, potential });
+      this.polls.set(key, { subject, scope, accept, reject, potential, opener: opener_name });
       return;
     }
 
@@ -869,7 +842,8 @@ export class GameState {
       const { poll_id, outcome } = cmd.ClosePoll;
       const key = slotKeyToString(poll_id);
       const poll = this.polls.get(key);
-      if (poll) this.poll_notice(poll.scope, key, poll.subject, outcome, timestamp);
+      // A resolution notice has no opener (it's the outcome, not the opening).
+      if (poll) this.poll_notice(poll.scope, key, poll.subject, outcome, timestamp, null);
       this.polls.delete(key);
       for (const view of this.views.values()) view.poll_views.delete(key);
       return;
@@ -987,15 +961,16 @@ export class GameState {
 
     if ("Kidnapping" in cmd) {
       const kidnapping = cmd.Kidnapping;
+      const kidnapping_id = slotKeyToString(kidnapping.kidnapping_id);
+      const victim = slotKeyToString(kidnapping.target_id);
+      // Track the live kidnapping (the future-timer source; the reveal resolves its victim here).
+      this.kidnappings.set(kidnapping_id, { victim, duration: kidnapping.duration });
       const view = this.views.get(recipientToView(recipient) ?? "");
       if (view) {
         view.events.push({
           timestamp,
           data: {
-            Kidnapping: {
-              target_id: slotKeyToString(kidnapping.target_id),
-              duration: kidnapping.duration,
-            }
+            Kidnapping: { kidnapping_id, target_id: victim, duration: kidnapping.duration }
           }
         });
       }
@@ -1003,19 +978,19 @@ export class GameState {
 
     if ("KidnapReveal" in cmd) {
       const reveal = cmd.KidnapReveal;
+      const kidnapping_id = slotKeyToString(reveal.kidnapping_id);
+      const kidnapper = reveal.kidnapper ? slotKeyToString(reveal.kidnapper) : null;
+      // Resolve + denormalize the victim so the logged event renders standalone; then drop the
+      // kidnapping from the live map (it's over).
+      const victim = this.kidnappings.get(kidnapping_id)?.victim ?? null;
       const view = this.views.get(recipientToView(recipient) ?? "");
       if (view) {
         view.events.push({
           timestamp,
-          data: {
-            KidnapReveal: {
-              kidnapper: reveal.kidnapper
-                ? slotKeyToString(reveal.kidnapper)
-                : null,
-            }
-          }
+          data: { KidnapReveal: { kidnapping_id, victim, kidnapper } }
         });
       }
+      this.kidnappings.delete(kidnapping_id);
     }
 
     if ("PseudocideRevival" in cmd) {
@@ -1147,7 +1122,7 @@ export class GameState {
     }
   }
 
-  private handle_response(response: ActionResponse, args?: Record<string, unknown>) {
+  handle_response(response: ActionResponse, args?: Record<string, unknown>) {
     if ("AddPlayer" in response) {
       this.add_player(response.AddPlayer.id, args?.display_name as string);
       return;
@@ -1227,15 +1202,27 @@ export class GameState {
     }
   }
 
+
   // Push a poll notice — "started" when outcome is null, else the resolution — into the
   // channel the poll's scope maps to: a channel directly, the world/news feed for
   // AllPresent, or (once orgs exist) the org's channel. No-op if that channel is unknown.
+  // Resolve an actor key to a display name — a player, or an org (a vote opener may be either,
+  // e.g. an org-driven civilian arrest). Unknown keys fall back to "Unknown".
+  private actor_name(key: string): string {
+    const player = this.players.get(key);
+    if (player) return player.display_name;
+    const org = this.orgs.get(key);
+    if (org) return orgDisplayName(org.name);
+    return "Unknown";
+  }
+
   private poll_notice(
     scope: PollVisibility,
     poll_id: string,
     subject: PollSubject,
     outcome: PollOutcome | null,
     timestamp: number,
+    opener: string | null,
   ) {
     let channel_key: string | undefined;
     if (scope === "AllPresent") {
@@ -1251,7 +1238,7 @@ export class GameState {
     if (!channel) return;
     channel.events.push({
       timestamp,
-      data: { PollNotice: { poll_id, subject, outcome } },
+      data: { PollNotice: { poll_id, subject, outcome, opener } },
     });
   }
 
@@ -1307,6 +1294,11 @@ export class GameState {
   // bugs). A global channel property; defaults to false until a SetChannelLoggable arrives.
   is_channel_loggable(channel_key: string): boolean {
     return this.#channel_loggable.get(channel_key) ?? false;
+  }
+
+  // Whether a notebook is currently on loan (from NotebookBorrowingStatus). Defaults to false.
+  is_notebook_borrowed(notebook_key: string): boolean {
+    return this.#notebook_borrowed.get(notebook_key) ?? false;
   }
 
   // The prosecution a channel is the trial channel of, if any. For acting on the prosecution

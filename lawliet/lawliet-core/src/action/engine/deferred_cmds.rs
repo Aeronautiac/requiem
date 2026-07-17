@@ -67,7 +67,10 @@ mod tests {
     use lawliet_types::role::Role;
 
     use crate::{
-        action::{Action, ActionActor, ActionRequest, actor::remove_state::RemoveState, engine::null::Null},
+        action::{
+            Action, ActionActor, ActionRequest, actor::remove_state::RemoveState,
+            engine::null::Null,
+        },
         actor::{modifier::Modifier, state::State},
         command::DeferredCommand,
         common::ActorKey,

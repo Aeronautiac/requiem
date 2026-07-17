@@ -42,6 +42,16 @@ export interface RequestReply {
   execution: AppExecution;
 }
 
+// A native OS/browser toast request. Deliberately NOT named `Notification` to avoid
+// shadowing the DOM global (which the web transport uses to actually raise one) and to
+// keep it distinct from the in-app "Notifications" info channel — this is the desktop
+// popup, that is the persistent log. Platform mechanism (Tauri plugin vs DOM/Push API)
+// lives behind the router; deciding WHAT is toast-worthy stays in the client model.
+export interface Toast {
+  title: string;
+  body: string;
+}
+
 // The router seam once the push channel exists. `sendAction` still returns a full,
 // now seq-tagged, response. `onCommands` is the push stream for external actions.
 export interface StreamingRouter {
@@ -49,6 +59,10 @@ export interface StreamingRouter {
   // Subscribe to command batches caused by external actions (ticks / other clients).
   // Returns an unsubscribe function.
   onCommands(handler: (batch: CommandBatch) => void): () => void;
+  // Raise a native OS/browser notification. Fire-and-forget: implementations own their
+  // permission handshake and swallow failure (a denied prompt is UX, never an error that
+  // reaches the state pipe). Platform-specific — this is the whole reason it's on the seam.
+  notify(toast: Toast): Promise<void>;
   quit(): void;
 }
 

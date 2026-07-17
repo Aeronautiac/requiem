@@ -6,9 +6,7 @@ Not incarcerated? Empty.
 */
 
 use crate::{
-    action::{
-        ActionInterface, Action, ActionActor, ActionResponse, SetWorldChannelOverride,
-    },
+    action::{Action, ActionActor, ActionInterface, ActionResponse, SetWorldChannelOverride},
     actor::{
         player::{OverrideSource, WorldChannelOverride},
         state::State,

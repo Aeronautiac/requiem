@@ -7,6 +7,7 @@
   import Input from "$lib/components/ui/input/input.svelte";
   import { Button } from "$lib/components/ui/button";
   import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
@@ -23,6 +24,8 @@
   let { open = $bindable(), notebookId }: Props = $props();
 
   const game = getContext<GameState>(GAME_STATE_KEY);
+
+  const client = getContext<ClientState>(CLIENT_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
   let true_name = $state("");
@@ -69,7 +72,7 @@
         },
       },
     };
-    const err = await game.dispatch(request);
+    const err = await client.dispatch(request);
     if (err) {
       flash.set_error(`Write failed: ${err}`);
     } else {

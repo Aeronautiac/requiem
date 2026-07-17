@@ -1,5 +1,6 @@
 pub mod create_kidnapping;
 pub mod cull_kidnappings;
+pub mod kidnap;
 pub mod release_kidnapping;
 pub mod update_kidnap_channels;
 

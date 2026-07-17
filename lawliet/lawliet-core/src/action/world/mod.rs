@@ -10,7 +10,10 @@ pub mod update_world_channel_perms;
 #[cfg(test)]
 mod world_tests {
     use crate::{
-        actor::{player::{OverrideResolver, OverrideSource, WorldChannelOverride}, state::State},
+        actor::{
+            player::{OverrideResolver, OverrideSource, WorldChannelOverride},
+            state::State,
+        },
         channel::{ChannelPermission, ChannelPermissions},
         config::{role::Role, world::WorldChannelName},
         engine::Engine,
@@ -38,8 +41,16 @@ mod world_tests {
         let mut eng = Engine::new();
         init_engine(&mut eng);
 
-        assert!(eng.world.world_channel_map.contains_key(&WorldChannelName::News));
-        assert!(eng.world.world_channel_map.contains_key(&WorldChannelName::General));
+        assert!(
+            eng.world
+                .world_channel_map
+                .contains_key(&WorldChannelName::News)
+        );
+        assert!(
+            eng.world
+                .world_channel_map
+                .contains_key(&WorldChannelName::General)
+        );
     }
 
     #[test]
@@ -261,8 +272,9 @@ mod world_tests {
         init_engine(&mut eng);
         let p1 = add_player(&mut eng, 0, Role::NewsAnchor, "p1");
 
-        assert!(world_channel_perms(&eng, WorldChannelName::News, p1)
-            .contains(ChannelPermission::Send));
+        assert!(
+            world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPermission::Send)
+        );
     }
 
     #[test]
@@ -271,8 +283,10 @@ mod world_tests {
         init_engine(&mut eng);
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
-        assert!(!world_channel_perms(&eng, WorldChannelName::News, p1)
-            .contains(ChannelPermission::Send));
+        assert!(
+            !world_channel_perms(&eng, WorldChannelName::News, p1)
+                .contains(ChannelPermission::Send)
+        );
     }
 
     #[test]
@@ -283,8 +297,10 @@ mod world_tests {
 
         give_role(&mut eng, 0, p1, Role::Civilian);
 
-        assert!(!world_channel_perms(&eng, WorldChannelName::News, p1)
-            .contains(ChannelPermission::Send));
+        assert!(
+            !world_channel_perms(&eng, WorldChannelName::News, p1)
+                .contains(ChannelPermission::Send)
+        );
     }
 
     #[test]
@@ -295,8 +311,10 @@ mod world_tests {
 
         add_state(&mut eng, 0, p1, State::Dead);
 
-        assert!(!world_channel_perms(&eng, WorldChannelName::News, p1)
-            .contains(ChannelPermission::Send));
+        assert!(
+            !world_channel_perms(&eng, WorldChannelName::News, p1)
+                .contains(ChannelPermission::Send)
+        );
     }
 
     // clearing a force override while blocking modifiers are active exposes the blocked state
@@ -373,8 +391,9 @@ mod world_tests {
         )
         .unwrap();
 
-        assert!(world_channel_perms(&eng, WorldChannelName::News, p1)
-            .contains(ChannelPermission::Send));
+        assert!(
+            world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPermission::Send)
+        );
     }
 
     // equal-priority tie with positive resolver: on wins
@@ -413,8 +432,9 @@ mod world_tests {
         .unwrap();
 
         // positive resolver (used by UpdateWorldChannelPerms): send wins
-        assert!(world_channel_perms(&eng, WorldChannelName::News, p1)
-            .contains(ChannelPermission::Send));
+        assert!(
+            world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPermission::Send)
+        );
     }
 
     // equal-priority tie with negative resolver: all must agree, so send is absent

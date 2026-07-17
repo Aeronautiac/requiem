@@ -4,9 +4,7 @@
 */
 
 use crate::{
-    action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
-    },
+    action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     common::PassiveKey,
     ownership::OwnershipStruct,
     passive::Passive,

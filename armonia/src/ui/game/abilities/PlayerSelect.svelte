@@ -9,10 +9,20 @@
   let {
     value = $bindable(""),
     placeholder = "Select a player",
-  }: { value?: string; placeholder?: string } = $props();
+    ids = undefined,
+  }: {
+    value?: string;
+    placeholder?: string;
+    // Optional allowlist: when set, only these player ids are offered (e.g. an org's members).
+    // Omitted = every player, since the engine is the authority on valid targets.
+    ids?: Iterable<string>;
+  } = $props();
 
   const game = getContext<GameState>(GAME_STATE_KEY);
-  const players = $derived([...game.players.entries()]);
+  const allowed = $derived(ids ? new Set(ids) : null);
+  const players = $derived(
+    [...game.players.entries()].filter(([id]) => !allowed || allowed.has(id)),
+  );
 </script>
 
 <select

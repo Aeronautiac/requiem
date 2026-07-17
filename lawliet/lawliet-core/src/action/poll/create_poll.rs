@@ -7,7 +7,8 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, ScheduleJob, PollTimeout,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        PollTimeout, ScheduleJob,
     },
     common::PollKey,
     poll::Poll,
@@ -35,6 +36,7 @@ impl ActionInterface for CreatePoll {
                 self.update_policy,
                 self.timeout_policy,
                 self.voter_policy,
+                self.opener,
             ))
         } else {
             PollKey::default()

@@ -125,9 +125,7 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::TrueNameInvite(a) => {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
-            AbilityBehaviour::ForceInvite(a) => {
-                a.handle(eng, ctx, actor, ability, version, mutate)
-            }
+            AbilityBehaviour::ForceInvite(a) => a.handle(eng, ctx, actor, ability, version, mutate),
             AbilityBehaviour::BackgroundCheck(a) => {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }

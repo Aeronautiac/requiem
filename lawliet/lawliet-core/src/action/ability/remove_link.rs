@@ -7,9 +7,7 @@
 // move reference counting here
 
 use crate::{
-    action::{
-        ActionInterface, Action, ActionResponse, TryDeleteChargePool,
-    },
+    action::{Action, ActionInterface, ActionResponse, TryDeleteChargePool},
     helpers::{get_ability_mut, get_charge_pool, get_charge_pool_mut},
 };
 

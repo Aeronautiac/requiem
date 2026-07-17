@@ -28,7 +28,7 @@ pub struct DefaultConfig {
     pub presentation_grace_timeout: Time,
     pub presentation_timeout: Time,
     pub kidnap_time: Time,
-    pub civ_arrest_time: Time,      // how long a civilian arrest incarcerates the target
+    pub civ_arrest_time: Time, // how long a civilian arrest incarcerates the target
     pub civ_arrest_vote_time: Time, // how long a civilian arrest poll stays open
     pub autopsy_window: Time,
     pub autopsy_redaction: bool,

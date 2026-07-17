@@ -7,7 +7,8 @@ use indexmap::IndexSet;
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, OrgActorInfo, UseAbility, CreatePoll,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, CreatePoll, OrgActorInfo, UseAbility,
     },
     actor::{modifier::Modifier, organization::OrgAbilityPolicy},
     config::role::Role,
@@ -88,6 +89,8 @@ impl ActionInterface for SystemUseOrgAbility {
                     ))),
                     reject_payload: Box::new(None),
                     duration: Some(eng.config.defaults.org_vote_time),
+                    // the member who invoked the org ability is the vote's opener
+                    opener: Some(self.user_id),
                 })
                 .handle(eng, ctx, &ActionActor::System, version, mutate)?;
                 let ActionResponse::CreatePoll(create_poll_response) = response else {

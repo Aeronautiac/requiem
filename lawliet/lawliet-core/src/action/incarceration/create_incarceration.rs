@@ -18,7 +18,8 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, AddState,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, AddState,
     },
     actor::{modifier::Modifier, state::State},
     common::{IncarcerationKey, Version},

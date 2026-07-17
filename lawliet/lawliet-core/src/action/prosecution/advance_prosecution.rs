@@ -55,7 +55,8 @@ use indexmap::indexset;
 use crate::{
     ActorKey, ChannelKey, Time,
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionRequest, ActionResponse, CreateChannel, CreatePoll, ProsecutionVoteRes, SetMember,
+        Action, ActionActor, ActionContext, ActionInterface, ActionRequest, ActionResponse,
+        ActionResult, CreateChannel, CreatePoll, ProsecutionVoteRes, SetMember,
     },
     actor::ActorDisplay,
     channel::{ChannelMember, ChannelPermissions},
@@ -171,10 +172,22 @@ impl ActionInterface for AdvanceProsecution {
                     // Seed the key participants with their displays and empty perms. The trailing
                     // UpdateProsecutions step grants view/send perms across all present players.
                     seed_member(
-                        eng, ctx, version, mutate, channel_id, prosecutor_id, prosecutor_display,
+                        eng,
+                        ctx,
+                        version,
+                        mutate,
+                        channel_id,
+                        prosecutor_id,
+                        prosecutor_display,
                     )?;
                     seed_member(
-                        eng, ctx, version, mutate, channel_id, defendant_id, defendant_display,
+                        eng,
+                        ctx,
+                        version,
+                        mutate,
+                        channel_id,
+                        defendant_id,
+                        defendant_display,
                     )?;
                     if let Some(lawyer_id) = lawyer_id {
                         seed_member(
@@ -260,6 +273,8 @@ impl ActionInterface for AdvanceProsecution {
                             timeout_policy: PollPolicy::WinningVote,
                             visibility: PollVisibility::AllPresent,
                             duration: Some(eng.config.defaults.trial_vote_duration),
+                            // system-driven verdict vote — no distinct opener
+                            opener: None,
                         })
                         .handle(
                             eng,

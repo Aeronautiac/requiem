@@ -3,9 +3,7 @@
 * Sever every link to an actor ID
 */
 
-use crate::action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
-    };
+use crate::action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult};
 
 pub use crate::action::{SeverLinks, SeverLinksResponse};
 

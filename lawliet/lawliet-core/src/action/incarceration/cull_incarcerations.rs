@@ -6,7 +6,8 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, ReleaseIncarceration,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        ReleaseIncarceration,
     },
     common::{IncarcerationKey, Version},
     engine::Engine,

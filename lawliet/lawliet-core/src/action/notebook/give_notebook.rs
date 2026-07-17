@@ -5,8 +5,8 @@
 
 use crate::{
     action::{
-        Action, ActionContext, ActionInterface, ActionResult, ActionActor, ActionError, ActionResponse,
-        SetNotebookPossession,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, SetNotebookPossession,
     },
     common::Version,
     engine::Engine,
@@ -44,7 +44,11 @@ impl ActionInterface for GiveNotebook {
 
         // Transfer possession: remove old holder, give to new owner.
         // SetNotebookPossession handles actor cache + channel perms.
-        let from = if old_holder != Some(self.actor_id) { old_holder } else { None };
+        let from = if old_holder != Some(self.actor_id) {
+            old_holder
+        } else {
+            None
+        };
         Action::SetNotebookPossession(SetNotebookPossession {
             notebook_id: self.notebook_id,
             from,

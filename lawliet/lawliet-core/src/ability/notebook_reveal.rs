@@ -53,9 +53,10 @@ impl AbilityInterface for NotebookReveal {
             Ok(super::AbilityStatus::Success)
         } else {
             // A negative result costs an eye when the user's eyes are volatile.
-            let volatile_eyes =
-                actor_get_effective_passive(eng, user_id, |p| matches!(p, PassiveType::VolatileEyes))
-                    .is_some();
+            let volatile_eyes = actor_get_effective_passive(eng, user_id, |p| {
+                matches!(p, PassiveType::VolatileEyes)
+            })
+            .is_some();
             if volatile_eyes && mutate {
                 let user = get_player_mut(eng, user_id)?;
                 user.eyes = user.eyes.saturating_sub(1);

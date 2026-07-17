@@ -8,8 +8,8 @@ use crate::{
     channel::ChannelPermissions,
     common::{
         AbilityKey, ActorKey, AttemptCount, BugKey, ChannelKey, ChargeCount, GroupchatKey, ID,
-        IterationCount, LoungeKey, NotebookKey, PassiveKey, PollKey, PollWeight, ProsecutionKey,
-        Time,
+        IterationCount, KidnappingKey, LoungeKey, NotebookKey, PassiveKey, PollKey, PollWeight,
+        ProsecutionKey, Time,
     },
     organization::OrganizationName,
     passive::PassiveType,
@@ -76,15 +76,19 @@ pub enum Command {
         ability_transferred: bool,
     },
 
-    // display/announce kidnapping. can be handled similar to death.
+    // display/announce kidnapping. can be handled similar to death. The victim is public from the
+    // start; the id lets clients track the kidnapping (e.g. a live timer) and lets the later reveal
+    // reference it. duration is optional (indefinite kidnappings have none).
     Kidnapping {
+        kidnapping_id: KidnappingKey,
         target_id: ActorKey,
-        duration: Time,
+        duration: Option<Time>,
     },
 
-    // announce a kidnap reveal (this will either leak the kidnapper or show no kidnapper meaning it
-    // was anonymous)
+    // announce a kidnap reveal for a prior Kidnapping (referenced by id): either leaks the kidnapper
+    // or shows none, meaning it was anonymous. The victim is resolved client-side from the id.
     KidnapReveal {
+        kidnapping_id: KidnappingKey,
         kidnapper: Option<ActorKey>,
     },
 
@@ -332,13 +336,15 @@ pub enum Command {
         target_saved: bool,
     },
 
-    /////=<TARGETTED>=/////
-
-    // show the player the notebook's borrower status (dont show who is lending it, just that it is
-    // being borrowed)
+    // whether a notebook is currently on loan (being borrowed rather than truly owned). A
+    // global notebook property (like a channel's loggability) — the frontend shows it in the
+    // notebook channel. Deliberately doesn't say who lent it, just that it's borrowed.
     NotebookBorrowingStatus {
+        notebook_id: NotebookKey,
         borrowed: bool,
     },
+
+    /////=<TARGETTED>=/////
 
     ////////////////////////////////////////////////
     // ABILITIES & PASSIVES //
@@ -458,6 +464,9 @@ pub enum Command {
         accept: PollWeight,
         reject: PollWeight,
         potential: PollWeight,
+        // Who opened the vote (None = no distinct opener, e.g. a system-driven poll). Carried on
+        // every update but only surfaced on the client's first-sight "vote started" notice.
+        opener: Option<ActorKey>,
     },
 
     // a poll concluded; the frontend drops it (globally and from every view). outcome

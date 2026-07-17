@@ -7,7 +7,7 @@ use lawliet_types::command::CommandRecipient;
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionError, ActionResponse,
+        ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse, ActionResult,
     },
     command::Command,
     helpers::{get_actor, get_actor_mut, get_passive, get_passive_mut},

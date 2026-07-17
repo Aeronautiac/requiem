@@ -4,9 +4,7 @@
 */
 
 use crate::{
-    action::{
-        ActionInterface, Action, ActionResponse, RemoveLink,
-    },
+    action::{Action, ActionInterface, ActionResponse, RemoveLink},
     helpers::get_ability_mut,
 };
 

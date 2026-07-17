@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
   import type { ActionRequest } from "../../bindings";
   import Button from "$lib/components/ui/button/button.svelte";
@@ -10,6 +11,8 @@
   import AddPlayers from "./AddPlayers.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
+
+  const client = getContext<ClientState>(CLIENT_KEY);
   const flash = new Flash();
 
   async function init() {
@@ -18,7 +21,7 @@
       timestamp: now(),
       payload: { InitializeEngine: { seed: 0 } },
     };
-    const err = await game.dispatch(request);
+    const err = await client.dispatch(request);
     if (err) flash.set_error(`Action Failed: ${err}`);
     else flash.set_success("Successfully initialized Engine");
   }
@@ -76,7 +79,7 @@
       timestamp: now(),
       payload: { Null: {} },
     };
-    const err = await game.dispatch(request);
+    const err = await client.dispatch(request);
     if (err) flash.set_error(`Action Failed: ${err}`);
     else flash.set_success("Updated");
   }
@@ -136,7 +139,7 @@
   <Button
     variant="destructive"
     onclick={async () => {
-      const err = await game.dispatch({
+      const err = await client.dispatch({
         actor: "Admin",
         timestamp: now(),
         payload: { Crash: {} },

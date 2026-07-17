@@ -5,7 +5,8 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, RemoveState, ReturnDormantBooks,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        RemoveState, ReturnDormantBooks,
     },
     actor::{ActorLinkType, state::State},
     common::Version,

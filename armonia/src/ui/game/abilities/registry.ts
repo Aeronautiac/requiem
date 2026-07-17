@@ -25,6 +25,7 @@ import TrueNameRevealAbility from "./TrueNameRevealAbility.svelte";
 import NotebookRevealAbility from "./NotebookRevealAbility.svelte";
 import CivilianArrestAbility from "./CivilianArrestAbility.svelte";
 import BugAbility from "./BugAbility.svelte";
+import KidnapAbility from "./KidnapAbility.svelte";
 
 // Every ability UI component takes the ability instance's id and a callback to run
 // once the ability has been used (closes the menu). `orgId`, when set, means the ability
@@ -62,6 +63,8 @@ export const ABILITY_UIS: Partial<
   NotebookReveal: NotebookRevealAbility,
   CivilianArrest: CivilianArrestAbility,
   Bug: BugAbility,
+  PublicKidnap: KidnapAbility,
+  AnonymousKidnap: KidnapAbility,
 };
 
 // "AnonymousContact" -> "Anonymous Contact"

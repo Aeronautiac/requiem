@@ -9,9 +9,14 @@
 // When the server gains ticking + a push channel, swap the seq source to the server's
 // and wire onCommands to the push subscription. Nothing on the client side changes.
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
 import { sendAction as rawSendAction } from "../bindings";
 import type { ActionRequest } from "../bindings";
-import type { CommandBatch, RequestReply, StreamingRouter } from "./protocol";
+import type { CommandBatch, RequestReply, StreamingRouter, Toast } from "./protocol";
 
 export function createTransport(): StreamingRouter {
   let seq = 0;
@@ -22,6 +27,18 @@ export function createTransport(): StreamingRouter {
     },
     onCommands(_handler: (batch: CommandBatch) => void): () => void {
       return () => {};
+    },
+    async notify({ title, body }: Toast): Promise<void> {
+      // Permission is checked lazily on first use (the OS caches the grant), so nothing
+      // has to run at startup. Any failure — denied prompt, unavailable service — is
+      // swallowed: a missing toast must never break state application.
+      try {
+        let granted = await isPermissionGranted();
+        if (!granted) granted = (await requestPermission()) === "granted";
+        if (granted) sendNotification({ title, body });
+      } catch {
+        // no-op: notifications are best-effort UX
+      }
     },
     quit() {
       getCurrentWindow().close();

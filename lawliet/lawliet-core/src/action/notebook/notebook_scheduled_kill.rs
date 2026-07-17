@@ -7,8 +7,8 @@
 */
 
 pub use crate::action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse,
-    };
+    Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+};
 
 pub use crate::action::{NotebookScheduledKill, NotebookScheduledKillResponse};
 

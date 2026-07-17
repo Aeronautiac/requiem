@@ -2,6 +2,7 @@
   import { getContext } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
   import type { GameState, ChannelCategory } from "../../game_state.svelte.ts";
@@ -13,6 +14,8 @@
   import FlashDisplay from "../Flash.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
+
+  const client = getContext<ClientState>(CLIENT_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
   const gc_flash = new Flash();
@@ -142,7 +145,7 @@
         },
       },
     };
-    const err = await game.dispatch(request);
+    const err = await client.dispatch(request);
     if (err) {
       gc_flash.set_error(`Create failed: ${err}`);
     } else {
@@ -159,7 +162,7 @@
       timestamp: now(),
       payload: { CreatePersonalChannel: {} },
     };
-    const err = await game.dispatch(request);
+    const err = await client.dispatch(request);
     if (err) pc_flash.set_error(`Create failed: ${err}`);
     else pc_flash.set_success("Personal channel created.");
   }

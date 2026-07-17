@@ -1,6 +1,4 @@
-use crate::action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
-    };
+use crate::action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult};
 
 pub use crate::action::{Null, NullResponse};
 

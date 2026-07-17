@@ -3,9 +3,7 @@
 * Go through every book with a specific true owner and set the dormant true owner to that person
 */
 
-use crate::action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
-    };
+use crate::action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult};
 
 pub use crate::action::{SetBooksDormant, SetBooksDormantResponse};
 

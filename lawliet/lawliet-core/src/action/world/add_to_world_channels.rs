@@ -7,9 +7,7 @@
 use indexmap::indexset;
 
 use crate::{
-    action::{
-        ActionInterface, Action, ActionResponse, SetMember, UpdateWorldChannelPerms,
-    },
+    action::{Action, ActionInterface, ActionResponse, SetMember, UpdateWorldChannelPerms},
     actor::ActorDisplay,
     channel::{ChannelMember, ChannelPermissions},
     common::ChannelKey,

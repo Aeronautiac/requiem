@@ -5,7 +5,9 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, UpdateBugVisibilities, UpdateContactChannels, UpdatePrisonChannel, UpdateKidnapChannels, UpdateWorldChannelPerms,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        UpdateBugVisibilities, UpdateContactChannels, UpdateKidnapChannels, UpdatePrisonChannel,
+        UpdateWorldChannelPerms,
     },
     common::Version,
     engine::Engine,

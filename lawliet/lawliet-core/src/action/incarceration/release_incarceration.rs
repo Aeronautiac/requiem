@@ -13,7 +13,8 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, RemoveState,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, RemoveState,
     },
     actor::state::State,
     common::Version,

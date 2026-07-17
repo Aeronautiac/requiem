@@ -14,7 +14,8 @@ use smallvec::SmallVec;
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, AddState, RemoveState, ArchiveBug, CreateBug,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, AddState, ArchiveBug, CreateBug, RemoveState,
     },
     actor::state::State,
     bug::BugSource,
@@ -76,8 +77,7 @@ impl ActionInterface for SetCustody {
                 })
                 .expect("in custody but no active custody bug");
 
-            Action::ArchiveBug(ArchiveBug { bug_id })
-                .handle(eng, ctx, actor, version, mutate)?;
+            Action::ArchiveBug(ArchiveBug { bug_id }).handle(eng, ctx, actor, version, mutate)?;
 
             Action::RemoveState(RemoveState {
                 actor_id: self.defendant_id,

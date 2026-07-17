@@ -17,11 +17,12 @@ use crate::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
         ActionResult, DestroyChannel, RemoveState,
     },
-    actor::state::State,
+    actor::{ActorDisplay, modifier::Modifier, state::State},
+    command::Command,
     common::Version,
     engine::Engine,
-    helpers::{actor_owns_ability, get_kidnapping},
-    kidnapping::KidnappingSource,
+    helpers::{actor_owns_ability, cmd_all_deferred, get_kidnapping},
+    kidnapping::{KidnappingSource, KidnappingType},
 };
 
 pub use crate::action::{ReleaseKidnapping, ReleaseKidnappingResponse};
@@ -38,6 +39,12 @@ impl ActionInterface for ReleaseKidnapping {
         let kidnapping = get_kidnapping(eng, self.kidnapping_id)?;
         let victim_id = kidnapping.victim;
         let channel_id = kidnapping.channel_id;
+        // Who to reveal: a public kidnapping leaks the kidnapper (the display's raw actor);
+        // an anonymous one reveals no one. Captured before the record is removed below.
+        let kidnapper = match kidnapping.kidnapping_type {
+            KidnappingType::Public(ActorDisplay::Raw(id)) => Some(id),
+            _ => None,
+        };
 
         let authorized = actor.is_authoritative()
             || matches!(kidnapping.source, KidnappingSource::Ability(ab) if actor_owns_ability(eng, actor, ab));
@@ -60,6 +67,20 @@ impl ActionInterface for ReleaseKidnapping {
             state: State::Kidnapped,
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+
+        // Announce the reveal (references the kidnapping by id so clients resolve the victim).
+        cmd_all_deferred(
+            eng,
+            ctx,
+            Command::KidnapReveal {
+                kidnapping_id: self.kidnapping_id,
+                kidnapper,
+            },
+            Modifier::NoPresence.into(),
+            true,
+            true,
+            mutate,
+        );
 
         Ok(ActionResponse::ReleaseKidnapping(
             ReleaseKidnappingResponse {},

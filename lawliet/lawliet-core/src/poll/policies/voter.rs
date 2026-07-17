@@ -1,9 +1,4 @@
-use crate::{
-    common::ActorKey,
-    engine::Engine,
-    helpers::get_actor,
-    poll::Poll,
-};
+use crate::{common::ActorKey, engine::Engine, helpers::get_actor, poll::Poll};
 
 // they must not have the present restriction
 // they must be able to see the vote

@@ -38,8 +38,13 @@ impl ActionInterface for UpdateProsecutions {
         actor.admin_or_system()?;
 
         // Cull first so terminated prosecutions are gone before we refresh the survivors.
-        Action::CullProsecutions(CullProsecutions {})
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+        Action::CullProsecutions(CullProsecutions {}).handle(
+            eng,
+            ctx,
+            &ActionActor::System,
+            version,
+            mutate,
+        )?;
 
         let ids: SmallVec<[ProsecutionKey; 8]> = eng.world.prosecutions.keys().collect();
         for prosecution_id in ids {

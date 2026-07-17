@@ -5,7 +5,8 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionRequest, ActionResponse, NotebookScheduledKill,
+        Action, ActionActor, ActionContext, ActionInterface, ActionRequest, ActionResponse,
+        ActionResult, NotebookScheduledKill,
     },
     common::Version,
     engine::Engine,

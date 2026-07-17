@@ -9,7 +9,8 @@
 use crate::{
     ability::Ability,
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, AddChargePool,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, AddChargePool,
     },
     chargepool::{ChargeConditions, PoolLink},
     common::AbilityKey,
@@ -85,7 +86,13 @@ impl ActionInterface for AddAbility {
         let id = if mutate {
             let mut ability = Ability::new(self.ability_name, self.variant, self.transferrable);
             for (link, condition) in &links_to_create {
-                ability.add_link(link.link_dest, link.link_type, link.weight, false, *condition);
+                ability.add_link(
+                    link.link_dest,
+                    link.link_type,
+                    link.weight,
+                    false,
+                    *condition,
+                );
             }
             for (link, _) in &links_to_create {
                 let pool = get_charge_pool_mut(eng, link.link_dest)?;

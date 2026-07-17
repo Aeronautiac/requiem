@@ -62,9 +62,8 @@ pub(crate) fn broadcast_prosecution(
         .actors
         .iter()
         .filter_map(|(id, a)| {
-            (matches!(a.actor_type, ActorType::Player(_))
-                && !a.has_modifier(Modifier::NoPresence))
-            .then_some(id)
+            (matches!(a.actor_type, ActorType::Player(_)) && !a.has_modifier(Modifier::NoPresence))
+                .then_some(id)
         })
         .collect();
 

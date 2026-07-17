@@ -4,9 +4,7 @@
 */
 
 use crate::{
-    action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
-    },
+    action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     helpers::get_charge_pool,
 };
 

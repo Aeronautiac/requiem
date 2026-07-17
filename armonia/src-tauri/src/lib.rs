@@ -174,6 +174,7 @@ pub fn run() {
     });
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(AppState { action_tx })
         .invoke_handler(tauri::generate_handler![send_action])
         .run(tauri::generate_context!())

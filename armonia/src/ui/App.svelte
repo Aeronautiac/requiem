@@ -1,25 +1,25 @@
 <script lang="ts">
   import { setContext } from "svelte";
   import { createTransport } from "$lib/transport";
+  import { ClientState, CLIENT_KEY } from "../client.svelte";
   import Channels from "./game/Channels.svelte";
   import Players from "./game/Players.svelte";
   import GcControls from "./game/GcControls.svelte";
   import OrgPanel from "./game/OrgPanel.svelte";
   import Polls from "./game/Polls.svelte";
   import Prosecutions from "./game/Prosecutions.svelte";
-  import { GAME_STATE_KEY, GameState } from "../game_state.svelte";
-  import { UI_STATE_KEY, UiState } from "../ui_state.svelte";
+  import { GAME_STATE_KEY } from "../game_state.svelte";
+  import { UI_STATE_KEY } from "../ui_state.svelte";
   import ViewSelect from "./game/ViewSelect.svelte";
   import AbilityMenu from "./game/abilities/AbilityMenu.svelte";
   import PassivesPanel from "./game/PassivesPanel.svelte";
   import ChannelView from "./game/ChannelView.svelte";
   import AdminPanel from "./admin/AdminPanel.svelte";
 
-  const router = createTransport();
-  const game_state = new GameState();
-  game_state.attach(router);
-  setContext(GAME_STATE_KEY, game_state);
-  setContext(UI_STATE_KEY, new UiState());
+  const client = new ClientState(createTransport());
+  setContext(CLIENT_KEY, client);
+  setContext(GAME_STATE_KEY, client.game);
+  setContext(UI_STATE_KEY, client.ui);
 </script>
 
 <div class="flex flex-col h-screen bg-neutral-950 text-white">

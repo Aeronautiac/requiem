@@ -4,10 +4,6 @@
 use crate::{
     action::{
         actor::{add_state::AddState, player::give_role::GiveRole, remove_state::RemoveState},
-        kidnapping::{
-            create_kidnapping::CreateKidnapping,
-            release_kidnapping::ReleaseKidnapping,
-        },
         comms::{
             channel::{
                 create_channel::CreateChannel, send_message::SendMessage, set_member::SetMember,
@@ -21,6 +17,7 @@ use crate::{
                 remove_from_lounge::RemoveFromLounge,
             },
         },
+        kidnapping::{create_kidnapping::CreateKidnapping, release_kidnapping::ReleaseKidnapping},
         world::set_world_channel_override::SetWorldChannelOverride,
     },
     actor::{
@@ -67,9 +64,9 @@ use crate::{
         AbilityKey, ActorKey, ChannelKey, ChargeCount, ChargePoolKey, GroupchatKey, KidnappingKey,
         LinkWeight, LoungeKey, NotebookKey, PassiveKey, PollKey,
     },
-    kidnapping::{KidnappingSource, KidnappingType},
     config::{actor::organization::OrganizationName, role::Role},
     engine::{Engine, ExecutionResult},
+    kidnapping::{KidnappingSource, KidnappingType},
     passive::PassiveType,
 };
 
@@ -752,7 +749,10 @@ pub fn release_kidnapping(eng: &mut Engine, time: Time, kidnapping_id: Kidnappin
     eng.execute(ActionRequest {
         actor: ActionActor::System,
         timestamp: time,
-        payload: Action::ReleaseKidnapping(ReleaseKidnapping { kidnapping_id, forced: false }),
+        payload: Action::ReleaseKidnapping(ReleaseKidnapping {
+            kidnapping_id,
+            forced: false,
+        }),
     })
     .unwrap();
 }

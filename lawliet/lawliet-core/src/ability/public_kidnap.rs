@@ -1,18 +1,15 @@
-// TODO:
-// just create a public kidnapping and schedule a release
-
 use lawliet_types::{
     ability::{AbilityName, PublicKidnap},
-    action::{
-        Action, ActionActor, ActionResponse, CreateKidnapping, ReleaseKidnapping, ScheduleJob,
-    },
+    action::{Action, ActionActor, ActionError, Kidnap},
+    actor::ActorDisplay,
     kidnapping::{KidnappingSource, KidnappingType},
 };
 
 use crate::{
     ability::AbilityInterface,
     action::ActionInterface,
-    helpers::{actor_id, get_player},
+    actor::modifier::Modifier,
+    helpers::{get_actor, get_org, get_player},
 };
 
 impl AbilityInterface for PublicKidnap {
@@ -30,28 +27,37 @@ impl AbilityInterface for PublicKidnap {
         mutate: bool,
     ) -> super::AbilityResult {
         get_player(eng, self.target)?;
-        let id = actor_id(actor).expect("expected valid actor to use ability");
 
-        let response = Action::CreateKidnapping(CreateKidnapping {
-            victim_id: self.target,
-            kidnapping_type: KidnappingType::Public(lawliet_types::actor::ActorDisplay::Raw(id)),
-            source: KidnappingSource::Ability(ability),
-        })
-        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
-
-        let ActionResponse::CreateKidnapping(data) = response else {
-            unreachable!()
+        // The publicly-shown kidnapper. A player is always themselves and may not designate
+        // anyone else; an org picks one of its own, defaulting to the acting member.
+        let performer = match actor {
+            ActionActor::Player(id) => {
+                if self.performer.is_some() {
+                    return Err(ActionError::PerformerRequiresOrg);
+                }
+                *id
+            }
+            ActionActor::Organization(org) => {
+                let performer = self.performer.unwrap_or(org.player_id);
+                // The public face must belong to this org and be present.
+                if !get_org(eng, org.org_id)?.has_member(performer) {
+                    return Err(ActionError::PlayerNotInOrg);
+                }
+                if get_actor(eng, performer)?.has_modifier(Modifier::NoPresence) {
+                    return Err(ActionError::UserNotPresent);
+                }
+                performer
+            }
+            ActionActor::Admin | ActionActor::System => {
+                return Err(ActionError::InsufficientPermissions);
+            }
         };
-        let id = data.id;
 
-        let duration = eng.config.defaults.kidnap_time;
-        let expiry_time = eng.time + duration;
-        Action::ScheduleJob(ScheduleJob {
-            payload: Box::new(Action::ReleaseKidnapping(ReleaseKidnapping {
-                kidnapping_id: id,
-                forced: false,
-            })),
-            timestamp: expiry_time,
+        Action::Kidnap(Kidnap {
+            victim_id: self.target,
+            kidnapping_type: KidnappingType::Public(ActorDisplay::Raw(performer)),
+            source: KidnappingSource::Ability(ability),
+            duration: Some(eng.config.defaults.kidnap_time),
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 

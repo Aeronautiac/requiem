@@ -42,8 +42,13 @@ impl AbilityInterface for CreateGroupchat {
 
         // Create the underlying group chat + channel as the system. On the validation
         // pass this returns a default id and mutates nothing.
-        let response = Action::CreateGroupchat(CreateGroupchatAction {})
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+        let response = Action::CreateGroupchat(CreateGroupchatAction {}).handle(
+            eng,
+            ctx,
+            &ActionActor::System,
+            version,
+            mutate,
+        )?;
         let ActionResponse::CreateGroupchat(data) = response else {
             unreachable!();
         };

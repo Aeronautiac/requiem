@@ -20,7 +20,8 @@ use indexmap::indexset;
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, SetMember,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        SetMember,
     },
     actor::{ActorDisplay, ActorType, modifier::Modifier, state::State},
     channel::{ChannelMember, ChannelPermission, ChannelPermissions},
@@ -98,8 +99,8 @@ impl ActionInterface for UpdateKidnapChannels {
                     {
                         None => vec![],
                         Some(owner_id) => {
-                            let owner = get_actor(eng, owner_id)
-                                .expect("ability owner must be valid");
+                            let owner =
+                                get_actor(eng, owner_id).expect("ability owner must be valid");
                             if let ActorType::Org(org) = &owner.actor_type {
                                 org.members.keys().copied().collect()
                             } else {

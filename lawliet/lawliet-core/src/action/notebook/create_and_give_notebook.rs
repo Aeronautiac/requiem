@@ -4,8 +4,9 @@
 */
 
 use crate::action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, AddNotebook, GiveNotebook,
-    };
+    Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult, AddNotebook,
+    GiveNotebook,
+};
 
 pub use crate::action::{CreateAndGiveNotebook, CreateAndGiveNotebookResponse};
 

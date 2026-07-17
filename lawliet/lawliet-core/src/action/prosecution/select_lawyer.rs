@@ -17,7 +17,8 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionError, ActionResponse, CreateChannel,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, CreateChannel,
     },
     actor::modifier::Modifier,
     common::Version,
@@ -63,8 +64,13 @@ impl ActionInterface for SelectLawyer {
             return Err(ActionError::UserNotPresent);
         }
 
-        let channel_response = Action::CreateChannel(CreateChannel { loggable: false })
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+        let channel_response = Action::CreateChannel(CreateChannel { loggable: false }).handle(
+            eng,
+            ctx,
+            &ActionActor::System,
+            version,
+            mutate,
+        )?;
         let ActionResponse::CreateChannel(channel_data) = channel_response else {
             unreachable!()
         };

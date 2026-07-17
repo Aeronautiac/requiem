@@ -21,7 +21,7 @@ use indexmap::IndexMap;
 
 use crate::common::ActorKey;
 
-pub use lawliet_types::channel::{ChannelPermission, ChannelPermissions, ChannelMember};
+pub use lawliet_types::channel::{ChannelMember, ChannelPermission, ChannelPermissions};
 
 #[derive(Debug)]
 pub struct Channel {

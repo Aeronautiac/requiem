@@ -4,6 +4,7 @@
   // Contact abilities against this player.
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
@@ -24,6 +25,8 @@
   let { id, label, perms = null }: Props = $props();
 
   const game = getContext<GameState>(GAME_STATE_KEY);
+
+  const client = getContext<ClientState>(CLIENT_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
   let expanded = $state(false);
@@ -56,7 +59,7 @@
         },
       },
     };
-    const err = await game.dispatch(request);
+    const err = await client.dispatch(request);
     if (err) {
       flash.set_error(`Contact failed: ${err}`);
     } else {

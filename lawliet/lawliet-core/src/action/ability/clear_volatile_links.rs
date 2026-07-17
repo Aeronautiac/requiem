@@ -6,7 +6,8 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, RemoveLink,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        RemoveLink,
     },
     helpers::get_ability_mut,
 };

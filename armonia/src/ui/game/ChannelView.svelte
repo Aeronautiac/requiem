@@ -2,6 +2,7 @@
   import { getContext } from "svelte";
   import Input from "$lib/components/ui/input/input.svelte";
   import { GAME_STATE_KEY, displayKey } from "../../game_state.svelte.ts";
+  import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
   import type { GameEvent, GameState, WriteEvent } from "../../game_state.svelte.ts";
@@ -17,6 +18,8 @@
   import NotebookPass from "./NotebookPass.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
+
+  const client = getContext<ClientState>(CLIENT_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
   let message_content = $state("");
@@ -84,6 +87,10 @@
   const show_loggability = $derived(current_channel != null && !is_info && !is_bug);
   const can_control_loggability = $derived(
     show_loggability && (is_admin || (current_perms?.loggability_control ?? false)),
+  );
+  // Whether this notebook is currently on loan (global notebook property). Shown as a badge.
+  const notebook_borrowed = $derived(
+    notebook_id ? game.is_notebook_borrowed(slotKeyToString(notebook_id)) : false,
   );
   let write_open = $state(false);
   let pass_open = $state(false);
@@ -244,14 +251,14 @@
         },
       },
     };
-    await game.dispatch(request);
+    await client.dispatch(request);
     message_content = "";
     console.log("message sent");
   }
 
   async function toggle_loggable() {
     if (!backing_channel_id) return;
-    await game.dispatch({
+    await client.dispatch({
       actor: viewerToActor(ui.viewer),
       timestamp: now(),
       payload: {
@@ -341,29 +348,40 @@
           </span>
         {/if}
 
-        <!-- Loggability status, top-right. A toggle for viewers with loggability control,
-             otherwise a read-only badge. -->
-        {#if show_loggability}
-          {@const cls = loggable
-            ? "bg-amber-600/20 text-amber-400"
-            : "bg-neutral-800 text-neutral-500"}
-          {#if can_control_loggability}
-            <button
-              class="ml-auto rounded px-2 py-0.5 text-xs font-medium hover:brightness-125 {cls}"
-              title="Toggle whether messages sent here can be logged (autopsied / relayed to bugs)"
-              onclick={toggle_loggable}
-            >
-              Logging {loggable ? "on" : "off"}
-            </button>
-          {:else}
+        <!-- Right-aligned status badges: notebook borrow status, then loggability (a toggle
+             for viewers with loggability control, otherwise a read-only badge). -->
+        <div class="ml-auto flex items-center gap-2">
+          {#if notebook_borrowed}
             <span
-              class="ml-auto rounded px-2 py-0.5 text-xs font-medium {cls}"
-              title="Whether messages sent here can be logged (autopsied / relayed to bugs)"
+              class="rounded bg-sky-600/20 px-2 py-0.5 text-xs font-medium text-sky-300"
+              title="This notebook is currently on loan (being borrowed)."
             >
-              Logging {loggable ? "on" : "off"}
+              Borrowed
             </span>
           {/if}
-        {/if}
+
+          {#if show_loggability}
+            {@const cls = loggable
+              ? "bg-amber-600/20 text-amber-400"
+              : "bg-neutral-800 text-neutral-500"}
+            {#if can_control_loggability}
+              <button
+                class="rounded px-2 py-0.5 text-xs font-medium hover:brightness-125 {cls}"
+                title="Toggle whether messages sent here can be logged (autopsied / relayed to bugs)"
+                onclick={toggle_loggable}
+              >
+                Logging {loggable ? "on" : "off"}
+              </button>
+            {:else}
+              <span
+                class="rounded px-2 py-0.5 text-xs font-medium {cls}"
+                title="Whether messages sent here can be logged (autopsied / relayed to bugs)"
+              >
+                Logging {loggable ? "on" : "off"}
+              </span>
+            {/if}
+          {/if}
+        </div>
       </header>
 
       <main bind:this={scroller} class="min-h-0 overflow-y-auto py-4">
@@ -441,7 +459,9 @@
             <Announcement
               color="#6366f1"
               description={pn.outcome ? `Vote ${pn.outcome}` : "Vote started"}
-              content={poll_notice_text(pn.subject)}
+              content={pn.opener
+                ? `${poll_notice_text(pn.subject)}\nStarted by ${pn.opener}`
+                : poll_notice_text(pn.subject)}
             />
           {:else if "PseudocideRevival" in event.data}
             {@const r = event.data.PseudocideRevival}
@@ -452,18 +472,16 @@
             />
           {:else if "KidnapReveal" in event.data}
             {@const kr = event.data.KidnapReveal}
+            {@const victim = kr.victim ? player_name(kr.victim) : "the victim"}
             <Announcement
               color="#f59e0b"
               description="Kidnap Reveal"
               content={kr.kidnapper
-                ? `${player_name(kr.kidnapper)} was revealed as a kidnapper.`
-                : "A kidnapping was revealed, but the kidnapper stayed anonymous."}
+                ? `Authorities have recovered ${victim}, and ${player_name(kr.kidnapper)} was revealed as the kidnapper.`
+                : `Authorities have recovered ${victim}, but the kidnapper stayed anonymous.`}
             />
           {:else if "Kidnapping" in event.data}
             {@const k = event.data.Kidnapping}
-            <!-- TODO: the engine doesn't reveal the victim, so naming them here is
-                 wrong and this event is largely useless as-is. Placeholder render
-                 until kidnapping either reveals the victim or is reworked/removed. -->
             <Announcement
               color="#f59e0b"
               description="Kidnapping"

@@ -6,9 +6,7 @@
 use lawliet_types::command::CommandRecipient;
 
 use crate::{
-    action::{
-        ActionInterface, ActionResponse,
-    },
+    action::{ActionInterface, ActionResponse},
     channel::Channel,
     command::Command,
     common::ChannelKey,

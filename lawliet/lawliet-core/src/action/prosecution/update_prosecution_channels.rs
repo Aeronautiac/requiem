@@ -67,7 +67,9 @@ impl ActionInterface for UpdateProsecutionChannels {
                     UpdateProsecutionChannelsResponse {},
                 ));
             }
-            ProsecutionPhase::Trial { phase, channel_id, .. } => {
+            ProsecutionPhase::Trial {
+                phase, channel_id, ..
+            } => {
                 match phase {
                     TrialPhase::Prosecutor(_) => {
                         senders.push(prosecution.prosecution.prosecutor);

@@ -156,7 +156,9 @@ impl Prosecution {
     pub fn phase_view(&self) -> (ProsecutionPhaseView, Option<ChannelKey>) {
         match &self.phase {
             ProsecutionPhase::Custody { .. } => (ProsecutionPhaseView::Custody, None),
-            ProsecutionPhase::Trial { phase, channel_id, .. } => {
+            ProsecutionPhase::Trial {
+                phase, channel_id, ..
+            } => {
                 let trial = match phase {
                     TrialPhase::Prosecutor(_) => TrialPhaseView::Prosecutor,
                     TrialPhase::Defense(_) => TrialPhaseView::Defense,

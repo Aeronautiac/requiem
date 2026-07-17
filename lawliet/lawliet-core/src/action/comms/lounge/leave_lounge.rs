@@ -4,9 +4,7 @@
 */
 
 use crate::{
-    action::{
-        ActionInterface, Action, ActionResponse, RemoveFromLounge,
-    },
+    action::{Action, ActionInterface, ActionResponse, RemoveFromLounge},
     helpers::player_id,
 };
 
@@ -29,13 +27,7 @@ impl ActionInterface for LeaveLounge {
             lounge_id: self.lounge_id,
             player_id: id,
         })
-        .handle(
-            eng,
-            ctx,
-            &ActionActor::System,
-            version,
-            mutate,
-        )?;
+        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
         Ok(ActionResponse::LeaveLounge(LeaveLoungeResponse {}))
     }

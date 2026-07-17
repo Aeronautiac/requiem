@@ -6,7 +6,8 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, RemoveLink, DestroyBug, CullIncarcerations, CullKidnappings,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        CullIncarcerations, CullKidnappings, DestroyBug, RemoveLink,
     },
     bug::BugSource,
     common::{BugKey, ChargePoolKey},
@@ -70,11 +71,15 @@ impl ActionInterface for DestroyAbility {
             eng.world.remove_ability(self.ability_id);
         }
 
-        Action::CullKidnappings(CullKidnappings { ability_id: self.ability_id })
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+        Action::CullKidnappings(CullKidnappings {
+            ability_id: self.ability_id,
+        })
+        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
-        Action::CullIncarcerations(CullIncarcerations { ability_id: self.ability_id })
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+        Action::CullIncarcerations(CullIncarcerations {
+            ability_id: self.ability_id,
+        })
+        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
         Ok(ActionResponse::DestroyAbility(DestroyAbilityResponse {}))
     }

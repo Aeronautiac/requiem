@@ -4,9 +4,7 @@
 */
 
 use crate::{
-    action::{
-        ActionInterface, ActionResponse,
-    },
+    action::{ActionInterface, ActionResponse},
     helpers::get_charge_pool_mut,
 };
 

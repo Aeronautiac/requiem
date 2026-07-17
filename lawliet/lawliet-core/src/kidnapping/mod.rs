@@ -10,7 +10,7 @@
 
 use crate::{ActorKey, ChannelKey};
 
-pub use lawliet_types::kidnapping::{KidnappingType, KidnappingSource};
+pub use lawliet_types::kidnapping::{KidnappingSource, KidnappingType};
 
 #[derive(Debug)]
 pub struct Kidnapping {

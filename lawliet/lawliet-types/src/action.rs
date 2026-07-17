@@ -92,6 +92,9 @@ pub enum ActionError {
     MustChooseSuccessor,
     NoEyes,
     CannotProsecuteSelf,
+    // A player used PublicKidnap with a `performer` set — designating who appears as the
+    // kidnapper is an org-only choice; a player is always shown as themselves.
+    PerformerRequiresOrg,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -747,6 +750,21 @@ pub struct CreateKidnapping {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct KidnapResponse {}
+
+// High-level orchestrator over the low-level kidnapping primitives: creates the kidnapping
+// (object + channel + state), announces it, and — when `duration` is Some — schedules the
+// automatic release. Mirrors TimedIncarceration; the abilities go through this rather than
+// hand-rolling CreateKidnapping + ScheduleJob. `duration` None is an indefinite kidnapping.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct Kidnap {
+    pub victim_id: ActorKey,
+    pub kidnapping_type: KidnappingType,
+    pub source: KidnappingSource,
+    pub duration: Option<Time>,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct CullKidnappingsResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -957,6 +975,9 @@ pub struct CreatePoll {
     pub accept_payload: Box<Option<Action>>,
     pub reject_payload: Box<Option<Action>>,
     pub duration: Option<Time>,
+    // Who opened the poll, surfaced on the client's "vote started" notice. None = no distinct
+    // opener (system-driven polls). Not stored beyond the Poll it seeds.
+    pub opener: Option<ActorKey>,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1286,6 +1307,7 @@ pub enum Action {
     UpdateBugVisibilities(UpdateBugVisibilities),
     ProsecutionVoteRes(ProsecutionVoteRes),
     CreateKidnapping(CreateKidnapping),
+    Kidnap(Kidnap),
     ReleaseKidnapping(ReleaseKidnapping),
     CullKidnappings(CullKidnappings),
     UpdateKidnapChannels(UpdateKidnapChannels),
@@ -1397,6 +1419,7 @@ pub enum ActionResponse {
     UpdateBugVisibilities(UpdateBugVisibilitiesResponse),
     ProsecutionVoteRes(ProsecutionVoteResResponse),
     CreateKidnapping(CreateKidnappingResponse),
+    Kidnap(KidnapResponse),
     ReleaseKidnapping(ReleaseKidnappingResponse),
     CullKidnappings(CullKidnappingsResponse),
     UpdateKidnapChannels(UpdateKidnapChannelsResponse),

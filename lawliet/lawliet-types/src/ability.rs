@@ -195,6 +195,9 @@ pub struct AnonymousKidnap {
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
 pub struct PublicKidnap {
     pub target: ActorKey,
+    // Who is publicly shown as the kidnapper. An org designates one of its own (defaults to the
+    // acting member); a player is always themselves and MUST leave this None (see the handler).
+    pub performer: Option<ActorKey>,
 }
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]

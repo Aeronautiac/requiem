@@ -11,10 +11,13 @@
   import { now } from "../../time.svelte.ts";
   import { Button } from "$lib/components/ui/button";
   import { GAME_STATE_KEY, GameState } from "../../game_state.svelte.ts";
+  import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import { Flash } from "../../flash.svelte.ts";
   import FlashDisplay from "../Flash.svelte";
 
   const game_state = getContext<GameState>(GAME_STATE_KEY);
+
+  const client = getContext<ClientState>(CLIENT_KEY);
 
   let display_name: string = $state("");
   let true_name: string = $state("");
@@ -57,7 +60,7 @@
           },
         };
 
-        const err = await game_state.dispatch(request, { display_name });
+        const err = await client.dispatch(request, { display_name });
         if (err) {
           flash.set_error(`Action Failed: ${err}`);
         } else {

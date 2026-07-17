@@ -37,7 +37,7 @@ mod policies;
 //
 // polls now have individual accept and reject actions
 
-pub use lawliet_types::poll::{PollOutcome, PollSubject, VoterPolicy, PollPolicy, PollVisibility};
+pub use lawliet_types::poll::{PollOutcome, PollPolicy, PollSubject, PollVisibility, VoterPolicy};
 
 #[derive(PartialEq, Eq, Clone, Debug, Copy)]
 pub enum PolicyResult {
@@ -68,6 +68,9 @@ pub struct Poll {
     pub update_policy: PollPolicy,
     pub timeout_policy: PollPolicy,
     pub voter_policy: VoterPolicy,
+    // Who opened the poll (None = no distinct opener, e.g. a system-driven vote). Stored so
+    // every broadcast can carry it; the client shows it on the "vote started" notice.
+    pub opener: Option<ActorKey>,
     pub votes: IndexMap<ActorKey, Vote>,
     // Actors we've sent poll data to (via UpdatePollView). The frontend has no notion of
     // scope visibility ("present"), so when one of these actors can no longer view the poll
@@ -85,6 +88,7 @@ impl Poll {
         update_policy: PollPolicy,
         timeout_policy: PollPolicy,
         voter_policy: VoterPolicy,
+        opener: Option<ActorKey>,
     ) -> Self {
         Poll {
             accept_payload,
@@ -94,6 +98,7 @@ impl Poll {
             update_policy,
             timeout_policy,
             voter_policy,
+            opener,
             votes: IndexMap::new(),
             dirty: IndexSet::new(),
         }
@@ -117,9 +122,7 @@ impl Poll {
     // Voting eligibility (`voter_policy`) is stricter — it also requires presence.
     pub fn can_view(&self, eng: &Engine, id: ActorKey) -> bool {
         match self.visibility {
-            PollVisibility::Org(org_id) => {
-                get_org(eng, org_id).is_ok_and(|org| org.has_member(id))
-            }
+            PollVisibility::Org(org_id) => get_org(eng, org_id).is_ok_and(|org| org.has_member(id)),
             PollVisibility::Channel(channel_id) => {
                 get_channel(eng, channel_id).is_ok_and(|ch| ch.get_member(id).is_some())
             }

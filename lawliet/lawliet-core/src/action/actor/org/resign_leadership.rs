@@ -95,6 +95,8 @@ impl ActionInterface for ResignLeadership {
         })
         .handle(eng, ctx, actor, version, mutate)?;
 
-        Ok(ActionResponse::ResignLeadership(ResignLeadershipResponse {}))
+        Ok(ActionResponse::ResignLeadership(
+            ResignLeadershipResponse {},
+        ))
     }
 }

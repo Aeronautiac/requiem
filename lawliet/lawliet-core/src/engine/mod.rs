@@ -23,8 +23,7 @@ pub struct Engine {
     pub initialized: bool,
 }
 
-pub type ExecutionResult =
-    Result<(ActionResponse, ActionContext), (ActionError, ActionContext)>;
+pub type ExecutionResult = Result<(ActionResponse, ActionContext), (ActionError, ActionContext)>;
 
 impl Engine {
     pub fn new() -> Self {
@@ -86,7 +85,10 @@ impl Engine {
     // recursively execute sub-actions
     // return only top level result (with the combined command buffer)
     pub fn execute(&mut self, action: ActionRequest) -> ExecutionResult {
-        let mut ctx = ActionContext { commands: vec![], mutate: false };
+        let mut ctx = ActionContext {
+            commands: vec![],
+            mutate: false,
+        };
 
         if action.timestamp < self.time {
             return Err((ActionError::TimeAlreadyPassed, ctx));

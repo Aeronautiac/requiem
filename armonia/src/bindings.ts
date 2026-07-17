@@ -229,6 +229,8 @@ export type AbilityBehaviour =
   | { TrueNameReveal: { target: ActorKey } }
   | { NotebookReveal: { target: ActorKey } }
   | { CivilianArrest: { target: ActorKey } }
+  | { PublicKidnap: { target: ActorKey; performer: ActorKey | null } }
+  | { AnonymousKidnap: { target: ActorKey } }
   | { Bug: { target: ActorKey } };
 
 // ////////////////////////////////////////////////////////////
@@ -935,7 +937,8 @@ export type ActionError =
   | "KidnappingNotFound"
   | "IncarcerationNotFound"
   | "ActorHasStrengthenedPresence"
-  | "PersonalChannelLimitReached";
+  | "PersonalChannelLimitReached"
+  | "PerformerRequiresOrg";
 
 // Only variants that carry meaningful data are included.
 export type ActionResponse =
@@ -966,8 +969,8 @@ export type ActionResponse =
 
 export type Command =
   | { Death: { target_id: ActorKey, true_name: string; death_message: string; role: Role; notebook_transferred: boolean; ability_transferred: boolean } }
-  | { Kidnapping: { target_id: ActorKey; duration: number } }
-  | { KidnapReveal: { kidnapper: ActorKey | null } }
+  | { Kidnapping: { kidnapping_id: KidnappingKey; target_id: ActorKey; duration: number | null } }
+  | { KidnapReveal: { kidnapping_id: KidnappingKey; kidnapper: ActorKey | null } }
   | { PseudocideRevival: { target_id: ActorKey } }
   | { AnonymousAnnouncement: { content: string } }
   | { MapOrg: { org_id: ActorKey; channel_id: ChannelKey; org_name: OrganizationName } }
@@ -997,7 +1000,7 @@ export type Command =
   | { SetBugVisibility: { bug_id: BugKey; visible: boolean } }
   | { MapNotebook: { notebook_id: NotebookKey; channel_id: ChannelKey } }
   | { NotebookWrite: { notebook_id: NotebookKey; user_id: ActorKey; message: string | null; true_name: string; delay: number; successes_remaining: number; attempts_remaining: number; success: boolean; target_saved: boolean } }
-  | { NotebookBorrowingStatus: { borrowed: boolean } }
+  | { NotebookBorrowingStatus: { notebook_id: NotebookKey; borrowed: boolean } }
   | { AddContactLog: { passive_id: PassiveKey } }
   | { UpdateAbilityView: { ability_name: AbilityName; success_usages_remaining: number; failure_usages_remaining: number; iterations_to_reset: number; ability_id: AbilityKey; owner_id: ActorKey } }
   | { RemoveAbility: { ability_id: AbilityKey } }
@@ -1008,7 +1011,7 @@ export type Command =
   | { RevealNotebookHolding: { target_id: ActorKey; holding: boolean } }
   | { RoleUpdate: { target_id: ActorKey; role: Role } }
   | { TrueNameUpdate: { target_id: ActorKey; true_name: string } }
-  | { UpdatePoll: { poll_id: PollKey; subject: PollSubject; scope: PollVisibility; accept: number; reject: number; potential: number } }
+  | { UpdatePoll: { poll_id: PollKey; subject: PollSubject; scope: PollVisibility; accept: number; reject: number; potential: number; opener: ActorKey | null } }
   | { ClosePoll: { poll_id: PollKey; outcome: PollOutcome } }
   | { UpdatePollView: { poll_id: PollKey; eligible: boolean; own_vote: boolean | null } }
   | { RemovePollView: { poll_id: PollKey } }

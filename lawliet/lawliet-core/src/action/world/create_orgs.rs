@@ -26,4 +26,3 @@ impl ActionInterface for CreateOrgs {
         Ok(ActionResponse::CreateOrgs(CreateOrgsResponse {}))
     }
 }
-

@@ -10,7 +10,11 @@ use lawliet_types::{
     poll::{PollPolicy, PollSubject, PollVisibility, VoterPolicy},
 };
 
-use crate::{ability::AbilityInterface, action::ActionInterface, helpers::get_player};
+use crate::{
+    ability::AbilityInterface,
+    action::ActionInterface,
+    helpers::{actor_id, get_player},
+};
 
 impl AbilityInterface for CivilianArrest {
     fn ability_name(&self) -> AbilityName {
@@ -21,7 +25,7 @@ impl AbilityInterface for CivilianArrest {
         &mut self,
         eng: &mut crate::engine::Engine,
         ctx: &mut lawliet_types::action::ActionContext,
-        _actor: &lawliet_types::action::ActionActor,
+        actor: &lawliet_types::action::ActionActor,
         ability: lawliet_types::common::AbilityKey,
         version: u8,
         mutate: bool,
@@ -43,6 +47,8 @@ impl AbilityInterface for CivilianArrest {
             }))),
             reject_payload: Box::new(None),
             duration: Some(eng.config.defaults.civ_arrest_vote_time),
+            // the actor who called the arrest opened the vote (a player, or an org as itself)
+            opener: actor_id(actor),
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 

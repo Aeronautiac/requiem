@@ -6,7 +6,8 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, GiveNotebook,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        GiveNotebook,
     },
     helpers::get_actor,
 };

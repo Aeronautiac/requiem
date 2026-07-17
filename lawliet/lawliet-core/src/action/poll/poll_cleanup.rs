@@ -7,9 +7,7 @@
 */
 
 use crate::{
-    action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
-    },
+    action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     common::Version,
     engine::Engine,
     helpers::get_poll,

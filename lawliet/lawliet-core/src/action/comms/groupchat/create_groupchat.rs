@@ -36,7 +36,9 @@ impl ActionInterface for CreateGroupchat {
 
         let (id, contact_id) = if mutate {
             let gc_id = eng.world.add_groupchat(Groupchat::new(channel_id));
-            let contact_id = eng.world.register_contact_channel(ContactChannel::Gc(gc_id));
+            let contact_id = eng
+                .world
+                .register_contact_channel(ContactChannel::Gc(gc_id));
             (gc_id, contact_id)
         } else {
             (GroupchatKey::default(), 0)

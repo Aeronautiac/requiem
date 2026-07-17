@@ -4,9 +4,7 @@
 */
 
 use crate::{
-    action::{
-        ActionContext, ActionInterface, ActionResult, ActionActor, ActionResponse,
-    },
+    action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     actor::{ActorLink, ActorLinkType, ActorType},
     common::ActorKey,
     helpers::{get_actor_mut, get_role_config},

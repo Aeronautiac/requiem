@@ -1,17 +1,20 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { GAME_STATE_KEY, orgDisplayName } from "../../game_state.svelte.ts";
+  import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
   import type { GameState, PollData, PollView } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import type { ActionPayload, PollSubject } from "../../bindings";
+  import type { ActionPayload, PollSubject, PollVisibility } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
   import { Flash } from "../../flash.svelte.ts";
   import FlashDisplay from "../Flash.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
+
+  const client = getContext<ClientState>(CLIENT_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
   const flash = new Flash();
@@ -33,28 +36,63 @@
     return out;
   });
 
-  // Render a poll's subject. Generic is pre-rendered text; an org-ability vote shows the
-  // ability name and, when the behaviour carries a target actor, that player's name.
-  function subjectText(subject: PollSubject): string {
+  // A poll's headline: Generic is pre-rendered text; CivilianArrest names the target; an
+  // org-ability vote is the (prettified) ability name. The ability's arguments render
+  // separately via subjectArgs so the voter sees exactly what's being proposed.
+  function subjectHeading(subject: PollSubject): string {
     if ("Generic" in subject) return subject.Generic;
     if ("CivilianArrest" in subject) {
       const nm = game.players.get(slotKeyToString(subject.CivilianArrest))?.display_name;
       return nm ? `Arrest ${nm}` : "Civilian arrest";
     }
+    const name = Object.keys(subject.OrgAbility as Record<string, unknown>)[0] ?? "";
+    return name.replace(/([a-z])([A-Z])/g, "$1 $2");
+  }
+
+  // Where the vote is scoped — shown because the panel lists polls regardless of which
+  // channel/view you're in. AllPresent is public; Org/Channel resolve to their name.
+  function scopeLabel(scope: PollVisibility): string {
+    if (scope === "AllPresent") return "Everyone";
+    if ("Org" in scope) {
+      const org = game.orgs.get(slotKeyToString(scope.Org));
+      return org ? orgDisplayName(org.name) : "Org";
+    }
+    return game.channels.get(slotKeyToString(scope.Channel))?.name ?? "Channel";
+  }
+
+  // "true_name" -> "True name", "target_id" -> "Target" (the _id suffix is noise here).
+  function prettyKey(k: string): string {
+    const s = k.replace(/_id$/, "").replace(/_/g, " ");
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  // One arg value: actor keys (the only object-typed args) resolve to a player name, booleans
+  // read as yes/no, everything else (roles, names, messages) is shown as-is.
+  function formatArgValue(v: unknown): string {
+    if (typeof v === "boolean") return v ? "yes" : "no";
+    if (typeof v === "object" && v !== null) {
+      return game.players.get(slotKeyToString(v as never))?.display_name ?? "Unknown";
+    }
+    return String(v);
+  }
+
+  // The argument lines for an org-ability vote (e.g. "Target: Alice", "Performer: Bob"). Empty
+  // for non-ability subjects; null/absent args are skipped so optional fields don't show as blanks.
+  function subjectArgs(subject: PollSubject): { label: string; value: string }[] {
+    if (!("OrgAbility" in subject)) return [];
     const beh = subject.OrgAbility as Record<string, unknown>;
     const name = Object.keys(beh)[0] ?? "";
-    const pretty = name.replace(/([a-z])([A-Z])/g, "$1 $2");
-    const args = beh[name] as Record<string, unknown> | undefined;
-    const target = args && (args.target ?? args.invitee ?? args.defendant);
-    if (target && typeof target === "object") {
-      const nm = game.players.get(slotKeyToString(target as never))?.display_name;
-      if (nm) return `${pretty}: ${nm}`;
+    const args = (beh[name] ?? {}) as Record<string, unknown>;
+    const out: { label: string; value: string }[] = [];
+    for (const [k, v] of Object.entries(args)) {
+      if (v === null || v === undefined) continue;
+      out.push({ label: prettyKey(k), value: formatArgValue(v) });
     }
-    return pretty;
+    return out;
   }
 
   async function send(id: string, payload: ActionPayload, ok: string) {
-    const err = await game.dispatch({
+    const err = await client.dispatch({
       actor: viewerToActor(ui.viewer),
       timestamp: now(),
       payload,
@@ -95,8 +133,29 @@
       <p class="px-2 py-1 text-xs text-neutral-600">No active votes</p>
     {:else}
       {#each polls as p (p.id)}
+        {@const args = subjectArgs(p.data.subject)}
         <div class="flex flex-col gap-1.5 rounded border border-neutral-800 px-2 py-2">
-          <span class="text-sm text-neutral-200">{subjectText(p.data.subject)}</span>
+          <span class="text-sm text-neutral-200">{subjectHeading(p.data.subject)}</span>
+
+          {#if args.length > 0}
+            <div class="flex flex-col gap-0.5">
+              {#each args as arg (arg.label)}
+                <span class="text-[0.7rem] text-neutral-400">
+                  <span class="text-neutral-500">{arg.label}:</span>
+                  {arg.value}
+                </span>
+              {/each}
+            </div>
+          {/if}
+
+          <div class="flex flex-wrap items-center gap-x-2 text-[0.65rem] text-neutral-500">
+            <span class="rounded bg-neutral-800 px-1.5 py-0.5 text-neutral-400">
+              {scopeLabel(p.data.scope)}
+            </span>
+            {#if p.data.opener}
+              <span>started by {p.data.opener}</span>
+            {/if}
+          </div>
 
           <div class="flex gap-2 text-[0.7rem] text-neutral-500">
             <span class="text-emerald-400/80">yes {p.data.accept}</span>

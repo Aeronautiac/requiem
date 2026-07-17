@@ -8,9 +8,7 @@
 // notify existing leaders that leadership has changed
 
 use crate::{
-    action::{
-        ActionInterface, ActionError, ActionResponse,
-    },
+    action::{ActionError, ActionInterface, ActionResponse},
     helpers::{get_actor, get_org, get_org_mut},
 };
 

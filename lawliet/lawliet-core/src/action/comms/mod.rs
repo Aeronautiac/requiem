@@ -613,7 +613,12 @@ mod comms_tests {
             .unwrap();
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(p1)
-                && matches!(&p.cmd, Command::Bugged { context: BugContext::Custody })
+                && matches!(
+                    &p.cmd,
+                    Command::Bugged {
+                        context: BugContext::Custody
+                    }
+                )
         }));
 
         // Ability bug -> target is notified with the Explicit context, and the owner-identifying
@@ -642,7 +647,12 @@ mod comms_tests {
             .unwrap();
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(p1)
-                && matches!(&p.cmd, Command::Bugged { context: BugContext::Explicit })
+                && matches!(
+                    &p.cmd,
+                    Command::Bugged {
+                        context: BugContext::Explicit
+                    }
+                )
         }));
     }
 

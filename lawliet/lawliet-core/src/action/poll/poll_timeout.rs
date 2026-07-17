@@ -6,12 +6,13 @@
 
 use crate::{
     action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, PollCleanup, ActionExt,
+        Action, ActionActor, ActionContext, ActionExt, ActionInterface, ActionResponse,
+        ActionResult, PollCleanup,
     },
     common::Version,
     engine::Engine,
     helpers::get_poll,
-    poll::{PollOutcome, PolicyResult},
+    poll::{PolicyResult, PollOutcome},
 };
 
 pub use crate::action::{PollTimeout, PollTimeoutResponse};
@@ -36,8 +37,12 @@ impl ActionInterface for PollTimeout {
         // A payload that no longer validates cancels the poll instead of resolving it.
         // Decide the outcome and which payload (if any) to run. A payload that no longer
         // validates cancels the poll instead of resolving it.
-        let invalid = acc_payload.as_mut().is_some_and(|p| p.validate(eng, ctx, actor, version).is_err())
-            || rej_payload.as_mut().is_some_and(|p| p.validate(eng, ctx, actor, version).is_err());
+        let invalid = acc_payload
+            .as_mut()
+            .is_some_and(|p| p.validate(eng, ctx, actor, version).is_err())
+            || rej_payload
+                .as_mut()
+                .is_some_and(|p| p.validate(eng, ctx, actor, version).is_err());
         let (outcome, payload) = if invalid {
             (PollOutcome::Cancelled, None)
         } else {

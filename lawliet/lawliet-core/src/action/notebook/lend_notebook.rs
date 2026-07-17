@@ -5,8 +5,8 @@
 
 use crate::{
     action::{
-        Action, ActionContext, ActionInterface, ActionResult, ActionActor, ActionError, ActionResponse,
-        SetNotebookPossession,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, SetNotebookPossession,
     },
     actor::modifier::Modifier,
     common::Version,
@@ -48,7 +48,9 @@ impl ActionInterface for LendNotebook {
         }
 
         if mutate {
-            get_notebook_mut(eng, self.notebook_id)?.lend(self.target_id).unwrap();
+            get_notebook_mut(eng, self.notebook_id)?
+                .lend(self.target_id)
+                .unwrap();
         }
 
         Action::SetNotebookPossession(SetNotebookPossession {

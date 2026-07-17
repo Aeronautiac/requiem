@@ -4,9 +4,7 @@
 */
 
 use crate::{
-    action::{
-        ActionInterface, Action, ActionResponse, ChangeOrgLeader,
-    },
+    action::{Action, ActionInterface, ActionResponse, ChangeOrgLeader},
     actor::organization::LeadershipStruct,
     helpers::get_org_mut,
 };

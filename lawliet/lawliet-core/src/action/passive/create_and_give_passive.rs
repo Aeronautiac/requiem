@@ -4,8 +4,9 @@
 */
 
 use crate::action::{
-        ActionContext, ActionInterface, ActionResult, Action, ActionActor, ActionResponse, AddPassive, GivePassive,
-    };
+    Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult, AddPassive,
+    GivePassive,
+};
 
 pub use crate::action::{CreateAndGivePassive, CreateAndGivePassiveResponse};
 

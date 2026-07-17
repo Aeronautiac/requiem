@@ -4,9 +4,7 @@
 */
 
 use crate::{
-    action::{
-        ActionInterface, ActionError, ActionResponse,
-    },
+    action::{ActionError, ActionInterface, ActionResponse},
     helpers::{actor_id, get_poll, get_poll_mut},
 };
 

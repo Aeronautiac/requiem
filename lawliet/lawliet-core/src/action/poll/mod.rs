@@ -35,6 +35,7 @@ pub(crate) fn broadcast_poll(
     let tally = poll.weights(eng);
     let subject = poll.subject.clone();
     let scope = poll.visibility;
+    let opener = poll.opener;
     ctx.push_cmd(
         Command::UpdatePoll {
             poll_id,
@@ -43,6 +44,7 @@ pub(crate) fn broadcast_poll(
             accept: tally.accept,
             reject: tally.reject,
             potential: tally.potential_total,
+            opener,
         },
         CommandRecipient::System,
         eng.time,
@@ -144,6 +146,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -174,6 +177,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -202,6 +206,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -229,6 +234,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -258,6 +264,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -283,6 +290,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -308,6 +316,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -342,6 +351,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -366,6 +376,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -403,6 +414,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -445,6 +457,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -478,6 +491,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -521,6 +535,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -560,6 +575,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -590,6 +606,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -626,6 +643,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -656,6 +674,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
@@ -681,6 +700,7 @@ mod poll_tests {
             &mut eng,
             0,
             CreatePoll {
+                opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
                 visibility: PollVisibility::AllPresent,
