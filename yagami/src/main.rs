@@ -11,21 +11,29 @@ use std::{
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State, WebSocketUpgrade, ws::WebSocket},
-    http::StatusCode,
+    extract::{
+        Path, Query, State, WebSocketUpgrade,
+        ws::{Message, WebSocket},
+    },
+    http::{HeaderValue, Method, StatusCode, header},
     response::IntoResponse,
     routing::{any, post},
 };
+use futures_util::{SinkExt, StreamExt};
 use lawliet_types::action::ActionRequest;
 use serde::{Deserialize, Serialize};
 use tokio::{
     net::TcpListener,
-    sync::mpsc::{self, Receiver},
-    time::sleep,
+    select,
+    sync::mpsc::{self},
+    time::{interval, sleep, timeout},
 };
 use tokio_util::sync::CancellationToken;
+use tower_http::cors::CorsLayer;
 
-use crate::constants::{OUTBOX_BUF_SIZE, TICKET_LIMIT, TICKET_TIMEOUT};
+use crate::constants::{
+    HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, OUTBOX_BUF_SIZE, TICKET_LIMIT, TICKET_TIMEOUT,
+};
 
 fn req(key: &str) -> Result<String, String> {
     env::var(key).map_err(|_| format!("missing required env var: {key}"))
@@ -33,6 +41,7 @@ fn req(key: &str) -> Result<String, String> {
 
 struct Config {
     bind_addr: SocketAddr,
+    allowed_origin: HeaderValue,
 }
 
 impl Config {
@@ -41,20 +50,23 @@ impl Config {
             bind_addr: req("YAGAMI_BIND")?
                 .parse()
                 .map_err(|e| format!("YAGAMI_BIND: {e}"))?,
+            allowed_origin: req("YAGAMI_ALLOWED_ORIGIN")?
+                .parse()
+                .map_err(|e| format!("YAGAMI_ALLOWED_ORIGIN: {e}"))?,
         })
     }
 }
 
-enum ServerOutput {
-    Ping,
-}
+#[derive(Serialize)]
+enum ServerOutput {}
 
 // controls handled a level above the engine by the game task (undo N, evict key, reboot) -- they act
 // ON the engine/timeline, not IN the fiction. reboot has no live engine to reach at all.
+#[derive(Deserialize)]
 enum GameControl {}
 
+#[derive(Deserialize)]
 enum ServerInput {
-    Pong,
     Action(ActionRequest),
     Control(GameControl),
 }
@@ -109,7 +121,7 @@ struct ConnHandle {
 }
 
 struct GameHandle {
-    inbox: mpsc::Sender<ServerInput>,
+    inbox: mpsc::UnboundedSender<InputEnvelope>,
     tickets: HashMap<Ticket, Key>,
     connections: HashMap<Ticket, ConnHandle>,
     keys: HashMap<Key, KeyData>,
@@ -152,9 +164,18 @@ async fn main() {
 
     let server_state = Arc::new(Mutex::new(ServerState::default()));
 
+    // REST is cross-origin (client on a different subdomain), so the JSON POST triggers a preflight
+    // the browser blocks on until we answer. the WS route is exempt -- same-origin policy doesn't
+    // cover websockets -- so this layer is only about the fetch-based endpoints.
+    let cors = CorsLayer::new()
+        .allow_origin(config.allowed_origin)
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([header::CONTENT_TYPE]);
+
     let router = Router::new()
         .route("/game/{id}/get_ticket", post(get_ticket))
         .route("/game/{id}/ws", any(establish_ws_connection))
+        .layer(cors)
         .with_state(server_state.clone());
 
     let listener = TcpListener::bind(config.bind_addr).await.unwrap();
@@ -320,19 +341,104 @@ async fn establish_ws_connection(
     let guard = ClaimGuard {
         state: state.clone(),
         game_id,
-        ticket: params.ticket,
+        ticket: params.ticket.clone(),
     };
 
     Ok(ws.on_upgrade(move |socket| async move {
         let _guard = guard; // released when the connection ends, or if the upgrade never completes
-        game_connection(socket, state, inbox).await;
+        game_connection(socket, state, inbox, game_id, params.ticket).await;
     }))
 }
 
-// handles a game connection lifecycle
 async fn game_connection(
     stream: WebSocket,
     state: WrappedServerState,
-    recv: mpsc::Receiver<ServerOutput>,
-) -> impl IntoResponse {
+    mut recv: mpsc::Receiver<ServerOutput>,
+    game_id: GameId,
+    ticket: Ticket,
+) {
+    let (mut ws_send, mut ws_recv) = stream.split();
+    let (cancel_tok, inbox) = {
+        let server_state = lock_state(&state);
+        let Some(game_state) = server_state.games.get(&game_id) else {
+            return;
+        };
+        let Some(conn_handle) = game_state.connections.get(&ticket) else {
+            // invalid state
+            std::process::abort();
+        };
+        (conn_handle.cancel.clone(), game_state.inbox.clone())
+    };
+
+    let mut inbound = tokio::spawn(async move {
+        loop {
+            // per-iteration timeout is the heartbeat deadline: every inbound frame grants the next
+            // read a fresh window, so silence past HEARTBEAT_TIMEOUT is what marks a dead peer.
+            let msg = match timeout(Duration::from_secs(HEARTBEAT_TIMEOUT), ws_recv.next()).await {
+                Err(_) => break,                  // no frame within the deadline -> dead peer
+                Ok(None | Some(Err(_))) => break, // stream ended / transport error
+                Ok(Some(Ok(msg))) => msg,
+            };
+
+            match msg {
+                Message::Text(t) => {
+                    let Ok(input) = serde_json::from_str::<ServerInput>(t.as_str()) else {
+                        break; // undeserializable payload -> protocol violation
+                    };
+                    if inbox
+                        .send(InputEnvelope {
+                            ticket: ticket.clone(),
+                            input,
+                        })
+                        .is_err()
+                    {
+                        break; // game task is gone
+                    }
+                }
+                Message::Ping(_) | Message::Pong(_) => {} // liveness only; deadline already reset
+                Message::Binary(_) => break,              // protocol violation
+                Message::Close(_) => break,
+            }
+        }
+    });
+
+    let mut outbound = tokio::spawn(async move {
+        let mut ping = interval(Duration::from_secs(HEARTBEAT_INTERVAL));
+        loop {
+            select! {
+                // provoke a Pong so the peer's recv-side deadline keeps resetting on an idle link.
+                _ = ping.tick() => {
+                    if ws_send.send(Message::Ping(Default::default())).await.is_err() {
+                        break; // socket gone
+                    }
+                }
+                out = recv.recv() => match out {
+                    Some(out) => {
+                        // ServerOutput is ours; a serialize failure is a bug in this process, not a
+                        // runtime condition. abort loudly rather than drop a message on the floor.
+                        let json = serde_json::to_string(&out).unwrap_or_else(|e| {
+                            eprintln!("ServerOutput failed to serialize: {e} -- aborting");
+                            std::process::abort()
+                        });
+                        if ws_send.send(Message::Text(json.into())).await.is_err() {
+                            break; // socket gone
+                        }
+                    }
+                    None => break, // game task dropped the outbox sender
+                }
+            }
+        }
+    });
+
+    // &mut so the handles survive the race; whichever arm wins, abort the other two tasks so the
+    // socket halves drop and the connection actually closes. abort on a finished task is a no-op.
+    select! {
+        _ = cancel_tok.cancelled() => {}
+        _ = &mut inbound => {}
+        _ = &mut outbound => {}
+    }
+    inbound.abort();
+    outbound.abort();
 }
+
+async fn game() {}
