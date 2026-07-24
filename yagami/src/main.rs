@@ -2,9 +2,10 @@ mod constants;
 
 use std::{
     collections::{HashMap, HashSet},
-    env,
+    env::{self, current_exe},
     fmt::Write,
     net::SocketAddr,
+    process::Stdio,
     sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
@@ -23,9 +24,14 @@ use futures_util::{SinkExt, StreamExt};
 use lawliet_types::action::ActionRequest;
 use serde::{Deserialize, Serialize};
 use tokio::{
+    join,
     net::TcpListener,
+    process::{ChildStdin, ChildStdout},
     select,
-    sync::mpsc::{self},
+    sync::{
+        mpsc::{self},
+        watch,
+    },
     time::{interval, sleep, timeout},
 };
 use tokio_util::sync::CancellationToken;
@@ -350,6 +356,7 @@ async fn establish_ws_connection(
     }))
 }
 
+// later, this needs to feed the new connection the previous command sequence before accepting new inputs
 async fn game_connection(
     stream: WebSocket,
     state: WrappedServerState,
@@ -441,4 +448,62 @@ async fn game_connection(
     outbound.abort();
 }
 
-async fn game() {}
+// need a REST endpoint for game creation
+// to create a game, you must have a platform key
+
+// permission enforcement,
+// input executions,
+// live client updates,
+// and engine process management
+async fn game() {
+    // if there is more than one file descriptor in the channel, just replace it.
+    // if its not replaced, the coordinator will receive a stale file descriptor before receiving
+    // the correct one and may behave oddly.
+    let (fd_in, fd_out) = watch::channel::<Option<(ChildStdin, ChildStdout)>>(None);
+
+    let process_supervisor = tokio::spawn(async move {
+        loop {
+            let mut child = tokio::process::Command::new(
+                current_exe()
+                    .expect("failed to get current exe")
+                    .parent()
+                    .expect("failed to get parent path")
+                    .join(format!("lawliet-runtime{}", std::env::consts::EXE_SUFFIX)),
+            )
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("failed to boot lawliet runtime");
+
+            if fd_in
+                .send(Some((
+                    child.stdin.take().unwrap(),
+                    child.stdout.take().unwrap(),
+                )))
+                .is_err()
+            {
+                break;
+            }
+
+            let _ = child.wait().await;
+        }
+    });
+
+    // only one action can be processed at a time, and this means that the two tasks (read + write)
+    // are coupled by nature and should not be run in parallel. you cannot execute multiple things
+    // at a time.
+    // however, multiple inputs may be waiting in the queue at any given time.
+    //
+    // if receiving a new set of file descriptors while an input is in flight, and that input is an
+    // engine level mechanism, it means that the input most likely triggered a crash, and so they should receive
+    // an engine crashed response. if they didnt trigger a crash, it was likely some kind of freak
+    // incident out of our control.
+    //
+    // batches are sent on a best effort basis. if a client's outbox is full, the client is cut. the
+    // alternatives are potentially unboundedly growing memory, or having the client lose mandatory
+    // info.
+    let coordinator = tokio::spawn(async { loop {} });
+
+    let _ = join!(process_supervisor, coordinator);
+}

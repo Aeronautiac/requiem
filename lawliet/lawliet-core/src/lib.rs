@@ -156,8 +156,6 @@ pub use common::{
 // enums, and using smallvec when possible
 
 // TODO:
-// - Test personal channels
-//  * players should be allowed to change the loggable status of these channels
 // - Test prosecution system
 // - Test org channels
 //  * orgs get their own private channel
