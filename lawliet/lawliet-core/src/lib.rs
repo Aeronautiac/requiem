@@ -98,8 +98,10 @@
 * --- yagami (external) ---
 * yagami is the central server. it handles the platform/auth as well as hosting multiple lawliet
 * instances and communicates via IPC. it acts as persistence and routing layer to different clients.
-* game state is never snapshotted — it is reconstructed from a saved action log. action buffers
-* are flushed to postgres on timer, significant action, or full buffer. multithreaded process.
+* game state is never snapshotted — it is reconstructed by replaying a durable action log, which is
+* the source of truth. persistence is write-ahead: an action is appended to the log (idempotent by
+* sequence) and made durable BEFORE its result is acked/broadcast, so a crash can lose only an
+* un-acked (therefore retryable) action, never confirmed state. multithreaded process.
 * in the case that a frontend requires another server layer, the server may present itself as an
 * authoritative client to yagami and relay to its sub-clients.
 *
