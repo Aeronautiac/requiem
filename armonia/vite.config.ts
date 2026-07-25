@@ -8,7 +8,14 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig({
   plugins: [svelte(), tailwindcss()],
   resolve: {
-    alias: { $lib: path.resolve("./src/lib") },
+    alias: {
+      // amane is the client core, consumed as a library. Imports only ever go
+      // armonia -> amane; nothing in amane may reach back into armonia.
+      amane: path.resolve("../amane"),
+      // $lib is amane's OWN internal convention (its shadcn primitives import
+      // $lib/utils), so it has to resolve inside amane, not into armonia's src.
+      $lib: path.resolve("../amane/lib"),
+    },
   },
   clearScreen: false,
   server: {
