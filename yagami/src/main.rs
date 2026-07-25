@@ -23,7 +23,9 @@ use axum::{
 use enumflags2::{BitFlags, bitflags};
 use futures_util::{SinkExt, StreamExt};
 use lawliet_types::{
-    action::{Action, ActionActor, ActionError, ActionRequest, ActionResponse, InitializeEngine},
+    action::{
+        Action, ActionActor, ActionError, ActionRequest, ActionResponse, InitializeEngine, Null,
+    },
     command::{CommandPayload, CommandRecipient},
     common::{ActorKey, Seed, Time},
     engine::ExecutionResult,
@@ -35,14 +37,14 @@ use tokio::{
     process::{ChildStdin, ChildStdout},
     select,
     sync::mpsc::{self},
-    time::{Instant, interval, sleep, sleep_until, timeout},
+    time::{Instant, MissedTickBehavior, interval, sleep, sleep_until, timeout},
 };
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
 
 use crate::constants::{
-    ENGINE_TIMEOUT, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, OUTBOX_BUF_SIZE, TICKET_LIMIT,
-    TICKET_TIMEOUT,
+    ENGINE_TIMEOUT, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, NULL_TICK_INTERVAL, OUTBOX_BUF_SIZE,
+    TICKET_LIMIT, TICKET_TIMEOUT,
 };
 
 fn req(key: &str) -> Result<String, String> {
@@ -218,9 +220,14 @@ struct InputEnvelope {
 // the action the engine is currently working on.
 struct InFlight {
     // who is waiting on it. `None` for actions the server issues on its own behalf -- engine
-    // initialization -- which have no originating connection to reply to. their commands are still
-    // logged and fanned out like any other; only the reply has nowhere to go.
+    // initialization, null ticks -- which have no originating connection to reply to. their commands
+    // are still logged and fanned out like any other; only the reply has nowhere to go.
     ticket: Option<Ticket>,
+    // whether to append this to the action log on success, and so replay it into a rebuilt child.
+    // false for null ticks: a tick carries no intent of its own, it only asks the engine to catch up
+    // to the clock, so a rebuilt child reaches the same state from the real actions alone. logging
+    // them would grow the log without bound for a game where nothing happens.
+    logged: bool,
     request: ActionRequest,
 }
 
@@ -1327,7 +1334,7 @@ async fn game(
         let mut stdout: Option<Lines<BufReader<ChildStdout>>> = None;
 
         // every action the engine accepted, in order. the source of truth for rebuilding a fresh
-        // child, and what gets persisted at L1.
+        // child, and what a persistent log would store.
         let mut accepted: Vec<ActionRequest> = vec![];
         // every command ever emitted, in emission order. "per-recipient logs" are a FILTER over this,
         // not separate storage -- one log is what keeps cross-recipient order intact for free.
@@ -1346,6 +1353,12 @@ async fn game(
         // would make every crash silently fork the game's randomness.
         let seed = generate_seed();
 
+        // Delay rather than the default Burst: if the coordinator was busy through several tick
+        // periods, firing all of them back-to-back is pure waste. a tick catches the engine up to
+        // NOW, so one late tick does everything the missed ones would have.
+        let mut tick = interval(Duration::from_secs(NULL_TICK_INTERVAL));
+        tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
         loop {
             tokio::select! {
                 // crash or initial boot — resaturate the new child with everything it accepted before
@@ -1362,7 +1375,7 @@ async fn game(
                     // an action that was in flight when the pipe died is the prime suspect for having
                     // killed it, so it is NOT added to `accepted` and never replayed. its originator
                     // is told, rather than left waiting on a reply that will never come.
-                    if let Some(InFlight { ticket, request }) = in_flight.take() {
+                    if let Some(InFlight { ticket, request, .. }) = in_flight.take() {
                         crashed(&state, game_id, &born, log.len(), ticket, request);
                     }
 
@@ -1403,7 +1416,7 @@ async fn game(
                         if stdin.as_mut().unwrap().write_all(line.as_bytes()).await.is_err() {
                             stdin = None;
                         } else {
-                            in_flight = Some(InFlight { ticket: None, request });
+                            in_flight = Some(InFlight { ticket: None, logged: true, request });
                         }
                     }
                 }
@@ -1479,7 +1492,7 @@ async fn game(
                         let pair = ResponsePair { input: ServerInput::Action(request), output: ExecOutcome::Action(ActionOutcome::Crashed) };
                         dispatch(&state, game_id, &born, &[], log.len(), Some((ticket, pair)));
                     } else {
-                        in_flight = Some(InFlight { ticket: Some(ticket), request });
+                        in_flight = Some(InFlight { ticket: Some(ticket), logged: true, request });
                     }
                 }
 
@@ -1512,7 +1525,7 @@ async fn game(
                         continue;
                     }
 
-                    let Some(InFlight { ticket, request }) = in_flight.take() else {
+                    let Some(InFlight { ticket, logged, request }) = in_flight.take() else {
                         // the engine spoke with nothing owed. there is no good response available:
                         // aborting punishes every other game on the box for one child's weirdness,
                         // and rebooting would just reproduce whatever caused it.
@@ -1522,7 +1535,13 @@ async fn game(
 
                     let (output, commands) = match result {
                         Ok((response, context)) => {
-                            accepted.push(request.clone());
+                            // a null tick is not logged: it asks the engine to catch up to the clock
+                            // and carries no intent a rebuilt child would need replayed. its COMMANDS
+                            // are logged and fanned out like anything else -- what the catchup
+                            // actually did is real state, and a client reconnecting must still see it.
+                            if logged {
+                                accepted.push(request.clone());
+                            }
                             (ActionOutcome::Ok(response), context.commands)
                         }
                         // a rejected action changed nothing of its own, so it is not replayed. it can
@@ -1556,12 +1575,51 @@ async fn game(
                     dispatch(&state, game_id, &born, &log[at..], at, reply);
                 }
 
+                // drive time forward. the engine only advances when an action arrives, so without
+                // this nothing time-based ever happens: a scheduled kill, a poll timeout, a
+                // prosecution phase or a release would all sit in the job queue until some player
+                // happened to act. this is what makes them land on the clock instead.
+                //
+                // a Null action is the right instrument precisely because it does nothing itself.
+                // execute() runs the job queue for everything up to its timestamp before the action,
+                // and ActionExt::execute runs Update (polls, prosecutions, deferred-command flush)
+                // after every action regardless -- so an empty action collects all of it. sending
+                // Update explicitly would just run that sweep twice.
+                _ = tick.tick(), if stdin.is_some() && in_flight.is_none() => {
+                    // nobody is watching, so there is nothing to deliver. skipping keeps an idle game
+                    // from waking its engine every few seconds forever; the jobs are not lost, they
+                    // run on the catchup of whichever action or tick comes next.
+                    let watched = {
+                        let server_state = lock_state(&state);
+                        server_state.games.get(&game_id).is_some_and(|game| {
+                            game.connections.values().any(|conn| !conn.dropped)
+                        })
+                    };
+                    if !watched {
+                        continue;
+                    }
+
+                    let request = ActionRequest {
+                        actor: ActionActor::System,
+                        timestamp: now(),
+                        payload: Action::Null(Null {}),
+                    };
+
+                    let line = to_line(&request);
+                    if stdin.as_mut().unwrap().write_all(line.as_bytes()).await.is_err() {
+                        stdin = None;
+                        let _ = kill_in.try_send(());
+                    } else {
+                        in_flight = Some(InFlight { ticket: None, logged: false, request });
+                    }
+                }
+
                 // the engine owes us a line and has not produced one. treat it exactly as a crash --
                 // the only difference is that a hang never announces itself, so we have to notice.
                 _ = async { sleep_until(deadline.unwrap()).await }, if deadline.is_some() => {
                     // reply here rather than leaving it to the fd arm: clearing in_flight now is what
                     // stops the watchdog re-arming and firing a second kill before the child is gone.
-                    if let Some(InFlight { ticket, request }) = in_flight.take() {
+                    if let Some(InFlight { ticket, request, .. }) = in_flight.take() {
                         crashed(&state, game_id, &born, log.len(), ticket, request);
                     }
 

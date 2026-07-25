@@ -7,3 +7,7 @@ pub const HEARTBEAT_INTERVAL: u64 = 2; // seconds; send task pings this often --
 // hung and having it killed. an action is single-digit milliseconds of work, so this only has to
 // clear the worst plausible catchup burst -- not be a performance budget.
 pub const ENGINE_TIMEOUT: u64 = 5;
+// seconds between null ticks. this is the resolution at which time-driven game state (scheduled
+// kills, poll timeouts, prosecution phases, releases) actually reaches players, so it is a
+// gameplay-visible latency, not just a housekeeping interval.
+pub const NULL_TICK_INTERVAL: u64 = 5;
