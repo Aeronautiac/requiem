@@ -2,6 +2,7 @@
 // an intentional surface, so dead code is allowed module-wide rather than per item.
 #![allow(dead_code)]
 
+use indexmap::IndexSet;
 use lawliet_types::{action::ActionContext, command::CommandRecipient};
 
 use crate::{
@@ -9,17 +10,16 @@ use crate::{
     ability::Ability,
     action::{ActionActor, ActionError},
     actor::{
-        Actor, ActorLinkType, ActorType, Organization, Player,
-        modifier::{Modifier, Modifiers},
-        state::State,
+        Actor, ActorLinkType, ActorType, Organization, Player, modifier::Modifier, state::State,
     },
     bug::Bug,
     channel::Channel,
     chargepool::ChargePool,
-    command::{Command, CommandPayload, DeferredCommand},
+    command::Command,
     common::{
         AbilityKey, ActorKey, BugKey, ChannelKey, ChargePoolKey, GroupchatKey, IncarcerationKey,
         KidnappingKey, LoungeKey, NotebookKey, PassiveKey, PollKey, PollWeight, ProsecutionKey,
+        ViewportKey,
     },
     config::{
         ability::{AbilityConfig, AbilityIdentifier},
@@ -458,47 +458,193 @@ pub fn require_not_defendant(eng: &Engine, actor_id: ActorKey) -> Result<(), Act
     }
 }
 
-pub fn cmd_all_deferred(
+// Address a command to a channel. Most "who should see this" questions in the comms layer
+// reduce to this one, because notebooks, lounges, groupchats and orgs all hang off a backing
+// channel and inherit its answer.
+//
+// The mutate gate is not an optimization, it is the point. Resolving a recipient on the validate
+// pass is meaningless — push_cmd discards the command anyway — and actively dangerous, because
+// an action that creates a channel holds ChannelKey::default() on that pass and would "fail"
+// validation on a channel that only doesn't exist yet. That is the two-pass divergence hazard
+// the viewport design flagged, and keeping resolution behind the same gate as emission is what
+// closes it.
+//
+// Past that gate a missing channel has no benign reading, so it panics rather than dropping the
+// command. Returning quietly would leave every client short of state with nothing to show for
+// it at the point of failure — the engine's contract is to die on an inconsistent world and be
+// rebuilt from the action log.
+pub fn cmd_channel(
     eng: &mut Engine,
     ctx: &mut ActionContext,
     cmd: Command,
-    blocking_modifiers: Modifiers,
-    include_base: bool,
-    include_system: bool,
+    channel_id: ChannelKey,
+) {
+    if !ctx.mutate {
+        return;
+    }
+    let viewport = eng
+        .world
+        .get_channel(channel_id)
+        .expect("channel addressed by a command does not exist: engine invariant violated")
+        .viewport;
+    ctx.push_cmd(cmd, CommandRecipient::Viewport(viewport), eng.time);
+}
+
+// Where a view of something an ACTOR owns should be addressed.
+//
+// A player owns their abilities and passives alone, so it goes to them. An org's are seen by
+// everyone in the org — which is now just "everyone who can see the org's channel", so it goes
+// to that channel's viewport. Addressing an org actor directly was the old way of expressing
+// "everyone in this org"; nothing is attached to an org actor's stream any more, because no
+// client holds an org as a view.
+//
+// Callers must already be past their mutate gate: an org whose channel is missing is an
+// inconsistent world, same rule as cmd_channel.
+pub fn owner_view_recipient(eng: &Engine, owner_id: ActorKey) -> CommandRecipient {
+    match get_org(eng, owner_id) {
+        Ok(org) => CommandRecipient::Viewport(
+            get_channel(eng, org.channel_id)
+                .expect("org channel does not exist: engine invariant violated")
+                .viewport,
+        ),
+        Err(_) => CommandRecipient::Actor(owner_id),
+    }
+}
+
+// Grant an actor access to a viewport and announce it. No-ops if they already had access, so
+// callers may be as liberal as they like about calling it — but panics if the viewport is gone
+// (see World::viewport_grant). "Already a member" and "the viewport no longer exists" are
+// different answers and only the first one is benign.
+pub fn grant_viewport(
+    eng: &mut Engine,
+    ctx: &mut ActionContext,
+    viewport: ViewportKey,
+    actor: ActorKey,
     mutate: bool,
 ) {
-    // Queuing deferred commands mutates engine state, so it must only happen on the
-    // execute pass. Without the mutate gate the validate pass queues them too, and
-    // every deferred command ends up delivered twice.
-    if mutate {
-        let player_ids: Vec<ActorKey> = eng
-            .world
-            .actors
-            .iter()
-            .filter_map(|(id, actor)| {
-                matches!(actor.actor_type, ActorType::Player(_)).then_some(id)
-            })
-            .collect();
-        for id in player_ids {
-            let payload = CommandPayload {
-                timestamp: eng.time,
-                recipient: CommandRecipient::Actor(id),
-                cmd: cmd.clone(),
-            };
-            let def_cmd = DeferredCommand {
-                payload: payload.clone(),
-                blocking_modifiers,
-            };
-            eng.deferred_commands.push(def_cmd);
-        }
+    if !mutate {
+        return;
     }
-    // System (admin) receives the event immediately and unredacted: admin isn't
-    // subject to per-player blocking, so this is not deferred. Kept separate from
-    // include_base so a deceptive event can be fed to players while admin sees truth.
-    if include_system {
-        ctx.push_cmd(cmd.clone(), CommandRecipient::System, eng.time);
+    let Some(kind) = eng.world.viewport_grant(viewport, actor) else {
+        return;
+    };
+    ctx.push_cmd(
+        Command::EnterViewport {
+            viewport,
+            actor,
+            kind,
+        },
+        CommandRecipient::Actor(actor),
+        eng.time,
+    );
+}
+
+// Revoke an actor's access and announce it. Nothing already delivered is retracted — this only
+// stops what comes next.
+pub fn revoke_viewport(
+    eng: &mut Engine,
+    ctx: &mut ActionContext,
+    viewport: ViewportKey,
+    actor: ActorKey,
+    mutate: bool,
+) {
+    if !mutate {
+        return;
     }
-    if include_base {
-        ctx.push_cmd(cmd, CommandRecipient::BasePlayer, eng.time);
+    if !eng.world.viewport_revoke(viewport, actor) {
+        return;
     }
+    ctx.push_cmd(
+        Command::ExitViewport { viewport, actor },
+        CommandRecipient::Actor(actor),
+        eng.time,
+    );
+}
+
+// Point a viewport at a freshly computed membership set, announcing only genuine transitions.
+// For visibility rules evaluated by recomputing the whole answer rather than by delta. Panics
+// if the viewport is gone (see World::viewport_grant); note that teardown paths must sync the
+// membership to empty BEFORE freeing the viewport, never after.
+pub fn sync_viewport(
+    eng: &mut Engine,
+    ctx: &mut ActionContext,
+    viewport: ViewportKey,
+    members: IndexSet<ActorKey>,
+    mutate: bool,
+) {
+    if !mutate {
+        return;
+    }
+    let kind = eng
+        .world
+        .get_viewport(viewport)
+        .expect("viewport does not exist: engine invariant violated")
+        .kind;
+    let diff = eng.world.viewport_set_members(viewport, members);
+    let time = eng.time;
+    for actor in diff.exited {
+        ctx.push_cmd(
+            Command::ExitViewport { viewport, actor },
+            CommandRecipient::Actor(actor),
+            time,
+        );
+    }
+    for actor in diff.entered {
+        ctx.push_cmd(
+            Command::EnterViewport {
+                viewport,
+                actor,
+                kind,
+            },
+            CommandRecipient::Actor(actor),
+            time,
+        );
+    }
+}
+
+// Resync the presence viewport: every player who currently has presence, and nobody else.
+//
+// This is the whole of what the deferred-command queue used to do. That queue held a copy of
+// every world event per absent player and re-tested `blocking_modifiers` on each flush; all
+// seven of its call sites blocked on Modifier::NoPresence, so presence was the only condition it
+// ever expressed. Membership of one viewport says the same thing, and re-entry backfills the
+// backlog in order instead of a queue replaying it.
+//
+// Call it wherever presence can change. That is exactly AddState, RemoveState and player
+// creation: modifiers are only ever written by add_state/remove_state, so nothing else can move
+// an actor across this line.
+pub fn sync_presence(eng: &mut Engine, ctx: &mut ActionContext, mutate: bool) {
+    if !mutate {
+        return;
+    }
+    let present: IndexSet<ActorKey> = eng
+        .world
+        .actors
+        .iter()
+        .filter_map(|(id, actor)| {
+            (matches!(actor.actor_type, ActorType::Player(_))
+                && !actor.has_modifier(Modifier::NoPresence))
+            .then_some(id)
+        })
+        .collect();
+    let viewport = eng.world.presence_viewport;
+    sync_viewport(eng, ctx, viewport, present, mutate);
+}
+
+// A world event: something that happened in the world at large, which anyone present learns
+// about. Addressed to the presence viewport, so a player who is absent simply isn't a member
+// and receives it (in order, with everything else they missed) when presence returns.
+//
+// There is deliberately NO separate System copy. Admin reads every viewport, so it already gets
+// this — and a mirror carrying different content would be actively worse than none: it would show
+// admin the truth INSTEAD of the deception, leaving them unable to see what the players were
+// actually told. Deception belongs in a second command carrying the truth, addressed to System,
+// so admin receives both and can see that they differ. One command, one meaning, as everywhere
+// else in this protocol.
+pub fn cmd_world_event(eng: &mut Engine, ctx: &mut ActionContext, cmd: Command) {
+    ctx.push_cmd(
+        cmd,
+        CommandRecipient::Viewport(eng.world.presence_viewport),
+        eng.time,
+    );
 }

@@ -13,7 +13,7 @@
   // real players), so they're kept out of the picker; Admin is offered separately below.
   const viewers = $derived(
     Array.from(game.views.keys())
-      .filter((k) => k !== "Base" && k !== "System")
+      .filter((k) => k !== "System")
       .sort((a, b) => parseInt(a) - parseInt(b)),
   );
 

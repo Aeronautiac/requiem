@@ -7,7 +7,7 @@
 * On execution:
 * - remove kidnapping record (before RemoveState so UpdateKidnapChannels sees it gone)
 * - RemoveState(victim, State::Kidnapped)
-* - DestroyChannel(channel, archive: true)
+* - DestroyChannel(channel)
 *
 * TODO: commands (reveal kidnapper identity if public kidnapping)
 */
@@ -17,11 +17,11 @@ use crate::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
         ActionResult, DestroyChannel, RemoveState,
     },
-    actor::{ActorDisplay, modifier::Modifier, state::State},
+    actor::{ActorDisplay, state::State},
     command::Command,
     common::Version,
     engine::Engine,
-    helpers::{actor_owns_ability, cmd_all_deferred, get_kidnapping},
+    helpers::{actor_owns_ability, cmd_world_event, get_kidnapping},
     kidnapping::{KidnappingSource, KidnappingType},
 };
 
@@ -56,11 +56,12 @@ impl ActionInterface for ReleaseKidnapping {
             eng.world.remove_kidnapping(self.kidnapping_id);
         }
 
-        Action::DestroyChannel(DestroyChannel {
-            channel_id,
-            archive: !self.forced,
-        })
-        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+        // A forced release used to hard-delete the kidnap channel, on the theory that it should
+        // never have existed. That is no longer expressible: whoever was in that channel has
+        // already seen what was said there, so the most the protocol can honestly do is mark it
+        // finished.
+        Action::DestroyChannel(DestroyChannel { channel_id })
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
         Action::RemoveState(RemoveState {
             actor_id: victim_id,
@@ -69,17 +70,13 @@ impl ActionInterface for ReleaseKidnapping {
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
         // Announce the reveal (references the kidnapping by id so clients resolve the victim).
-        cmd_all_deferred(
+        cmd_world_event(
             eng,
             ctx,
             Command::KidnapReveal {
                 kidnapping_id: self.kidnapping_id,
                 kidnapper,
             },
-            Modifier::NoPresence.into(),
-            true,
-            true,
-            mutate,
         );
 
         Ok(ActionResponse::ReleaseKidnapping(

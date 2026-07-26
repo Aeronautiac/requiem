@@ -15,4 +15,5 @@ pub mod passive;
 pub mod poll;
 pub mod prosecution;
 pub mod role;
+pub mod viewport;
 pub mod world;

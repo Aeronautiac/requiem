@@ -11,7 +11,7 @@ use crate::{
     },
     common::{ActorKey, Version},
     engine::Engine,
-    helpers::{get_actor_mut, get_charge_pool_mut},
+    helpers::{get_actor_mut, get_charge_pool_mut, sync_presence},
 };
 
 // true names must be unique
@@ -43,6 +43,14 @@ impl ActionInterface for AddPlayer {
 
         // player will only be physically created in the mutation path
         if mutate {
+            // A new player starts present, so they enter the presence viewport here — and
+            // because their watermark starts at zero, entry hands them every world event since
+            // the game began. That is what the BasePlayer stream existed for ("any player shall
+            // be fed these commands, even if created AFTER the command was sent"), and it now
+            // falls out of ordinary backfill with no separate stream and no born-position
+            // bookkeeping on the server.
+            sync_presence(eng, ctx, mutate);
+
             // add pools BEFORE giving abilities (the pools must exist beforehand)
             let pools = eng.config.player_config.charge_pools.clone();
             for (name, specifier) in pools {

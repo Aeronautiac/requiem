@@ -17,9 +17,9 @@
 // messages themselves are stored in the yagami layer database and sent to lawliet for processing if
 // required
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 
-use crate::common::ActorKey;
+use crate::common::{ActorKey, ViewportKey};
 
 pub use lawliet_types::channel::{ChannelMember, ChannelPermission, ChannelPermissions};
 
@@ -27,13 +27,19 @@ pub use lawliet_types::channel::{ChannelMember, ChannelPermission, ChannelPermis
 pub struct Channel {
     pub loggable: bool, // whether or not abilities like autopsy can use messages sent here
     pub members: IndexMap<ActorKey, ChannelMember>, // the people in the channel and their permissions
+    // Who this channel's content is addressed to. `members` above stays the authority on who is
+    // in the channel and with what permissions; the viewport is a projection of it, holding
+    // exactly the members with View. Never ask the viewport whether someone can see the
+    // channel — ask the channel.
+    pub viewport: ViewportKey,
 }
 
 impl Channel {
-    pub fn new(loggable: bool) -> Self {
+    pub fn new(loggable: bool, viewport: ViewportKey) -> Self {
         Channel {
             loggable,
             members: IndexMap::new(),
+            viewport,
         }
     }
 
@@ -43,6 +49,15 @@ impl Channel {
         } else {
             self.members.swap_remove(&id);
         }
+    }
+
+    // The membership its viewport should hold: everyone who may read the channel.
+    pub fn viewers(&self) -> IndexSet<ActorKey> {
+        self.members
+            .iter()
+            .filter(|(_, member)| member.perms.contains(ChannelPermission::View))
+            .map(|(id, _)| *id)
+            .collect()
     }
 
     pub fn get_member(&self, id: ActorKey) -> Option<&ChannelMember> {

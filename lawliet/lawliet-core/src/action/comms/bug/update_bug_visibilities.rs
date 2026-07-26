@@ -12,11 +12,7 @@
 // this can be optimized later, but just calling it in these cases massively simplifies things
 // without having to put it into the update action
 
-// TODO:
-// still need to sort out the case where a bug is deleted
-// when a bug is deleted, the frontend should delete it too
-
-use lawliet_types::command::CommandRecipient;
+use indexmap::IndexSet;
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
@@ -24,8 +20,8 @@ use crate::{
     action::{ActionInterface, ActionResponse},
     actor::{ActorType, modifier::Modifier},
     bug::BugSource,
-    command::Command,
-    helpers::{actor_get_effective_passive, get_ability, get_actor},
+    common::{BugKey, ViewportKey},
+    helpers::{actor_get_effective_passive, get_ability, get_actor, sync_viewport},
     passive::PassiveType,
 };
 
@@ -39,7 +35,7 @@ impl ActionInterface for UpdateBugVisibilities {
         ctx: &mut crate::action::ActionContext,
         actor: &ActionActor,
         _version: crate::common::Version,
-        _mutate: bool,
+        mutate: bool,
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;
 
@@ -57,42 +53,35 @@ impl ActionInterface for UpdateBugVisibilities {
             }
         }
 
-        for (key, bug) in &eng.world.bugs {
-            ctx.push_cmd(
-                Command::ClearBugVisibily { bug_id: key },
-                CommandRecipient::System,
-                eng.time,
-            );
+        // Compute every bug's viewers first, then apply. Applying inline is not an option:
+        // sync_viewport needs &mut Engine, and the iteration is borrowing the bug map.
+        let bugs: SmallVec<[BugKey; 16]> = eng.world.bugs.keys().collect();
+        let mut resolved: SmallVec<[(ViewportKey, IndexSet<ActorKey>); 16]> = smallvec![];
+        for key in bugs {
+            let bug = eng.world.get_bug(key).expect("just enumerated");
+            let viewport = bug.viewport;
+            let mut viewers = IndexSet::new();
             match &bug.source {
                 BugSource::Ability(ability_id) => {
                     let ability = get_ability(eng, *ability_id)?;
-                    if let Some(owner) = ability.ownership_struct.owner {
-                        let actor = get_actor(eng, owner)?;
-                        if !actor.has_modifier(Modifier::NoPresence) {
-                            ctx.push_cmd(
-                                Command::SetBugVisibility {
-                                    bug_id: key,
-                                    visible: true,
-                                },
-                                CommandRecipient::Actor(owner),
-                                eng.time,
-                            );
-                        }
+                    if let Some(owner) = ability.ownership_struct.owner
+                        && !get_actor(eng, owner)?.has_modifier(Modifier::NoPresence)
+                    {
+                        viewers.insert(owner);
                     }
                 }
-                BugSource::Custody => {
-                    for id in &custody_viewers {
-                        ctx.push_cmd(
-                            Command::SetBugVisibility {
-                                bug_id: key,
-                                visible: true,
-                            },
-                            CommandRecipient::Actor(*id),
-                            eng.time,
-                        );
-                    }
-                }
+                BugSource::Custody => viewers.extend(custody_viewers.iter().copied()),
             }
+            resolved.push((viewport, viewers));
+        }
+
+        // This whole action is a recompute-from-scratch, and it runs on every ability-ownership
+        // change, actor state change and bug creation. It used to emit a ClearBugVisibily for
+        // every bug in the world and then re-add whoever still qualified, whether or not
+        // anything had changed. The diff turns that back into the handful of commands that
+        // represent real access changes.
+        for (viewport, viewers) in resolved {
+            sync_viewport(eng, ctx, viewport, viewers, mutate);
         }
 
         Ok(ActionResponse::UpdateBugVisibilities(

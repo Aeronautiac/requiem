@@ -76,19 +76,13 @@ impl ActionInterface for TerminateProsecution {
         }
 
         if let Some(channel_id) = trial_channel {
-            Action::DestroyChannel(DestroyChannel {
-                channel_id,
-                archive: true,
-            })
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+            Action::DestroyChannel(DestroyChannel { channel_id })
+                .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         if let Some(channel_id) = lawyer_channel {
-            Action::DestroyChannel(DestroyChannel {
-                channel_id,
-                archive: true,
-            })
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+            Action::DestroyChannel(DestroyChannel { channel_id })
+                .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         Action::SetCustody(SetCustody {

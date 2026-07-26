@@ -4,11 +4,11 @@
 * everything prosecution-related consistent in one place:
 *   1. cull prosecutions whose invariants broke (may terminate + emit CloseProsecution)
 *   2. for every surviving prosecution: re-evaluate trial channel perms, then broadcast its
-*      client-facing snapshot (and sweep the dirty set for frozen-view notices)
+*      client-facing snapshot
 *
 * Because Update runs after every action (only on the execute pass), this also covers state
 * changes that aren't prosecution actions — e.g. a spectator gaining/losing presence re-runs the
-* channel eval and the freeze sweep without any prosecution-specific trigger.
+* channel eval without any prosecution-specific trigger.
 */
 
 use smallvec::SmallVec;

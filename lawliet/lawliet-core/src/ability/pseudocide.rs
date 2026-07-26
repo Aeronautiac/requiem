@@ -4,11 +4,10 @@ use crate::{
         Action, ActionActor, ActionContext, ActionInterface,
         actor::player::{kill::Kill, revive::Revive, schedule_revive::ScheduleRevive},
     },
-    actor::modifier::Modifier,
     command::Command,
     common::AbilityKey,
     config::ability::AbilityName,
-    helpers::cmd_all_deferred,
+    helpers::cmd_world_event,
 };
 
 pub use lawliet_types::ability::Pseudocide;
@@ -47,7 +46,7 @@ impl AbilityInterface for Pseudocide {
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
-        cmd_all_deferred(
+        cmd_world_event(
             eng,
             ctx,
             Command::Death {
@@ -58,10 +57,6 @@ impl AbilityInterface for Pseudocide {
                 notebook_transferred: self.notebook_transferred,
                 ability_transferred: self.ability_transferred,
             },
-            Modifier::NoPresence.into(),
-            true,
-            true,
-            mutate,
         );
 
         Ok(super::AbilityStatus::Success)

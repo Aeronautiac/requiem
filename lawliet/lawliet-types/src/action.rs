@@ -526,9 +526,10 @@ pub struct CreateChannel {
 pub struct DestroyChannelResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+// Tearing a channel down is always archival — nothing that was said in it can be un-said, so
+// there is no "really delete it" variant to select between.
 pub struct DestroyChannel {
     pub channel_id: ChannelKey,
-    pub archive: bool,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -651,12 +652,6 @@ pub struct UpdateContactChannels {
 // ////////////////////////////////////////////////
 // ENGINE //
 // ////////////////////////////////////////////////
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct DeferredCmdsResponse {}
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct DeferredCmds {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct NullResponse {}
@@ -1303,7 +1298,6 @@ pub enum Action {
     SetWorldChannelOverride(SetWorldChannelOverride),
     InitializeEngine(InitializeEngine),
     SetRandomSeed(SetRandomSeed),
-    DeferredCmds(DeferredCmds),
     UpdateBugVisibilities(UpdateBugVisibilities),
     ProsecutionVoteRes(ProsecutionVoteRes),
     CreateKidnapping(CreateKidnapping),
@@ -1415,7 +1409,6 @@ pub enum ActionResponse {
     SetWorldChannelOverride(SetWorldChannelOverrideResponse),
     InitializeEngine(InitializeEngineResponse),
     SetRandomSeed(SetRandomSeedResponse),
-    DeferredCmds(DeferredCmdsResponse),
     UpdateBugVisibilities(UpdateBugVisibilitiesResponse),
     ProsecutionVoteRes(ProsecutionVoteResResponse),
     CreateKidnapping(CreateKidnappingResponse),

@@ -14,11 +14,10 @@ use crate::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
         CreateKidnapping, ReleaseKidnapping, ScheduleJob,
     },
-    actor::modifier::Modifier,
     command::Command,
     common::Version,
     engine::Engine,
-    helpers::cmd_all_deferred,
+    helpers::cmd_world_event,
 };
 
 pub use crate::action::{Kidnap, KidnapResponse};
@@ -48,7 +47,7 @@ impl ActionInterface for Kidnap {
 
         // Announce the kidnapping (victim public from the start). NoPresence players don't
         // receive world events; System and Base see it unconditionally.
-        cmd_all_deferred(
+        cmd_world_event(
             eng,
             ctx,
             Command::Kidnapping {
@@ -56,10 +55,6 @@ impl ActionInterface for Kidnap {
                 target_id: self.victim_id,
                 duration: self.duration,
             },
-            Modifier::NoPresence.into(),
-            true,
-            true,
-            mutate,
         );
 
         if let Some(duration) = self.duration {

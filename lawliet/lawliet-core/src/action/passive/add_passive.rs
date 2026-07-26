@@ -8,6 +8,7 @@ use crate::{
     common::PassiveKey,
     ownership::OwnershipStruct,
     passive::Passive,
+    viewport::ViewportKind,
 };
 
 pub use crate::action::{AddPassive, AddPassiveResponse};
@@ -24,6 +25,7 @@ impl ActionInterface for AddPassive {
         actor.admin_or_system()?;
 
         let id = if mutate {
+            // The passive owns its viewport for its whole life; DestroyPassive frees it.
             let passive = Passive {
                 ownership_struct: OwnershipStruct {
                     owner: None,
@@ -31,6 +33,7 @@ impl ActionInterface for AddPassive {
                     volatile: false,
                 },
                 passive_type: self.passive_type,
+                viewport: eng.world.add_viewport(ViewportKind::Passive),
             };
             eng.world.add_passive(passive)
         } else {

@@ -9,7 +9,8 @@ use crate::{
     action::{ActionInterface, ActionResponse},
     channel::Channel,
     command::Command,
-    common::ChannelKey,
+    common::{ChannelKey, ViewportKey},
+    viewport::ViewportKind,
 };
 
 use crate::action::ActionActor;
@@ -26,21 +27,28 @@ impl ActionInterface for CreateChannel {
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;
 
-        let id = if mutate {
-            eng.world.add_channel(Channel::new(self.loggable))
+        // The channel owns its viewport for its whole life; DestroyChannel frees it. Both live
+        // in actions rather than World::add_channel/remove_channel so the allocation sits next
+        // to the `mutate` gate that governs it instead of inheriting it invisibly.
+        let (id, viewport) = if mutate {
+            let viewport = eng.world.add_viewport(ViewportKind::Channel);
+            (
+                eng.world.add_channel(Channel::new(self.loggable, viewport)),
+                viewport,
+            )
         } else {
-            ChannelKey::default()
+            (ChannelKey::default(), ViewportKey::default())
         };
 
-        // Announce the channel's initial loggability. The frontend stores this keyed by
-        // channel id independently of the Map* command that establishes the channel, so
-        // emission order relative to that Map doesn't matter.
+        // Announce the channel's initial loggability. Nobody has access to the viewport yet —
+        // this is addressed to it so the first member to enter is told, as part of their
+        // backfill, what the channel is.
         ctx.push_cmd(
             Command::SetChannelLoggable {
                 channel_id: id,
                 loggable: self.loggable,
             },
-            CommandRecipient::System,
+            CommandRecipient::Viewport(viewport),
             eng.time,
         );
 

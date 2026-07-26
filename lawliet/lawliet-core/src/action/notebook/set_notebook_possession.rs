@@ -5,7 +5,6 @@
 */
 
 use indexmap::indexset;
-use lawliet_types::command::CommandRecipient;
 
 use crate::{
     action::{
@@ -15,7 +14,7 @@ use crate::{
     actor::ActorDisplay,
     channel::{ChannelMember, ChannelPermission},
     command::Command,
-    helpers::{get_actor_mut, get_notebook},
+    helpers::{cmd_channel, get_actor_mut, get_notebook},
 };
 
 pub use crate::action::{SetNotebookPossession, SetNotebookPossessionResponse};
@@ -33,15 +32,17 @@ impl ActionInterface for SetNotebookPossession {
         let channel_id = notebook.channel_id;
 
         // Callers finalize the notebook's ownership fields before this action, so the borrow
-        // flag reflects the post-transfer state. Broadcast it so the notebook channel can show
-        // whether the book is currently on loan.
-        ctx.push_cmd(
+        // flag reflects the post-transfer state. Addressed to the notebook's channel, which is
+        // where it is shown and who is entitled to know.
+        let borrowed = notebook.borrowed.is_some();
+        cmd_channel(
+            eng,
+            ctx,
             Command::NotebookBorrowingStatus {
                 notebook_id: self.notebook_id,
-                borrowed: notebook.borrowed.is_some(),
+                borrowed,
             },
-            CommandRecipient::System,
-            eng.time,
+            channel_id,
         );
 
         if let Some(from) = self.from {

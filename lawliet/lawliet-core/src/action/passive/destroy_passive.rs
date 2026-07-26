@@ -3,12 +3,11 @@
 * Fully destroy a passive: remove from the owning actor's cache, then remove from the world.
 */
 
-use lawliet_types::command::CommandRecipient;
 
 use crate::{
     action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     command::Command,
-    helpers::{get_actor, get_actor_mut, get_passive},
+    helpers::{get_actor, get_actor_mut, get_passive, owner_view_recipient},
 };
 
 pub use crate::action::{DestroyPassive, DestroyPassiveResponse};
@@ -26,6 +25,7 @@ impl ActionInterface for DestroyPassive {
 
         let passive = get_passive(eng, self.passive_id)?;
         let owner = passive.ownership_struct.owner;
+        let viewport = passive.viewport;
 
         if let Some(owner_id) = owner {
             get_actor(eng, owner_id)?;
@@ -41,11 +41,14 @@ impl ActionInterface for DestroyPassive {
                     Command::RemovePassive {
                         passive_id: self.passive_id,
                     },
-                    CommandRecipient::Actor(owner_id),
+                    owner_view_recipient(eng, owner_id),
                     eng.time,
                 );
             }
             eng.world.remove_passive(self.passive_id);
+            // Freed here even though nothing has ever been addressed to it, so the lifetime is
+            // already correct when contact logs arrive. It is empty, so there is nobody to exit.
+            eng.world.remove_viewport(viewport);
         }
 
         Ok(ActionResponse::DestroyPassive(DestroyPassiveResponse {}))

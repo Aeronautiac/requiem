@@ -24,7 +24,7 @@ import type {
   ServerOutput,
 } from "./bindings";
 import { slotKeyToString } from "./bindings";
-import { actorLabel, GameState, phaseViewEqual, recipientToView } from "./game_state.svelte";
+import { actorLabel, GameState, phaseViewEqual } from "./game_state.svelte";
 import { UiState } from "./ui_state.svelte";
 
 export const CLIENT_KEY = Symbol("client");
@@ -73,12 +73,34 @@ export class ClientState {
   constructor(connection: GameConnection, host: HostContext) {
     this.connection = connection;
     this.host = host;
-    connection.onBatch((batch: ServerOutput) =>
+    connection.onBatch((batch: ServerOutput) => this.#ingest(batch));
+  }
+
+  // A batch that throws mid-apply is unrecoverable and must say so.
+  //
+  // There is no continuing past it. Client state is cumulative — every command assumes its
+  // predecessors landed — so a half-applied batch has already corrupted the state, and running
+  // the next one on top would trade a visible failure for a silent wrong one. The Sequencer
+  // agrees by construction: it does not advance its counter past a unit that threw, so the gap
+  // never fills and nothing is ever applied again.
+  //
+  // What was missing is only that any of this was VISIBLE. The handler is invoked from a
+  // promise continuation, so the throw became an unhandled rejection: the pipe stopped, the UI
+  // quietly stopped updating, and anything awaiting a reply waited forever. Catching it here
+  // settles those waiters and puts the client into an explicit desynced state. Recovery is a
+  // reconnect, which replays the log from the start into fresh state.
+  #ingest(batch: ServerOutput) {
+    try {
       this.#seq.ingest({
         seq: batch.seq_num,
         run: () => this.#apply_batch(batch.data.Batch),
-      }),
-    );
+      });
+    } catch (error) {
+      console.error("failed to apply batch", batch.seq_num, error);
+      this.abandon(
+        "The client lost track of the game state and cannot continue. Please reconnect.",
+      );
+    }
   }
 
   // Apply one batch as a single ordered step: commands first, then the reply if this batch
@@ -170,9 +192,13 @@ export class ClientState {
   // selected viewer is `ui.viewer` ("Admin" selects the System view). Best-effort UX: failure
   // is swallowed inside the router.
   notify(recipient: CommandRecipient, title: string, body: string): void {
-    const selected = this.ui.viewer === "Admin" ? "System" : this.ui.viewer;
-    if (recipientToView(recipient) !== selected) return;
+    if (!this.game.view_receives(recipient, this.#selected_view())) return;
     void this.host.notify({ title, body });
+  }
+
+  // The view the user is currently looking at. "Admin" selects the System view.
+  #selected_view(): string {
+    return this.ui.viewer === "Admin" ? "System" : this.ui.viewer;
   }
 
   quit(): void {
@@ -215,7 +241,9 @@ export class ClientState {
       // Prosecution is frontend-derived: toast on the same condition game_state emits a news event
       // — a new prosecution or a phase change. Runs before apply, so `prev` is the old snapshot.
       const up = cmd.UpdateProsecution;
-      const view = this.game.views.get(recipientToView(recipient) ?? "");
+      // Diffed against the SELECTED view, since that is the only one that can toast anyway;
+      // notify() then re-checks that the view actually receives this command.
+      const view = this.game.views.get(this.#selected_view());
       const prev = view?.prosecutions.get(slotKeyToString(up.prosecution_id));
       if (view && (!prev || !phaseViewEqual(prev.phase, up.phase))) {
         this.notify(recipient, "Prosecution", this.#prosecution_text(up.prosecutor_display, up.defendant_display, up.phase, false));
@@ -223,7 +251,7 @@ export class ClientState {
     } else if ("CloseProsecution" in cmd) {
       // Only toast if this view knew the prosecution; use its last-held displays/phase.
       const prev = this.game.views
-        .get(recipientToView(recipient) ?? "")
+        .get(this.#selected_view())
         ?.prosecutions.get(slotKeyToString(cmd.CloseProsecution.prosecution_id));
       if (prev) {
         this.notify(recipient, "Prosecution Ended", this.#prosecution_text(prev.prosecutor_display, prev.defendant_display, prev.phase, true));

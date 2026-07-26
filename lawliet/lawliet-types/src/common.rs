@@ -14,6 +14,7 @@ new_key_type! {
     pub struct ProsecutionKey;
     pub struct KidnappingKey;
     pub struct IncarcerationKey;
+    pub struct ViewportKey;
 }
 
 

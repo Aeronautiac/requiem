@@ -3,14 +3,13 @@
 * Transfer ownership of an ability to a specified actor and then reset links
 */
 
-use lawliet_types::command::CommandRecipient;
 
 use crate::{
     action::{
         ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse, ActionResult,
     },
     command::Command,
-    helpers::{get_actor, get_actor_mut, get_passive, get_passive_mut},
+    helpers::{get_actor, get_actor_mut, get_passive, get_passive_mut, owner_view_recipient},
 };
 
 pub use crate::action::{GivePassive, GivePassiveResponse};
@@ -56,7 +55,7 @@ impl ActionInterface for GivePassive {
                     Command::RemovePassive {
                         passive_id: self.passive_id,
                     },
-                    CommandRecipient::Actor(owner),
+                    owner_view_recipient(eng, owner),
                     eng.time,
                 );
             }
@@ -66,7 +65,7 @@ impl ActionInterface for GivePassive {
                     passive_id: self.passive_id,
                     owner_id: self.actor_id,
                 },
-                CommandRecipient::Actor(self.actor_id),
+                owner_view_recipient(eng, self.actor_id),
                 eng.time,
             );
         }

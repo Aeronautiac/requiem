@@ -8,7 +8,7 @@ use lawliet_types::{
     action::{SetMember, UpdateContactChannels},
     actor::ActorDisplay,
     channel::{ChannelMember, ChannelPermissions},
-    command::{Command, CommandRecipient},
+    command::Command,
 };
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
         Action, ActionError, ActionInterface, ActionResponse, ChangeOrgLeader, UpdateKidnapChannels,
     },
     actor::{ActorLink, ActorLinkType},
-    helpers::{get_actor_mut, get_org_mut, get_player, get_player_mut},
+    helpers::{cmd_channel, get_actor_mut, get_org, get_org_mut, get_player, get_player_mut},
 };
 
 use crate::action::ActionActor;
@@ -69,16 +69,18 @@ impl ActionInterface for AddToOrg {
             player_data.orgs.insert(self.org_id);
         }
 
-        // Surface the org membership. The org member list is the same for everyone right
-        // now, so this is undirected (System); the frontend keys it by org_id. This is the
-        // org member list, distinct from the org channel's member list (SetMember below).
-        ctx.push_cmd(
+        // Surface the org membership, addressed to the org's backing channel: who may see an
+        // org's roster is exactly who may see the org's channel. This is the org member list,
+        // distinct from the org channel's member list (SetMember below).
+        let org_channel = get_org(eng, self.org_id)?.channel_id;
+        cmd_channel(
+            eng,
+            ctx,
             Command::AddOrgMember {
                 player_id: self.actor_id,
                 org_id: self.org_id,
             },
-            CommandRecipient::System,
-            eng.time,
+            org_channel,
         );
 
         Action::SetMember(SetMember {

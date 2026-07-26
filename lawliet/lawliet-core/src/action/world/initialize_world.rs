@@ -3,14 +3,14 @@
 * Initialize any necessary world state
 */
 
-use lawliet_types::command::{Command, CommandRecipient};
+use lawliet_types::command::Command;
 
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
         AddChargePool, CreateChannel, CreateOrgs,
     },
-    helpers::get_charge_pool_mut,
+    helpers::{cmd_channel, get_charge_pool_mut},
 };
 
 pub use crate::action::{InitializeWorld, InitializeWorldResponse};
@@ -60,13 +60,14 @@ impl ActionInterface for InitializeWorld {
                 let channel_id = data.id;
                 eng.world.world_channel_map.insert(name, channel_id);
 
-                ctx.push_cmd(
+                cmd_channel(
+                    eng,
+                    ctx,
                     Command::MapWorldChannel {
                         channel_id,
                         channel_name: name,
                     },
-                    CommandRecipient::System,
-                    eng.time,
+                    channel_id,
                 );
             }
         }

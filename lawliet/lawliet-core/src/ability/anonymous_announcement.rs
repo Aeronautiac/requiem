@@ -1,6 +1,6 @@
 use crate::{
-    ability::AbilityInterface, action::ActionContext, actor::modifier::Modifier, command::Command,
-    common::AbilityKey, config::ability::AbilityName, helpers::cmd_all_deferred,
+    ability::AbilityInterface, action::ActionContext, command::Command,
+    common::AbilityKey, config::ability::AbilityName, helpers::cmd_world_event,
 };
 pub use lawliet_types::ability::AnonymousAnnouncement;
 
@@ -16,18 +16,14 @@ impl AbilityInterface for AnonymousAnnouncement {
         _: &crate::action::ActionActor,
         _: AbilityKey,
         _: u8,
-        mutate: bool,
+        _mutate: bool,
     ) -> super::AbilityResult {
-        cmd_all_deferred(
+        cmd_world_event(
             eng,
             ctx,
             Command::AnonymousAnnouncement {
                 content: self.content.clone(),
             },
-            Modifier::NoPresence.into(),
-            true,
-            true,
-            mutate,
         );
 
         Ok(super::AbilityStatus::Success)

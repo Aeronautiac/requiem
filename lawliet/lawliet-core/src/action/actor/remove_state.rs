@@ -11,7 +11,7 @@ use crate::{
     },
     common::Version,
     engine::Engine,
-    helpers::{get_actor_mut, get_player},
+    helpers::{get_actor_mut, get_player, sync_presence},
 };
 
 pub use crate::action::{RemoveState, RemoveStateResponse};
@@ -43,6 +43,11 @@ impl ActionInterface for RemoveState {
             })
             .handle(eng, ctx, actor, version, mutate)?;
         }
+
+        // See AddState. Regaining presence enters the viewport, and entry backfills every world
+        // event that happened while the player was gone, in order — which is what the deferred
+        // queue used to replay on release.
+        sync_presence(eng, ctx, mutate);
 
         Action::UpdateBugVisibilities(UpdateBugVisibilities {})
             .handle(eng, ctx, actor, version, mutate)?;

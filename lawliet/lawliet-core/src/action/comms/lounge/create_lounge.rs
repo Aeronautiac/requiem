@@ -8,7 +8,7 @@
 */
 
 use indexmap::{IndexSet, indexset};
-use lawliet_types::{command::CommandRecipient, lounge::AnonymousLoungeRoleDisplay};
+use lawliet_types::lounge::AnonymousLoungeRoleDisplay;
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
@@ -19,7 +19,7 @@ use crate::{
     channel::{ChannelMember, ChannelPermissions},
     command::Command,
     common::{ActorKey, LoungeKey},
-    helpers::{get_player, get_player_mut},
+    helpers::{cmd_channel, get_player, get_player_mut},
     lounge::{Lounge, LoungeVariant},
     world::ContactChannel,
 };
@@ -141,14 +141,15 @@ impl ActionInterface for CreateLounge {
                 })
                 .handle(eng, ctx, actor, version, mutate)?;
 
-                ctx.push_cmd(
+                cmd_channel(
+                    eng,
+                    ctx,
                     Command::MapLounge {
                         lounge_id,
                         channel_id,
                         contact_id,
                     },
-                    CommandRecipient::System,
-                    eng.time,
+                    channel_id,
                 );
             }
 

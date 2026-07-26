@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use indexmap::{IndexMap, map::Entry};
+use indexmap::{IndexMap, IndexSet, map::Entry};
 use lawliet_types::common::{ID, IterationCount};
 use slotmap::SlotMap;
 
@@ -12,7 +12,7 @@ use crate::{
     chargepool::ChargePool,
     common::{
         AbilityKey, ActorKey, BugKey, ChannelKey, ChargePoolKey, GroupchatKey, IncarcerationKey,
-        KidnappingKey, LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey,
+        KidnappingKey, LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey, ViewportKey,
     },
     config::{
         actor::organization::OrganizationName,
@@ -27,12 +27,16 @@ use crate::{
     passive::Passive,
     poll::Poll,
     prosecution::Prosecution,
+    viewport::{MembershipDiff, Viewport, ViewportKind},
 };
 
 #[derive(Debug)]
 pub enum WorldError {
     DuplicateName,
 }
+
+const MISSING_VIEWPORT: &str =
+    "viewport does not exist: engine invariant violated (an object outlived its viewport)";
 
 #[derive(Debug)]
 pub enum ContactChannel {
@@ -62,11 +66,21 @@ pub struct World {
     pub curr_iteration: IterationCount,
     pub contact_channels: IndexMap<ID, ContactChannel>,
     pub contact_channel_id: ID,
+    pub viewports: SlotMap<ViewportKey, Viewport>,
+    // The world-level singleton every present player has access to; world events are addressed
+    // here. Unlike every other viewport this one is not owned by an action, because it is not
+    // owned by any object — it comes into existence with the world and outlives everything in
+    // it, so there is no lifetime for an action to get wrong.
+    pub presence_viewport: ViewportKey,
 }
 
 impl World {
     pub fn new() -> Self {
+        let mut viewports = SlotMap::with_key();
+        let presence_viewport = viewports.insert(Viewport::new(ViewportKind::Presence));
         World {
+            viewports,
+            presence_viewport,
             curr_iteration: 0,
             blackout: false,
             actors: SlotMap::with_key(),
@@ -88,6 +102,60 @@ impl World {
             contact_channels: IndexMap::new(),
             contact_channel_id: 0,
         }
+    }
+
+    // Plumbing only. WHEN a viewport is allocated or freed is the owning action's decision (see
+    // the viewport module); these are the slotmap operations that decision reaches for.
+    pub fn add_viewport(&mut self, kind: ViewportKind) -> ViewportKey {
+        self.viewports.insert(Viewport::new(kind))
+    }
+
+    pub fn remove_viewport(&mut self, id: ViewportKey) {
+        debug_assert!(
+            id != self.presence_viewport,
+            "the presence viewport outlives the world's contents and must never be freed"
+        );
+        self.viewports.remove(id);
+    }
+
+    pub fn get_viewport(&self, id: ViewportKey) -> Option<&Viewport> {
+        self.viewports.get(id)
+    }
+
+    // Grant access. Returns the viewport's kind on a real transition and None if the actor
+    // already had access, so callers emit exactly one command per genuine change.
+    //
+    // Panics if the viewport is gone. An object holding a key to a viewport that no longer
+    // exists is an inconsistent world, not a condition to route around: the engine's contract is
+    // to die on that and be rebuilt by replaying the action log. Silently doing nothing would
+    // instead drop the command and leave every client permanently short of state, with no
+    // symptom at the point of failure.
+    pub fn viewport_grant(&mut self, id: ViewportKey, actor: ActorKey) -> Option<ViewportKind> {
+        let viewport = self.viewports.get_mut(id).expect(MISSING_VIEWPORT);
+        viewport.grant(actor).then_some(viewport.kind)
+    }
+
+    // Revoke access. Returns true only on a real transition. Panics on a missing viewport, as
+    // viewport_grant does.
+    pub fn viewport_revoke(&mut self, id: ViewportKey, actor: ActorKey) -> bool {
+        self.viewports
+            .get_mut(id)
+            .expect(MISSING_VIEWPORT)
+            .revoke(actor)
+    }
+
+    // Replace a viewport's membership wholesale, reporting only genuine transitions. For
+    // visibility rules that are evaluated by recomputing the whole answer. Panics on a missing
+    // viewport, as viewport_grant does.
+    pub fn viewport_set_members(
+        &mut self,
+        id: ViewportKey,
+        members: IndexSet<ActorKey>,
+    ) -> MembershipDiff {
+        self.viewports
+            .get_mut(id)
+            .expect(MISSING_VIEWPORT)
+            .set_members(members)
     }
 
     pub fn add_actor(&mut self, actor: Actor) -> ActorKey {

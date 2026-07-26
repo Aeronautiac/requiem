@@ -2,7 +2,7 @@ use indexmap::{IndexMap, IndexSet};
 
 use crate::{
     action::Action,
-    common::{ActorKey, PollWeight},
+    common::{ActorKey, PollWeight, ViewportKey},
     engine::Engine,
     helpers::{get_channel, get_org, get_voter_weight},
     poll::policies::{
@@ -72,11 +72,10 @@ pub struct Poll {
     // every broadcast can carry it; the client shows it on the "vote started" notice.
     pub opener: Option<ActorKey>,
     pub votes: IndexMap<ActorKey, Vote>,
-    // Actors we've sent poll data to (via UpdatePollView). The frontend has no notion of
-    // scope visibility ("present"), so when one of these actors can no longer view the poll
-    // we must actively tell them to hide it with a directed removal command, then drop them
-    // from this set. Without this the poll would stay visible on their client forever.
-    pub dirty: IndexSet<ActorKey>,
+    // Who this poll's shared data is addressed to. `can_view` is the authority; this is
+    // recomputed from it. It replaced a hand-rolled set of "actors we've sent poll data to",
+    // which existed for exactly the same reason and had to be maintained by hand.
+    pub viewport: ViewportKey,
 }
 
 impl Poll {
@@ -89,6 +88,7 @@ impl Poll {
         timeout_policy: PollPolicy,
         voter_policy: VoterPolicy,
         opener: Option<ActorKey>,
+        viewport: ViewportKey,
     ) -> Self {
         Poll {
             accept_payload,
@@ -100,8 +100,17 @@ impl Poll {
             voter_policy,
             opener,
             votes: IndexMap::new(),
-            dirty: IndexSet::new(),
+            viewport,
         }
+    }
+
+    // The membership its viewport should hold: every actor whose scope covers this poll.
+    pub fn viewers(&self, eng: &Engine) -> IndexSet<ActorKey> {
+        eng.world
+            .actors
+            .keys()
+            .filter(|id| self.can_view(eng, *id))
+            .collect()
     }
 
     fn policy(&self, pol: PollPolicy, eng: &Engine) -> PolicyResult {

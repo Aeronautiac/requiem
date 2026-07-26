@@ -4,7 +4,6 @@
 * IPP blocks this
 */
 
-use lawliet_types::command::CommandRecipient;
 
 use crate::{
     action::{
@@ -15,7 +14,10 @@ use crate::{
     command::Command,
     common::Version,
     engine::Engine,
-    helpers::{actor_get_effective_passive, actor_id, get_actor, get_notebook, get_notebook_mut},
+    helpers::{
+        actor_get_effective_passive, actor_id, cmd_channel, get_actor, get_notebook,
+        get_notebook_mut,
+    },
     notebook::NotebookError,
     passive::PassiveType,
 };
@@ -41,6 +43,9 @@ impl ActionInterface for WriteName {
         }
 
         let book = get_notebook(eng, self.notebook_id)?;
+        // Writes are addressed to the notebook's channel: the viewability of a write is
+        // governed by the same rules as the messages sent in that channel.
+        let book_channel = book.channel_id;
         if actor_get_effective_passive(eng, player_id, |passive| {
             matches!(passive, PassiveType::OwnedNotebookBlock)
         })
@@ -114,7 +119,9 @@ impl ActionInterface for WriteName {
                 action.handle(eng, ctx, &ActionActor::System, version, mutate)?;
             }
 
-            ctx.push_cmd(
+            cmd_channel(
+                eng,
+                ctx,
                 Command::NotebookWrite {
                     notebook_id: self.notebook_id,
                     delay: self.delay,
@@ -126,8 +133,7 @@ impl ActionInterface for WriteName {
                     attempts_remaining,
                     user_id: player_id,
                 },
-                CommandRecipient::System,
-                eng.time,
+                book_channel,
             );
         } else {
             let book = get_notebook_mut(eng, self.notebook_id)?;
@@ -137,7 +143,9 @@ impl ActionInterface for WriteName {
             let successes_remaining = book.successes_remaining(player_id, success_limit);
             let attempts_remaining = book.failures_remaining(player_id, failure_limit);
 
-            ctx.push_cmd(
+            cmd_channel(
+                eng,
+                ctx,
                 Command::NotebookWrite {
                     notebook_id: self.notebook_id,
                     delay: self.delay,
@@ -149,8 +157,7 @@ impl ActionInterface for WriteName {
                     attempts_remaining,
                     user_id: player_id,
                 },
-                CommandRecipient::System,
-                eng.time,
+                book_channel,
             );
         }
 

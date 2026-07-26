@@ -28,6 +28,7 @@ mod comms_tests {
         common::{AbilityKey, ActorKey, BugKey},
         config::{ability::AbilityName, role::Role},
         engine::Engine,
+        viewport::ViewportKind,
         helpers::{get_bug, get_channel, get_gc, get_player},
         lounge::LoungeVariant,
         passive::PassiveType,
@@ -104,7 +105,7 @@ mod comms_tests {
     }
 
     #[test]
-    fn set_member_removal_emits_remove_channel() {
+    fn set_member_removal_exits_the_channel_viewport() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
@@ -121,11 +122,14 @@ mod comms_tests {
         )
         .unwrap();
 
+        let viewport = eng.world.get_channel(ch).unwrap().viewport;
         let (_, ctx) = set_member(&mut eng, 0, p1, ch, None).unwrap();
 
+        // Losing membership is an exit, not a retraction: p1 keeps everything the channel
+        // already told them, they just stop receiving more.
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(p1)
-                && matches!(&p.cmd, Command::RemoveChannel { channel_id } if *channel_id == ch)
+                && matches!(&p.cmd, Command::ExitViewport { viewport: v, actor } if *v == viewport && *actor == p1)
         }));
     }
 
@@ -231,7 +235,7 @@ mod comms_tests {
     }
 
     #[test]
-    fn set_member_add_does_not_emit_remove_channel() {
+    fn set_member_add_does_not_exit_the_channel_viewport() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
@@ -251,7 +255,7 @@ mod comms_tests {
         assert!(
             !ctx.commands
                 .iter()
-                .any(|p| matches!(&p.cmd, Command::RemoveChannel { .. }))
+                .any(|p| matches!(&p.cmd, Command::ExitViewport { .. }))
         );
     }
 
@@ -300,9 +304,10 @@ mod comms_tests {
             unreachable!()
         };
         let channel_id = get_gc(&eng, data.id).unwrap().channel_id;
+        let viewport = eng.world.get_channel(channel_id).unwrap().viewport;
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_system()
+            p.recipient == CommandRecipient::Viewport(viewport)
                 && matches!(&p.cmd, Command::MapGc { gc_id, channel_id: cid, .. }
                     if *gc_id == data.id && *cid == channel_id)
         }));
@@ -476,8 +481,10 @@ mod comms_tests {
             unreachable!()
         };
 
+        let viewport = eng.world.get_channel(data.channel_id).unwrap().viewport;
+
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_system()
+            p.recipient == CommandRecipient::Viewport(viewport)
                 && matches!(&p.cmd, Command::MapLounge { lounge_id, channel_id, .. }
                     if *lounge_id == data.lounge_id && *channel_id == data.channel_id)
         }));
@@ -588,8 +595,10 @@ mod comms_tests {
             unreachable!()
         };
 
+        let viewport = eng.world.get_bug(data.id).unwrap().viewport;
+
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_system()
+            p.recipient == CommandRecipient::Viewport(viewport)
                 && matches!(&p.cmd, Command::NewBug { bug_key } if *bug_key == data.id)
         }));
     }
@@ -751,8 +760,12 @@ mod comms_tests {
             })
             .unwrap();
 
+        // Archiving leaves the bug (and its viewport) in place — it only stops the relay — so
+        // the notice still reaches everyone who could read it.
+        let viewport = eng.world.get_bug(create_data.id).unwrap().viewport;
+
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_system()
+            p.recipient == CommandRecipient::Viewport(viewport)
                 && matches!(&p.cmd, Command::ArchiveBug { bug_key } if *bug_key == create_data.id)
         }));
     }
@@ -861,7 +874,7 @@ mod comms_tests {
     }
 
     #[test]
-    fn destroy_bug_emits_delete_command() {
+    fn destroy_bug_emits_archive_command() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
@@ -889,9 +902,11 @@ mod comms_tests {
             })
             .unwrap();
 
+        // Destroying a bug archives it rather than deleting it, and the notice is addressed to
+        // the bug's own viewport so it reaches whoever was reading the relay.
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_system()
-                && matches!(&p.cmd, Command::DeleteBug { bug_id } if *bug_id == create_data.id)
+            matches!(p.recipient, CommandRecipient::Viewport(_))
+                && matches!(&p.cmd, Command::ArchiveBug { bug_key } if *bug_key == create_data.id)
         }));
     }
 
@@ -944,8 +959,10 @@ mod comms_tests {
 
         let (_, ctx) = send_message(&mut eng, 0, p1, ch, ActorDisplay::Raw(p1), "hello").unwrap();
 
+        let viewport = eng.world.get_bug(bug_data.id).unwrap().viewport;
+
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient.is_system()
+            p.recipient == CommandRecipient::Viewport(viewport)
                 && matches!(&p.cmd, Command::AddBugMessage { bug_key, .. } if *bug_key == bug_data.id)
         }));
     }
@@ -1107,12 +1124,12 @@ mod comms_tests {
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(owner)
-                && matches!(&p.cmd, Command::SetBugVisibility { visible: true, .. })
+                && matches!(&p.cmd, Command::EnterViewport { actor, kind: ViewportKind::Bug, .. } if *actor == owner)
         }));
     }
 
     #[test]
-    fn visibility_ability_bug_no_owner_no_set_visibility() {
+    fn visibility_ability_bug_no_owner_no_access() {
         let mut eng = Engine::new();
         let target = add_player(&mut eng, 0, Role::Civilian, "target");
 
@@ -1142,11 +1159,13 @@ mod comms_tests {
             })
             .unwrap();
 
-        assert!(
-            !ctx.commands
-                .iter()
-                .any(|p| matches!(&p.cmd, Command::SetBugVisibility { visible: true, .. }))
-        );
+        assert!(!ctx.commands.iter().any(|p| matches!(
+            &p.cmd,
+            Command::EnterViewport {
+                kind: ViewportKind::Bug,
+                ..
+            }
+        )));
     }
 
     #[test]
@@ -1190,7 +1209,7 @@ mod comms_tests {
 
         assert!(!ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(owner)
-                && matches!(&p.cmd, Command::SetBugVisibility { visible: true, .. })
+                && matches!(&p.cmd, Command::EnterViewport { actor, kind: ViewportKind::Bug, .. } if *actor == owner)
         }));
     }
 
@@ -1220,12 +1239,12 @@ mod comms_tests {
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(receiver)
-                && matches!(&p.cmd, Command::SetBugVisibility { visible: true, .. })
+                && matches!(&p.cmd, Command::EnterViewport { actor, kind: ViewportKind::Bug, .. } if *actor == receiver)
         }));
     }
 
     #[test]
-    fn visibility_clears_before_setting() {
+    fn new_bug_is_addressed_to_its_viewport_before_access_is_granted() {
         let mut eng = Engine::new();
         let owner = add_player(&mut eng, 0, Role::Civilian, "owner");
         let target = add_player(&mut eng, 0, Role::Civilian, "target");
@@ -1252,18 +1271,32 @@ mod comms_tests {
             })
             .unwrap();
 
-        let clear_pos = ctx
+        // The command that introduces the bug must be addressed to the bug's own viewport, and
+        // must land there before anyone is admitted. That ordering is what makes a viewport
+        // legible: whoever enters learns what the viewport IS from the first thing in it.
+        let new_bug_pos = ctx
             .commands
             .iter()
-            .position(|p| matches!(&p.cmd, Command::ClearBugVisibily { .. }))
+            .position(|p| {
+                matches!(p.recipient, CommandRecipient::Viewport(_))
+                    && matches!(&p.cmd, Command::NewBug { .. })
+            })
             .unwrap();
-        let set_pos = ctx
+        let enter_pos = ctx
             .commands
             .iter()
-            .position(|p| matches!(&p.cmd, Command::SetBugVisibility { visible: true, .. }))
+            .position(|p| {
+                matches!(
+                    &p.cmd,
+                    Command::EnterViewport {
+                        kind: ViewportKind::Bug,
+                        ..
+                    }
+                )
+            })
             .unwrap();
 
-        assert!(clear_pos < set_pos);
+        assert!(new_bug_pos < enter_pos);
     }
 
     // ---- update_contact_channels ----

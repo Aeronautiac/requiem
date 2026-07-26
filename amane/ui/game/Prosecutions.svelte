@@ -17,7 +17,9 @@
   const view = $derived(
     ui.viewer === "Admin" ? game.system_view() : game.views.get(ui.viewer),
   );
-  const frozen = $derived(ui.viewer === "Admin" ? null : view?.frozen_prosecutions);
+  // Admin's mirror is never presence-gated, so it is never stale.
+  const is_frozen = (id: string) =>
+    ui.viewer !== "Admin" && (view?.prosecution_frozen(id) ?? false);
   const prosecutions = $derived([...(view?.prosecutions.entries() ?? [])]);
 
   function display_string(display: ActorDisplay): string {
@@ -70,7 +72,7 @@
               <span class="text-neutral-600">vs</span>
               {display_string(data.defendant_display)}
             </span>
-            {#if frozen?.has(id)}
+            {#if is_frozen(id)}
               <span
                 class="rounded bg-amber-900/60 px-1.5 text-[0.6rem] uppercase tracking-wide text-amber-300"
                 title="You lost presence — showing the last state you received."

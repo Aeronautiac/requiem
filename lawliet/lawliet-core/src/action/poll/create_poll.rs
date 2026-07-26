@@ -12,6 +12,7 @@ use crate::{
     },
     common::PollKey,
     poll::Poll,
+    viewport::ViewportKind,
 };
 
 pub use crate::action::{CreatePoll, CreatePollReponse};
@@ -28,6 +29,8 @@ impl ActionInterface for CreatePoll {
         actor.admin_or_system()?;
 
         let id = if mutate {
+            // The poll owns its viewport for its whole life; PollCleanup frees it.
+            let viewport = eng.world.add_viewport(ViewportKind::Poll);
             eng.world.add_poll(Poll::new(
                 *(self.accept_payload.clone()),
                 *(self.reject_payload.clone()),
@@ -37,6 +40,7 @@ impl ActionInterface for CreatePoll {
                 self.timeout_policy,
                 self.voter_policy,
                 self.opener,
+                viewport,
             ))
         } else {
             PollKey::default()

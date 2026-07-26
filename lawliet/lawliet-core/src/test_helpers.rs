@@ -34,7 +34,7 @@ use crate::{
     Time,
     ability::AbilityBehaviour,
     action::{
-        Action, ActionActor, ActionRequest, ActionResponse, ActionResult,
+        Action, ActionActor, ActionContext, ActionRequest, ActionResponse, ActionResult,
         ability::{
             add_link::AddLink, clear_links::ClearLinks,
             create_and_give_ability::CreateAndGiveAbility, use_ability::UseAbility,
@@ -502,22 +502,32 @@ pub fn force_charges(eng: &mut Engine, _time: Time, ability_id: AbilityKey, char
     );
 }
 
-pub fn add_state(eng: &mut Engine, time: Time, actor_id: ActorKey, state: State) {
+pub fn add_state(
+    eng: &mut Engine,
+    time: Time,
+    actor_id: ActorKey,
+    state: State,
+) -> (ActionResponse, ActionContext) {
     eng.execute(ActionRequest {
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::AddState(AddState { actor_id, state }),
     })
-    .unwrap();
+    .unwrap()
 }
 
-pub fn remove_state(eng: &mut Engine, time: Time, actor_id: ActorKey, state: State) {
+pub fn remove_state(
+    eng: &mut Engine,
+    time: Time,
+    actor_id: ActorKey,
+    state: State,
+) -> (ActionResponse, ActionContext) {
     eng.execute(ActionRequest {
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::RemoveState(RemoveState { actor_id, state }),
     })
-    .unwrap();
+    .unwrap()
 }
 
 pub fn create_channel(eng: &mut Engine, time: Time, loggable: bool) -> ChannelKey {

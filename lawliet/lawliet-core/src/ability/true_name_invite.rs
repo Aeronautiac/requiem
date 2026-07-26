@@ -8,13 +8,13 @@
 
 use lawliet_types::{
     ability::{AbilityName, TrueNameInvite},
-    command::{Command, CommandRecipient},
+    command::Command,
 };
 
 use crate::{
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, AddToOrg},
-    helpers::{actor_id, get_player},
+    helpers::{actor_id, get_player, owner_view_recipient},
 };
 
 impl AbilityInterface for TrueNameInvite {
@@ -52,14 +52,15 @@ impl AbilityInterface for TrueNameInvite {
             })
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
-            // A successful invite reveals the new member's true name to the org (the
-            // recipient is the org actor; the frontend gates it by org-channel view).
+            // A successful invite reveals the new member's true name to the org — which is
+            // now stated directly rather than left to the frontend to gate: addressed to the
+            // org channel's viewport, so it reaches exactly the members who can see the org.
             ctx.push_cmd(
                 Command::RevealTrueName {
                     target_id: self.target,
                     true_name,
                 },
-                CommandRecipient::Actor(org_id),
+                owner_view_recipient(eng, org_id),
                 eng.time,
             );
 

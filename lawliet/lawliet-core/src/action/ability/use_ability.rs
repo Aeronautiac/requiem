@@ -3,7 +3,6 @@
 * Use an ability
 */
 
-use lawliet_types::command::CommandRecipient;
 
 use crate::{
     ability::{AbilityInterface, AbilityStatus},
@@ -15,6 +14,7 @@ use crate::{
     command::Command,
     helpers::{
         actor_id, get_ability, get_ability_config, get_ability_mut, get_actor, get_charge_pool_mut,
+        owner_view_recipient,
     },
 };
 
@@ -113,7 +113,7 @@ impl ActionInterface for UseAbility {
                     ability_id: self.ability_id,
                     owner_id: actor_id,
                 },
-                CommandRecipient::Actor(actor_id),
+                owner_view_recipient(eng, actor_id),
                 eng.time,
             );
         }

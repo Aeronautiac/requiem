@@ -132,7 +132,6 @@ impl ActionInterface for Action {
             Action::SetWorldChannelOverride(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::InitializeEngine(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::SetRandomSeed(a) => a.handle(eng, ctx, actor, version, mutate),
-            Action::DeferredCmds(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::UpdateBugVisibilities(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::ProsecutionVoteRes(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CreateKidnapping(a) => a.handle(eng, ctx, actor, version, mutate),

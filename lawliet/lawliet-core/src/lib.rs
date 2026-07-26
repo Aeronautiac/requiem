@@ -4,7 +4,7 @@
 *
 * --- core engine ---
 * the Engine owns: World (all game state in typed slotmaps), Config (dynamic runtime tuning),
-* Jobs (min-heap priority queue of scheduled events), and a deferred command buffer.
+* Jobs (min-heap priority queue of scheduled events).
 * actions are validated in a non-mutating dry-run pass first, then executed if valid. sub-actions
 * are invoked recursively and share the same command buffer across the entire action tree. pending
 * jobs are flushed before each requested action to maintain temporal causality. time is a u128 of
@@ -87,13 +87,26 @@
 * a custody event; expired bugs are retained in memory for persistent history access.
 *
 * --- commands ---
-* CommandPayload carries a timestamp, optional recipient, and a Command variant. DeferredCommand
-* adds blocking_modifiers — the command is withheld until the recipient has none of them active.
-* command coverage: Death, Kidnapping, PseudocideRevival, ActorState, channel lifecycle (add
-* message, map lounge/gc, delete, archive), notebook ops (map, write, borrow status), ability /
-* passive views, bug events (new, message, archive, delete), and iteration progress. commands
-* without a recipient are forwarded to the backend; recipient-targeted commands go to a specific
-* player's client.
+* CommandPayload carries a timestamp, a recipient, and a Command variant. every command is
+* addressed: System (the host, and by extension the admin's omniscient mirror), Actor (one
+* player or org), or Viewport.
+*
+* a viewport is an opaque engine-allocated identity that commands are addressed to. objects that
+* gate visibility — channels, bugs, polls, passives, and the world itself — each own one, and
+* each writes its viewport from its OWN visibility rule; the viewport is never consulted to
+* answer "can this actor see X?", only "who do I send this to?". gaining access delivers
+* everything previously addressed to that viewport, in order, which is what carries history to a
+* late arrival. losing access only stops further delivery: client state is monotonic and nothing
+* is ever retracted, so deletion is expressed as archival.
+*
+* the world-level presence viewport (every player without Modifier::NoPresence) is what makes
+* world events presence-gated. it replaced both the BasePlayer catch-up stream and the deferred
+* command queue: an absent player is simply not a member, and re-entry backfills the backlog in
+* order.
+*
+* command coverage: Death, Kidnapping, PseudocideRevival, channel lifecycle (add message, map
+* lounge/gc, archive), notebook ops (map, write, borrow status), ability / passive views, bug
+* events (new, message, archive), and iteration progress.
 *
 * --- yagami (external) ---
 * yagami is the central server. it handles the platform/auth as well as hosting multiple lawliet
@@ -134,6 +147,7 @@ mod poll;
 mod prosecution;
 #[cfg(test)]
 mod test_helpers;
+mod viewport;
 mod world;
 
 pub use common::{

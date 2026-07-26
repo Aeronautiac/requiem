@@ -18,7 +18,6 @@
 * - store Prosecution in world, schedule custody timeout → AdvanceProsecution
 */
 
-use indexmap::IndexSet;
 
 use crate::{
     action::{
@@ -91,7 +90,6 @@ impl ActionInterface for StartProsecution {
                     timeout_job_id: 0,
                 },
                 autonomous: self.autonomous,
-                dirty: IndexSet::new(),
             });
 
             let job_id = eng.jobs.push(ActionRequest {

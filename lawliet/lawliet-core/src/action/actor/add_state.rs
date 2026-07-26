@@ -11,7 +11,7 @@ use crate::{
     },
     common::Version,
     engine::Engine,
-    helpers::{get_actor_mut, get_player},
+    helpers::{get_actor_mut, get_player, sync_presence},
 };
 
 pub use crate::action::{AddState, AddStateResponse};
@@ -50,6 +50,13 @@ impl ActionInterface for AddState {
             })
             .handle(eng, ctx, actor, version, mutate)?;
         }
+
+        // Presence is derived from modifiers, and modifiers are only ever written here and in
+        // RemoveState, so these two actions are the whole of where world-event visibility can
+        // change. Resync before anything downstream emits: a player who has just lost presence
+        // must already be out of the viewport when the caller announces what happened to them —
+        // Kill adds State::Dead and then announces the death.
+        sync_presence(eng, ctx, mutate);
 
         Action::UpdateBugVisibilities(UpdateBugVisibilities {})
             .handle(eng, ctx, actor, version, mutate)?;

@@ -6,13 +6,12 @@ use lawliet_types::{
     },
     actor::ActorDisplay,
     channel::{ChannelMember, ChannelPermission},
-    command::CommandRecipient,
 };
 
 use crate::{
     action::ActionInterface,
     command::Command,
-    helpers::{actor_id, get_player, get_player_mut},
+    helpers::{actor_id, cmd_channel, get_player, get_player_mut},
 };
 
 impl ActionInterface for CreatePersonalChannel {
@@ -46,11 +45,13 @@ impl ActionInterface for CreatePersonalChannel {
 
         // Tag the freshly-created channel as a personal channel on the frontend. Must precede
         // the SetMember below (whose UpdateChannelView references the channel), and mirrors how
-        // the other channel kinds announce themselves (MapGc, MapLounge, …). Global, like them.
-        ctx.push_cmd(
+        // the other channel kinds announce themselves (MapGc, MapLounge, …), addressed to the
+        // channel's own viewport so only the owner ever sees it.
+        cmd_channel(
+            eng,
+            ctx,
             Command::MapPersonalChannel { channel_id },
-            CommandRecipient::System,
-            eng.time,
+            channel_id,
         );
 
         if mutate {

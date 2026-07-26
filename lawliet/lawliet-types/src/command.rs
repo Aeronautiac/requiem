@@ -9,29 +9,35 @@ use crate::{
     common::{
         AbilityKey, ActorKey, AttemptCount, BugKey, ChannelKey, ChargeCount, GroupchatKey, ID,
         IterationCount, KidnappingKey, LoungeKey, NotebookKey, PassiveKey, PollKey, PollWeight,
-        ProsecutionKey, Time,
+        ProsecutionKey, Time, ViewportKey,
     },
     organization::OrganizationName,
     passive::PassiveType,
     poll::{PollOutcome, PollSubject, PollVisibility},
     prosecution::ProsecutionPhaseView,
     role::Role,
+    viewport::ViewportKind,
     world::WorldChannelName,
 };
 
-// commands with no recipient are considered "system" commands and are used to talk directly to the
-// host or the backend of a frontend
+// Every command is addressed. There is no "no recipient" case: a command that appears to be
+// addressed to nobody is really addressed to some object's viewport, and the object decides who
+// may read it.
 //
 // the frontend server is expected to intercept certain commands if they wish to implement host controls
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CommandRecipient {
+    // The host itself, and by extension the admin's omniscient mirror. Used deliberately and
+    // sparingly: world events that admin must see unredacted while players see a deception, and
+    // per-player facts admin needs to inspect (RoleUpdate, TrueNameUpdate).
     System,
-    BasePlayer, // any player shall be fed these commands, even if the player was created AFTER the
-    // command was initially sent
     // an actor (player or org) that already exists/is participating. for an org recipient,
     // the frontend gates visibility per player by their view of the org's channel.
     Actor(ActorKey),
+    // Everyone with access to the viewport. An actor gaining access receives everything
+    // previously addressed there, so this is what carries history to a late arrival.
+    Viewport(ViewportKey),
 }
 
 impl CommandRecipient {
@@ -51,17 +57,36 @@ pub struct CommandPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
     ////////////////////////////////////////////////
+    // VIEWPORTS //
+    ////////////////////////////////////////////////
+    // Access changes, addressed to the actor whose access changed. The engine states them
+    // rather than leaving them to be re-derived: a server that inferred access from
+    // UpdateChannelView's permission bits would have to understand engine visibility rules,
+    // and there is no equivalent carrier at all for notebooks or passives.
+    //
+    // Gaining access delivers everything previously addressed to the viewport, in order.
+    // Losing access only stops further delivery — nothing already received is ever retracted.
+    /// The actor may now read this viewport. `kind` is a display aid only; nothing may
+    /// branch on it.
+    EnterViewport {
+        viewport: ViewportKey,
+        actor: ActorKey,
+        kind: ViewportKind,
+    },
+
+    /// The actor may no longer read this viewport. Their existing state stands.
+    ExitViewport {
+        viewport: ViewportKey,
+        actor: ActorKey,
+    },
+
+    ////////////////////////////////////////////////
     // WORLD //
     ////////////////////////////////////////////////
-    // if doing something like sending as a message in the news channel, ensure that it is placed
-    // into the proper slot and treated as a historical event if it wasn't sent immediately.
-    // also note that in the case of being rendered within a channel, and the channel not being available,
-    // the message must be rendered regardless of the player's permissions within that channel
-    // some "channels" should have something rendered regardless of if the player is even a member
-    // of the channel. for instance, news should be treated as a special instance where it is both a
-    // channel (if member), and an event log.
-
-    /////=<TARGETTED>=/////
+    // World events are presence-gated notifications, addressed to the presence viewport (plus
+    // a System mirror so admin sees them unredacted). How a client presents them — amane
+    // renders them in the news channel — is entirely a client choice and no concern of the
+    // protocol.
 
     // notify a specific player of a death. this can be done in any way. it can be put into the news
     // channel display, a dedicated list, etc...
@@ -104,30 +129,25 @@ pub enum Command {
     ////////////////////////////////////////////////
     // Actors //
     ////////////////////////////////////////////////
-    // Actors will often have their state modified. Views of that actor should reflect
-    // their current state(s).
-    // Furthermore, there needs to be a way to address the underlying actor object of a player or org from
-    // the frontend.
+    // Actors will often have their state modified.
     // Both organizations and players are actors.
 
-    /////=<NO RECIPIENT>=/////
-
-    // all display instances of this actor must be updated
-    // this is handled by the frontend
-    // ensure that clients cannot see the state of other actors which are not visible to them
-    // a clean way to handle this is to construct a set of display "blueprint" type objects on the
-    // frontend server, map them to actors, and then send them out to every client
-    // who currently has permission to view that actor in some way (when necessary)
-    // the reason this isnt handled entirely on the engine level is because its irrelevant. there
-    // are no deception mechanics regarding state displays.
+    // DIRECTED (to the actor itself): this actor's own current states. A client learns the
+    // full state of the actors it holds and nothing else.
+    //
+    // There is deliberately no broadcast form. What OTHER viewers are allowed to know about an
+    // actor is announced by the explicit event that caused it — Death, Kidnapping, Bugged, and
+    // so on — and clients render other actors' status from those. A general "here is this
+    // actor's state" broadcast would need a visibility rule of its own to answer a question
+    // every one of those commands already answers, per viewer, correctly.
     ActorState {
         state: States,
         actor_id: ActorKey,
     },
 
     // display a player as an org member. carries the org id, so the frontend keys the
-    // update by it directly. the org member list is currently the same for everyone (no
-    // per-viewer variation yet), so this is undirected rather than a per-member broadcast.
+    // update by it directly. addressed to the viewport of the org's backing channel — who may
+    // see an org's roster is exactly who may see the org's channel.
     // this includes dead players and such as they are still considered org members
     AddOrgMember {
         player_id: ActorKey,
@@ -140,18 +160,16 @@ pub enum Command {
         org_id: ActorKey,
     },
 
-    /////=<TARGETTED>=/////
-
     ////////////////////////////////////////////////
     // COMMS //
     ////////////////////////////////////////////////
-    // A player who is added to a channel after messages have already been sent should be allowed to
-    // see the messages which have been sent in that channel previously if they have view
-    // permissions. This must be handled by the frontend.
-    // Channel based object views are dependent on channel views. If channel access is lost, the
-    // object view must also be lost. (Notebooks, groupchats, lounges, etc...)
-
-    /////=<NO RECIPIENT>=/////
+    // Everything here is addressed to the channel's viewport, so a player added to a channel
+    // after messages have already been sent receives them on entry — the frontend does not have
+    // to arrange this, and the engine does not have to re-send anything.
+    //
+    // Channel-based objects (notebooks, groupchats, lounges) ride the same viewport as their
+    // backing channel, so their views follow channel access automatically. Losing access stops
+    // further content; it does not take back what was already delivered.
 
     // add a message to a channel
     AddMessage {
@@ -178,7 +196,7 @@ pub enum Command {
     },
 
     // register an org on the frontend: its actor id, name, and backing channel (and any
-    // future org-level data). one unified command; global, like the other channel maps.
+    // future org-level data). one unified command, addressed like the other channel maps.
     MapOrg {
         org_id: ActorKey,
         channel_id: ChannelKey,
@@ -192,21 +210,19 @@ pub enum Command {
     },
 
     // register a personal channel: a plain engine channel a player created for themselves
-    // (a notepad / a private line to whoever bugged them). Like the other channel maps this
-    // is global; only the owner holds perms for it, so per-viewer visibility falls out of the
-    // normal channel-view perms. Sent so the frontend can tag it as a personal channel.
+    // (a notepad / a private line to whoever bugged them). Addressed to the channel's own
+    // viewport like the other channel maps, so only the owner ever sees it. Sent so the
+    // frontend can tag it as a personal channel.
     MapPersonalChannel {
         channel_id: ChannelKey,
     },
 
-    // delete a channel
-    // the frontend must handle the cascading effects of handling things tied to the channel
-    // (notebooks, groupchats, lounges, etc...)
-    DeleteChannel {
-        channel_id: ChannelKey,
-    },
-
-    // can no longer send messages or similar, but you can still view if you have/are given view permissions
+    // the channel is finished: no further content will ever be addressed here. Everything
+    // already received stands, and the frontend must handle the cascading effects on things
+    // tied to the channel (notebooks, groupchats, lounges, etc...).
+    //
+    // This absorbed the old DeleteChannel. Nothing can be un-said, so there is no deletion to
+    // express — only archival.
     ArchiveChannel {
         channel_id: ChannelKey,
     },
@@ -230,21 +246,11 @@ pub enum Command {
         content: String,
     },
 
-    // shouldnt really do much. itll just say that the bug is no longer active.
+    // the bug is no longer active; nothing further will be relayed through it. Absorbed the old
+    // DeleteBug — a bug that "should never have existed" still relayed what it relayed, and the
+    // people who saw that keep it.
     ArchiveBug {
         bug_key: BugKey,
-    },
-
-    // identical to setting visibility to false for everyone in the game - collapsed into a single
-    // instruction
-    ClearBugVisibily {
-        bug_id: BugKey,
-    },
-
-    // completely destroy a bug (hide all views)
-    // basically, this bug should have never existed
-    DeleteBug {
-        bug_id: BugKey,
     },
 
     // DIRECTED (to the bug's target): notify a player that they are under surveillance and
@@ -253,13 +259,6 @@ pub enum Command {
     // owner side needs no equivalent: they simply receive the relayed AddBugMessage stream.
     Bugged {
         context: BugContext,
-    },
-
-    /////=<TARGETTED>=/////
-
-    // remove someone's view of a channel
-    RemoveChannel {
-        channel_id: ChannelKey,
     },
 
     // update the owner status of a gc for a player
@@ -288,11 +287,6 @@ pub enum Command {
         displays: IndexSet<ActorDisplay>,
     },
 
-    SetBugVisibility {
-        bug_id: BugKey,
-        visible: bool,
-    },
-
     ////////////////////////////////////////////////
     // NOTEBOOKS //
     ////////////////////////////////////////////////
@@ -311,8 +305,6 @@ pub enum Command {
     // true name and leads to actual state modification. the player must be explicitly notified, and
     // the usage must be logged. The viewability of writes is governed by the same rules as channel
     // messages.
-
-    /////=<NO RECIPIENT>=/////
 
     // map a notebook id to its channel id
     // the state of the display for a given player should depend on that player's permissions in the
@@ -344,8 +336,6 @@ pub enum Command {
         borrowed: bool,
     },
 
-    /////=<TARGETTED>=/////
-
     ////////////////////////////////////////////////
     // ABILITIES & PASSIVES //
     ////////////////////////////////////////////////
@@ -361,8 +351,6 @@ pub enum Command {
     // For this reason, there will be an owner id in the ability view command. If it is the client's
     // id, it doesn't really matter. If it is the org's id, it does.
 
-    /////=<NO RECIPIENT>=/////
-
     // similarly to channels, when someone gets access to a contact log passive, they should be able
     // to see EVERYTHING previously logged by that specific passive.
     // for this, use passive ids.
@@ -371,8 +359,6 @@ pub enum Command {
         // log: ContactLog,
         passive_id: PassiveKey,
     },
-
-    /////=<TARGETTED>=/////
 
     // update the view of an ability to reflect its current state. usages are split by
     // outcome because conditional charge subtraction means successful and failed uses can
@@ -447,16 +433,14 @@ pub enum Command {
     ////////////////////////////////////////////////
     // POLLS //
     ////////////////////////////////////////////////
-    // Poll data is split: the heavy, shared part (subject, scope, tally) is held globally
-    // on the frontend via UpdatePoll; the lightweight per-player part (can I vote, what did
-    // I vote) rides a directed UpdatePollView. The per-player split exists because a fresh
-    // client rebuilds purely from the command stream — a player's own vote can't be tracked
-    // client-side across a reconnect.
+    // Poll data is split: the shared part (subject, scope, tally) is addressed to the poll's
+    // viewport via UpdatePoll; the per-player part (can I vote, what did I vote) rides a
+    // directed UpdatePollView. The per-player split exists because a fresh client rebuilds
+    // purely from the command stream — a player's own vote can't be tracked client-side
+    // across a reconnect.
 
-    /////=<NO RECIPIENT>=/////
-
-    // create or refresh a poll's shared data. Held globally, keyed by poll id. Re-sent on
-    // each vote change to update the tally (counts only, never who voted).
+    // create or refresh a poll's shared data, keyed by poll id. Re-sent on each vote change
+    // to update the tally (counts only, never who voted).
     UpdatePoll {
         poll_id: PollKey,
         subject: PollSubject,
@@ -469,47 +453,38 @@ pub enum Command {
         opener: Option<ActorKey>,
     },
 
-    // a poll concluded; the frontend drops it (globally and from every view). outcome
-    // drives the resolution notice rendered in the poll's scoped location.
+    // a poll concluded. It closes, it is not dropped — outcome drives the resolution notice
+    // rendered in the poll's scoped location, and the closed poll stays visible to whoever
+    // could see it.
     ClosePoll {
         poll_id: PollKey,
         outcome: PollOutcome,
     },
 
-    /////=<TARGETTED>=/////
-
     // this player's personal view of a poll: whether they may currently vote, and the vote
-    // they've cast (None until they cast one). Directed to players who can see the poll's
-    // scope; receiving one is what makes a player a "viewer" of the poll.
+    // they've cast (None until they cast one). Paired with EnterViewport on the poll's
+    // viewport, which is what actually makes a player a viewer of the poll.
     UpdatePollView {
         poll_id: PollKey,
         eligible: bool,
         own_vote: Option<bool>,
     },
 
-    // a viewer can no longer see the poll's scope: hide the poll for this player. The
-    // frontend can't reliably decide this itself — some scopes (e.g. "present") it has no
-    // notion of, and re-deriving the rest from channel membership would be brittle — so the
-    // engine tracks who it sent poll data to and directs a removal when access is lost.
-    RemovePollView {
-        poll_id: PollKey,
-    },
-
     ////////////////////////////////////////////////
     // PROSECUTIONS //
     ////////////////////////////////////////////////
-    // Unlike polls, prosecution updates are never dropped when a player loses visibility: the
-    // ordered timeline matters (custody announcement → trial → verdict), so absent players
-    // receive the whole sequence deferred, replayed in order when presence returns. The trial
-    // channel and verdict poll are NOT owned by this protocol — their contents ride the channel
-    // and poll command streams respectively; any divergence there is an engine bug. UpdateProsecution
-    // does carry the trial channel id, but only so the frontend can tag that channel as a
-    // prosecution channel and render it differently.
-
-    // Recipients: sent to everyone — System and BasePlayer immediately, and each existing player
-    // too, with only the players receiving it deferred (held while they lack presence and replayed
-    // in order on return). The rigid "no recipient" vs "targeted" split below no longer describes
-    // reality; a command's recipients are documented per command from here on.
+    // The ordered timeline matters here (custody announcement → trial → verdict), and it is the
+    // presence viewport that preserves it: a player who loses presence exits, and re-entry
+    // backfills the whole gap in order. No special case, and no queue.
+    //
+    // The trial channel and verdict poll are NOT owned by this protocol — their contents are
+    // addressed to the channel's and poll's own viewports; any divergence there is an engine
+    // bug. UpdateProsecution does carry the trial channel id, but only so the frontend can tag
+    // that channel as a prosecution channel and render it differently.
+    //
+    // Recipients: the presence viewport, plus a System mirror. The rigid "no recipient" vs
+    // "targeted" split below no longer describes reality; a command's recipients are documented
+    // per command from here on.
 
     // Create or refresh a prosecution's client-facing snapshot, keyed by prosecution id. Custody
     // doubles as the "someone is being prosecuted" announcement. trial_channel is None until the
@@ -523,17 +498,10 @@ pub enum Command {
         trial_channel: Option<ChannelKey>,
     },
 
-    // The prosecution ended (verdict reached, terminated, etc.); the frontend drops it. Sent to
-    // everyone the same way as UpdateProsecution, so for absent players it lands (deferred) after
-    // any pending updates.
+    // The prosecution ended (verdict reached, terminated, etc.). Addressed the same way as
+    // UpdateProsecution, so for an absent player it lands after any pending updates when they
+    // return.
     CloseProsecution {
-        prosecution_id: ProsecutionKey,
-    },
-
-    // Directed to a single player who was receiving live updates but has lost presence: they are
-    // now viewing frozen state. Purely a UI notice — the real updates are still queued and will
-    // replay in order on return (an UpdateProsecution is what clears this).
-    FreezeProsecutionView {
         prosecution_id: ProsecutionKey,
     },
 }

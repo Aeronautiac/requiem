@@ -11,6 +11,7 @@ use crate::{
     command::Command,
     common::BugKey,
     helpers::{get_ability, get_player_mut},
+    viewport::ViewportKind,
 };
 
 use crate::action::ActionActor;
@@ -33,15 +34,21 @@ impl ActionInterface for CreateBug {
         }
 
         let id = if mutate {
-            let bug_id = eng.world.add_bug(Bug::new(self.target_id, self.source));
+            // The bug owns its viewport for its whole life; DestroyBug frees it.
+            let viewport = eng.world.add_viewport(ViewportKind::Bug);
+            let bug_id = eng
+                .world
+                .add_bug(Bug::new(self.target_id, self.source, viewport));
             get_player_mut(eng, self.target_id)
                 .expect("expected valid target player")
                 .add_bug(bug_id);
 
-            // this needs to come before the visibility update action
+            // Addressed to the still-empty viewport, so whoever the visibility pass below
+            // admits learns the bug exists as the first thing in their backfill. This is why
+            // it has to precede that pass.
             ctx.push_cmd(
                 Command::NewBug { bug_key: bug_id },
-                CommandRecipient::System,
+                CommandRecipient::Viewport(viewport),
                 eng.time,
             );
 

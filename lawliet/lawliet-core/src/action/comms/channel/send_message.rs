@@ -10,7 +10,7 @@ use crate::{
     channel::ChannelPermission,
     command::Command,
     common::BugKey,
-    helpers::{get_actor, get_channel, player_id},
+    helpers::{cmd_channel, get_actor, get_channel, player_id},
 };
 
 use crate::action::ActionActor;
@@ -64,13 +64,14 @@ impl ActionInterface for SendMessage {
                         // since we're using the player's diplay here, it means that if they're posing
                         // as someone else and send a message, the message will be relayed with that
                         // fake identity (it will reveal them).
+                        let bug_viewport = bug.viewport;
                         ctx.push_cmd(
                             Command::AddBugMessage {
                                 bug_key: bug_id,
                                 display: self.display,
                                 content: self.content.clone(),
                             },
-                            CommandRecipient::System,
+                            CommandRecipient::Viewport(bug_viewport),
                             eng.time,
                         );
                     }
@@ -78,16 +79,17 @@ impl ActionInterface for SendMessage {
             }
         }
 
-        // this will tell the frontend to show the message to everyone who has view permissions for
-        // this channel
-        ctx.push_cmd(
+        // Addressed to the channel, which is precisely everyone holding View on it — and, on
+        // entry, anyone granted View later.
+        cmd_channel(
+            eng,
+            ctx,
             Command::AddMessage {
                 content: self.content.clone(),
                 channel_id: self.channel_id,
                 sender_display: self.display,
             },
-            CommandRecipient::System,
-            eng.time,
+            self.channel_id,
         );
 
         Ok(ActionResponse::SendMessage(SendMessageResponse {}))

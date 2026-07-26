@@ -5,13 +5,13 @@
 
 use lawliet_types::{
     action::SetMember,
-    command::{Command, CommandRecipient},
+    command::Command,
 };
 
 use crate::{
     action::{Action, ActionError, ActionInterface, ActionResponse, UpdateKidnapChannels},
     actor::{ActorLink, ActorLinkType},
-    helpers::{get_actor_mut, get_org_mut, get_player, get_player_mut},
+    helpers::{cmd_channel, get_actor_mut, get_org, get_org_mut, get_player, get_player_mut},
 };
 
 use crate::action::ActionActor;
@@ -47,14 +47,16 @@ impl ActionInterface for RemoveFromOrg {
             player.orgs.swap_remove(&self.org_id);
         }
 
-        // Undirected (System): the org member list is the same for everyone right now.
-        ctx.push_cmd(
+        // Addressed to the org's backing channel, like AddOrgMember.
+        let org_channel = get_org(eng, self.org_id)?.channel_id;
+        cmd_channel(
+            eng,
+            ctx,
             Command::RemoveOrgMember {
                 player_id: self.actor_id,
                 org_id: self.org_id,
             },
-            CommandRecipient::System,
-            eng.time,
+            org_channel,
         );
 
         Action::SetMember(SetMember {

@@ -7,10 +7,12 @@
 
 use lawliet_types::command::CommandRecipient;
 
+use indexmap::IndexSet;
+
 use crate::{
     action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     command::Command,
-    helpers::get_channel,
+    helpers::{get_channel, sync_viewport},
 };
 
 pub use crate::action::{DestroyChannel, DestroyChannelResponse};
@@ -25,28 +27,25 @@ impl ActionInterface for DestroyChannel {
         mutate: bool,
     ) -> ActionResult {
         actor.require_system()?;
-        get_channel(eng, self.channel_id)?;
+        let viewport = get_channel(eng, self.channel_id)?.viewport;
+
+        // Order matters and is easy to get wrong: the archival notice is addressed to the very
+        // viewport being torn down, so it must be emitted while the members are still in it.
+        // Announce, then exit everyone, then free. Getting this backwards leaves a channel
+        // sitting in every client forever with no indication it ended.
+        ctx.push_cmd(
+            Command::ArchiveChannel {
+                channel_id: self.channel_id,
+            },
+            CommandRecipient::Viewport(viewport),
+            eng.time,
+        );
+
+        sync_viewport(eng, ctx, viewport, IndexSet::new(), mutate);
 
         if mutate {
             eng.world.remove_channel(self.channel_id);
-        }
-
-        if !self.archive {
-            ctx.push_cmd(
-                Command::DeleteChannel {
-                    channel_id: self.channel_id,
-                },
-                CommandRecipient::System,
-                eng.time,
-            );
-        } else {
-            ctx.push_cmd(
-                Command::ArchiveChannel {
-                    channel_id: self.channel_id,
-                },
-                CommandRecipient::System,
-                eng.time,
-            );
+            eng.world.remove_viewport(viewport);
         }
 
         Ok(ActionResponse::DestroyChannel(DestroyChannelResponse {}))

@@ -20,6 +20,7 @@ export type BugKey = SlotKey;
 export type ProsecutionKey = SlotKey;
 export type KidnappingKey = SlotKey;
 export type IncarcerationKey = SlotKey;
+export type ViewportKey = SlotKey;
 
 // ////////////////////////////////////////////////////////////
 // SHARED ENUMS & STRUCTS
@@ -445,9 +446,9 @@ export type CreateChannel = {
   loggable: boolean;
 };
 
+// tearing a channel down is always archival, so there is no flag to select between.
 export type DestroyChannel = {
   channel_id: ChannelKey;
-  archive: boolean;
 };
 
 export type SendMessage = {
@@ -970,12 +971,21 @@ export type ActionResponse =
 // ////////////////////////////////////////////////////////////
 
 export type Command =
+  // access changes, addressed to the actor whose access changed. gaining access delivers
+  // everything previously addressed to that viewport, in order; losing it only stops further
+  // delivery, and never retracts anything already received. `kind` is a display aid — nothing
+  // here or on the server may branch on it.
+  | { EnterViewport: { viewport: ViewportKey; actor: ActorKey; kind: ViewportKind } }
+  | { ExitViewport: { viewport: ViewportKey; actor: ActorKey } }
   | { Death: { target_id: ActorKey, true_name: string; death_message: string; role: Role; notebook_transferred: boolean; ability_transferred: boolean } }
   | { Kidnapping: { kidnapping_id: KidnappingKey; target_id: ActorKey; duration: number | null } }
   | { KidnapReveal: { kidnapping_id: KidnappingKey; kidnapper: ActorKey | null } }
   | { PseudocideRevival: { target_id: ActorKey } }
   | { AnonymousAnnouncement: { content: string } }
   | { MapOrg: { org_id: ActorKey; channel_id: ChannelKey; org_name: OrganizationName } }
+  // directed to the actor itself: your own states. there is no broadcast form — what OTHER
+  // viewers may know about an actor is announced by the event that caused it (Death, Kidnapping,
+  // Bugged, …), and other actors' status is rendered from those.
   | { ActorState: { state: States; actor_id: ActorKey } }
   | { AddOrgMember: { player_id: ActorKey; org_id: ActorKey } }
   | { RemoveOrgMember: { player_id: ActorKey; org_id: ActorKey } }
@@ -984,22 +994,20 @@ export type Command =
   | { MapGc: { gc_id: GroupchatKey; channel_id: ChannelKey; contact_id: number } }
   | { MapWorldChannel: { channel_name: WorldChannelName; channel_id: ChannelKey } }
   | { MapPersonalChannel: { channel_id: ChannelKey } }
-  | { DeleteChannel: { channel_id: ChannelKey } }
+  // the channel is finished; no further content will ever be addressed there. absorbed the old
+  // DeleteChannel — nothing said in it can be un-said, so archival is all there is to express.
   | { ArchiveChannel: { channel_id: ChannelKey } }
   | { SetChannelLoggable: { channel_id: ChannelKey; loggable: boolean } }
   | { NewBug: { bug_key: BugKey } }
   | { AddBugMessage: { bug_key: BugKey; display: ActorDisplay; content: string } }
+  // the bug is no longer active. absorbed the old DeleteBug for the same reason as ArchiveChannel.
   | { ArchiveBug: { bug_key: BugKey } }
-  | { ClearBugVisibily: { bug_id: BugKey } }
-  | { DeleteBug: { bug_id: BugKey } }
   // directed to the bug's target: you're under surveillance, and in what context (never by whom)
   | { Bugged: { context: BugContext } }
-  | { RemoveChannel: { channel_id: ChannelKey } }
   | { GcOwnerStatus: { owner: boolean; gc_id: GroupchatKey } }
   | { ShowChannelMember: { channel_id: ChannelKey; display: ActorDisplay; channel_perms: ChannelPermissions } }
   | { RemoveChannelMember: { channel_id: ChannelKey; display: ActorDisplay } }
   | { UpdateChannelView: { channel_id: ChannelKey; perms: ChannelPermissions; displays: ActorDisplay[] } }
-  | { SetBugVisibility: { bug_id: BugKey; visible: boolean } }
   | { MapNotebook: { notebook_id: NotebookKey; channel_id: ChannelKey } }
   | { NotebookWrite: { notebook_id: NotebookKey; user_id: ActorKey; message: string | null; true_name: string; delay: number; successes_remaining: number; attempts_remaining: number; success: boolean; target_saved: boolean } }
   | { NotebookBorrowingStatus: { notebook_id: NotebookKey; borrowed: boolean } }
@@ -1014,21 +1022,23 @@ export type Command =
   | { RoleUpdate: { target_id: ActorKey; role: Role } }
   | { TrueNameUpdate: { target_id: ActorKey; true_name: string } }
   | { UpdatePoll: { poll_id: PollKey; subject: PollSubject; scope: PollVisibility; accept: number; reject: number; potential: number; opener: ActorKey | null } }
+  // the poll concluded. it closes, it does not disappear: whoever could see it keeps it and its
+  // outcome.
   | { ClosePoll: { poll_id: PollKey; outcome: PollOutcome } }
   | { UpdatePollView: { poll_id: PollKey; eligible: boolean; own_vote: boolean | null } }
-  | { RemovePollView: { poll_id: PollKey } }
-  // prosecutions: broadcast to system + base immediately, deferred to players (never dropped, so
-  // absent players replay the ordered timeline). trial_channel tags a channel as a prosecution
-  // channel so it renders differently; the channel/poll contents ride their own command streams.
+  // prosecutions: addressed to the presence viewport, plus a System mirror. the ordered timeline
+  // is preserved by that viewport — an absent player exits it and re-entry replays every update
+  // they missed, in order. trial_channel tags a channel as a prosecution channel so it renders
+  // differently; the channel/poll contents ride their own viewports.
   | { UpdateProsecution: { prosecution_id: ProsecutionKey; prosecutor_display: ActorDisplay; defendant_display: ActorDisplay; phase: ProsecutionPhaseView; trial_channel: ChannelKey | null } }
-  | { CloseProsecution: { prosecution_id: ProsecutionKey } }
-  // directed: you were receiving live updates but lost presence — you're viewing frozen state
-  // until the deferred updates replay (an UpdateProsecution clears it)
-  | { FreezeProsecutionView: { prosecution_id: ProsecutionKey } };
+  | { CloseProsecution: { prosecution_id: ProsecutionKey } };
 
-export type CommandRecipient = "System" | "BasePlayer" | {
-  Actor: ActorKey
-}
+// what kind of object a viewport belongs to. display only — do not branch on it.
+export type ViewportKind = "Channel" | "Bug" | "Poll" | "Passive" | "Presence";
+
+// every command is addressed. there is no "no recipient" case: what looks undirected is addressed
+// to some object's viewport, and the object decides who may read it.
+export type CommandRecipient = "System" | { Actor: ActorKey } | { Viewport: ViewportKey };
 
 export type CommandPayload = {
   timestamp: number;

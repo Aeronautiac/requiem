@@ -54,7 +54,6 @@
 // visible. Deferred commands handle the case where a player receives a visibility grant
 // for an already-archived object — the frontend should label it archived and block interaction.
 
-use indexmap::IndexSet;
 
 use crate::{ActorKey, ChannelKey, PollKey, actor::ActorDisplay, common::JobID};
 
@@ -143,11 +142,6 @@ pub struct Prosecution {
     pub defense: ProsecutionDefense,
     pub phase: ProsecutionPhase,
     pub autonomous: bool,
-    // Players who were last sent a live prosecution update (i.e. were present). On the next
-    // broadcast, anyone in here who has since lost presence is sent a FreezeProsecutionView notice
-    // and dropped. Purely drives that "viewing frozen state" notice — actual updates are always
-    // delivered (deferred while absent), never gated on this set. Mirrors the poll dirty set.
-    pub dirty: IndexSet<ActorKey>,
 }
 
 impl Prosecution {

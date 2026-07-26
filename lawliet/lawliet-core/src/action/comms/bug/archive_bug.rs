@@ -29,12 +29,15 @@ impl ActionInterface for ArchiveBug {
         if mutate {
             bug.enabled = false;
         }
+        let viewport = bug.viewport;
 
+        // The bug stays in the world and keeps its viewport: archiving only stops the relay,
+        // and whoever could read it keeps everything it already relayed.
         ctx.push_cmd(
             Command::ArchiveBug {
                 bug_key: self.bug_id,
             },
-            CommandRecipient::System,
+            CommandRecipient::Viewport(viewport),
             eng.time,
         );
 

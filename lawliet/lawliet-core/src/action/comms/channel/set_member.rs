@@ -9,7 +9,7 @@ use crate::{
     action::{ActionInterface, ActionResponse},
     actor::ActorDisplay,
     command::Command,
-    helpers::{get_channel_mut, get_player},
+    helpers::{get_channel_mut, get_player, sync_viewport},
 };
 
 use crate::action::ActionActor;
@@ -52,15 +52,17 @@ impl ActionInterface for SetMember {
             channel.set_member(self.player_id, self.settings.clone());
         }
 
+        // The member list is the authority; the viewport is a projection of it. Resync before
+        // emitting anything, so a newcomer already has access when the roster below lands and a
+        // leaver has already stopped receiving.
+        let viewport = channel.viewport;
+        let viewers = channel.viewers();
+        sync_viewport(eng, ctx, viewport, viewers, mutate);
+
         if let Some(member) = &self.settings {
-            // Under the current ruleset a member holds exactly one set of displays per
-            // channel, identical to every viewer, so the same ShowChannelMember commands
-            // are broadcast to everyone. If per-viewer display divergence (deception) is
-            // ever added, display resolution will have to become recipient-aware here.
-            //
-            // Perms must reach the frontend before the members: it treats a channel entry
-            // (perms) as the membership signal, and ShowChannelMember only writes into an
-            // existing entry. Commands are delivered in push order, so emit perms first.
+            // Perms stay directed: View/Send/LoggabilityControl are per-viewer by nature, and
+            // the frontend treats a channel entry (perms) as the membership signal. Commands
+            // are delivered in push order, so this must precede the roster.
             ctx.push_cmd(
                 Command::UpdateChannelView {
                     channel_id: self.channel_id,
@@ -71,83 +73,39 @@ impl ActionInterface for SetMember {
                 time,
             );
 
-            // note that the player is sent a member display command for their own displays as well
-            // this is just more convenient than having to derive it on the frontend + it would require
-            // extra backend logic
-            for (_, member) in channel.members.iter() {
-                for display in member.displays.iter().filter(|&d| renders_as_member(d)) {
-                    ctx.push_cmd(
-                        Command::ShowChannelMember {
-                            channel_id: self.channel_id,
-                            display: *display,
-                            channel_perms: member.perms,
-                        },
-                        CommandRecipient::Actor(self.player_id),
-                        time,
-                    );
-                }
+            // The roster is addressed to the viewport rather than sent to each member in turn.
+            // Under the current ruleset a member holds one set of displays per channel,
+            // identical to every viewer, so there was never anything per-viewer about these:
+            // the old code sent the whole existing roster to the newcomer and then the
+            // newcomer to everyone else, which is the same content assembled twice. Backfill
+            // covers the newcomer's copy of the existing roster, so only their own entry is
+            // left to emit.
+            //
+            // If per-viewer display divergence (deception) is ever added, this has to go back
+            // to being resolved per recipient.
+            for display in member.displays.iter().filter(|&d| renders_as_member(d)) {
+                ctx.push_cmd(
+                    Command::ShowChannelMember {
+                        channel_id: self.channel_id,
+                        display: *display,
+                        channel_perms: member.perms,
+                    },
+                    CommandRecipient::Viewport(viewport),
+                    time,
+                );
             }
-
-            // Tell the players already in the channel about the newcomer. Skip the
-            // newcomer itself — it was covered by the roster loop above. Existing members
-            // already hold a channel entry, so their ShowChannelMember lands.
-            for (id, _) in channel.members.iter() {
-                if *id == self.player_id {
-                    continue;
-                }
-                for display in member.displays.iter().filter(|&d| renders_as_member(d)) {
-                    ctx.push_cmd(
-                        Command::ShowChannelMember {
-                            channel_id: self.channel_id,
-                            display: *display,
-                            channel_perms: member.perms,
-                        },
-                        CommandRecipient::Actor(*id),
-                        time,
-                    );
-                }
-            }
-        } else {
-            for (_, member) in channel.members.iter() {
-                for display in member.displays.iter().filter(|&d| renders_as_member(d)) {
-                    ctx.push_cmd(
-                        Command::RemoveChannelMember {
-                            channel_id: self.channel_id,
-                            display: *display,
-                        },
-                        CommandRecipient::Actor(self.player_id),
-                        time,
-                    );
-                }
-            }
-
-            ctx.push_cmd(
-                Command::RemoveChannel {
-                    channel_id: self.channel_id,
-                },
-                CommandRecipient::Actor(self.player_id),
-                time,
-            );
-
-            // Tell the remaining members that the leaver is gone. By now the leaver has
-            // been removed from channel.members (execute pass), so this only reaches the
-            // others.
-            if let Some(displays) = &removed_displays {
-                for (id, _) in channel.members.iter() {
-                    if *id == self.player_id {
-                        continue;
-                    }
-                    for display in displays.iter().filter(|&d| renders_as_member(d)) {
-                        ctx.push_cmd(
-                            Command::RemoveChannelMember {
-                                channel_id: self.channel_id,
-                                display: *display,
-                            },
-                            CommandRecipient::Actor(*id),
-                            time,
-                        );
-                    }
-                }
+        } else if let Some(displays) = &removed_displays {
+            // The leaver exited the viewport in the resync above, so this reaches the
+            // remaining members only — exactly who needs it.
+            for display in displays.iter().filter(|&d| renders_as_member(d)) {
+                ctx.push_cmd(
+                    Command::RemoveChannelMember {
+                        channel_id: self.channel_id,
+                        display: *display,
+                    },
+                    CommandRecipient::Viewport(viewport),
+                    time,
+                );
             }
         }
 

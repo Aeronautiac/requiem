@@ -7,7 +7,7 @@
 
 use lawliet_types::{
     action::CreateChannel,
-    command::{Command, CommandRecipient},
+    command::Command,
 };
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
     },
     actor::organization::{LeadershipStruct, OrgAbility},
     common::ActorKey,
-    helpers::{get_actor_mut, get_charge_pool_mut},
+    helpers::{cmd_channel, get_actor_mut, get_charge_pool_mut},
 };
 
 use crate::action::ActionActor;
@@ -70,14 +70,15 @@ impl ActionInterface for CreateOrg {
             ActorKey::default()
         };
 
-        ctx.push_cmd(
+        cmd_channel(
+            eng,
+            ctx,
             Command::MapOrg {
                 org_id: id,
                 channel_id,
                 org_name: self.name,
             },
-            CommandRecipient::System,
-            eng.time,
+            channel_id,
         );
 
         if mutate {

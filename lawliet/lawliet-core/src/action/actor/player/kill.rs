@@ -11,12 +11,12 @@ use crate::{
         AddState, GiveAbility, GiveNotebook, GivePassive, SetBooksDormant, SetBorrowersToOwners,
         SeverLinks, TakeNotebook,
     },
-    actor::{ActorLinkType, ActorType, modifier::Modifier, state::State},
+    actor::{ActorLinkType, ActorType, state::State},
     command::Command,
     common::Version,
     engine::Engine,
     helpers::{
-        cmd_all_deferred, get_ability, get_actor, get_actor_mut, get_notebook, get_passive,
+        cmd_world_event, get_ability, get_actor, get_actor_mut, get_notebook, get_passive,
         require_alive,
     },
 };
@@ -165,7 +165,7 @@ impl ActionInterface for Kill {
         .handle(eng, ctx, actor, version, mutate)?;
 
         if !self.silent {
-            cmd_all_deferred(
+            cmd_world_event(
                 eng,
                 ctx,
                 Command::Death {
@@ -180,10 +180,6 @@ impl ActionInterface for Kill {
                     notebook_transferred,
                     ability_transferred,
                 },
-                Modifier::NoPresence.into(),
-                true,
-                true,
-                mutate,
             );
         }
 

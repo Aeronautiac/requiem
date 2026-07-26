@@ -5,7 +5,6 @@ use crate::Time;
 use crate::action::{
     ActionContext, ActionError, ActionExt, ActionRequest, ActionResponse, ActionResult,
 };
-use crate::command::DeferredCommand;
 use crate::config::Config;
 use crate::engine::jobs::Jobs;
 use crate::world::World;
@@ -17,7 +16,6 @@ pub struct Engine {
     pub config: Config,
     pub time: Time,
     pub jobs: Jobs,
-    pub deferred_commands: Vec<DeferredCommand>,
     pub rng_state: Pcg32,
     // set once InitializeEngine has run; guards against re-initialization.
     pub initialized: bool,
@@ -31,7 +29,6 @@ impl Engine {
             world: World::new(),
             config: Config::new(),
             jobs: Jobs::new(),
-            deferred_commands: vec![],
             time: 0,
             rng_state: Pcg32::seed_from_u64(0),
             initialized: false,
@@ -44,10 +41,6 @@ impl Engine {
 
     pub fn is_future_timestamp(&self, timestamp: Time) -> bool {
         timestamp >= self.time
-    }
-
-    pub fn defer_cmd(&mut self, payload: DeferredCommand) {
-        self.deferred_commands.push(payload);
     }
 
     // attempt to execute an action atomically

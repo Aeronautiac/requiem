@@ -3,9 +3,9 @@
 * Add a notebook to the world state
 */
 
-use lawliet_types::command::CommandRecipient;
 
 use crate::{
+    helpers::cmd_channel,
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
         CreateChannel,
@@ -41,13 +41,14 @@ impl ActionInterface for AddNotebook {
             NotebookKey::default()
         };
 
-        ctx.push_cmd(
+        cmd_channel(
+            eng,
+            ctx,
             Command::MapNotebook {
                 notebook_id: id,
                 channel_id,
             },
-            CommandRecipient::System,
-            eng.time,
+            channel_id,
         );
 
         Ok(ActionResponse::AddNotebook(AddNotebookResponse { id }))

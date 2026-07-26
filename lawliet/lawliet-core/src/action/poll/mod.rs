@@ -5,21 +5,24 @@ pub mod poll_timeout;
 pub mod remove_vote;
 pub mod update_polls;
 
+use indexmap::IndexSet;
 use lawliet_types::command::{Command, CommandRecipient};
-use smallvec::SmallVec;
 
 use crate::{
     action::ActionContext,
-    common::{ActorKey, PollKey},
+    common::PollKey,
     engine::Engine,
-    helpers::{get_poll, get_poll_mut},
+    helpers::{get_poll, sync_viewport},
 };
 
-// Broadcast a poll's current state to the frontend: the shared data + tally globally
-// (UpdatePoll), then each scope-viewer's personal view — votability and their own vote
-// (UpdatePollView). Actors that were previously viewers but have since lost scope access
-// get a directed RemovePollView so their client hides the poll. Only emits on the mutate
-// pass; used on creation and after each vote.
+// Broadcast a poll's current state: the shared data + tally to the poll's viewport
+// (UpdatePoll), then each viewer's personal view — votability and their own vote
+// (UpdatePollView). Only emits on the mutate pass; used on creation and after each vote.
+//
+// Access is resynced first, so an actor who has just come into scope enters the viewport before
+// the UpdatePoll lands and a departing one exits before it doesn't. Losing scope no longer hides
+// the poll — it only means no further updates, so whatever the poll last looked like to that
+// player stays where it was.
 pub(crate) fn broadcast_poll(
     eng: &mut Engine,
     ctx: &mut ActionContext,
@@ -32,6 +35,11 @@ pub(crate) fn broadcast_poll(
     let Ok(poll) = get_poll(eng, poll_id) else {
         return;
     };
+    let viewport = poll.viewport;
+    let viewers = poll.viewers(eng);
+    sync_viewport(eng, ctx, viewport, viewers.clone(), mutate);
+
+    let poll = get_poll(eng, poll_id).expect("just read above");
     let tally = poll.weights(eng);
     let subject = poll.subject.clone();
     let scope = poll.visibility;
@@ -46,19 +54,15 @@ pub(crate) fn broadcast_poll(
             potential: tally.potential_total,
             opener,
         },
-        CommandRecipient::System,
+        CommandRecipient::Viewport(viewport),
         eng.time,
     );
 
-    // Personal views go to everyone who can see the poll's scope; `eligible` reflects
-    // whether they may actually vote right now. Each recipient becomes a tracked viewer.
-    let ids: SmallVec<[ActorKey; 16]> = eng.world.actors.keys().collect();
-    let mut viewers: SmallVec<[ActorKey; 16]> = SmallVec::new();
-    for id in ids {
-        let poll = get_poll(eng, poll_id).unwrap();
-        if !poll.can_view(eng, id) {
-            continue;
-        }
+    // Personal views stay directed: `eligible` and `own_vote` differ per viewer, so they cannot
+    // ride the shared viewport.
+    let viewers: IndexSet<_> = viewers;
+    for id in viewers {
+        let poll = get_poll(eng, poll_id).expect("just read above");
         let eligible = poll.voter_policy(eng, id);
         let own_vote = poll.votes.get(&id).map(|v| v.accept);
         ctx.push_cmd(
@@ -70,29 +74,7 @@ pub(crate) fn broadcast_poll(
             CommandRecipient::Actor(id),
             eng.time,
         );
-        viewers.push(id);
     }
-
-    // Anyone we'd previously sent poll data to who is no longer a viewer has lost scope
-    // access: tell their client to hide the poll, then forget them.
-    let poll = get_poll(eng, poll_id).unwrap();
-    let dropped: SmallVec<[ActorKey; 8]> = poll
-        .dirty
-        .iter()
-        .filter(|id| !viewers.contains(id))
-        .copied()
-        .collect();
-    for id in &dropped {
-        ctx.push_cmd(
-            Command::RemovePollView { poll_id },
-            CommandRecipient::Actor(*id),
-            eng.time,
-        );
-    }
-
-    // The dirty set is now exactly the current viewers.
-    let poll = get_poll_mut(eng, poll_id).unwrap();
-    poll.dirty = viewers.into_iter().collect();
 }
 
 // - Polls should cancel themselves if the action attached to them is rejected (pass mutate false)
