@@ -3,9 +3,8 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Workspace root. amane is the client core; armonia is a host that consumes it.",
+  "description": "Workspace root. amane is the client core; hosts consume it.",
   "workspaces": [
-    "amane",
-    "armonia"
+    "amane"
   ]
 }

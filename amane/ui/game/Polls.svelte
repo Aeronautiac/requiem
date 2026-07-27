@@ -1,12 +1,12 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { GAME_STATE_KEY, orgDisplayName } from "../../game_state.svelte.ts";
+  import { GAME_STATE_KEY, orgDisplayName, playerLabel } from "../../game_state.svelte.ts";
   import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
   import type { GameState, PollData, PollView } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import type { ActionPayload, PollSubject, PollVisibility } from "../../bindings";
+  import type { Action, PollSubject, PollVisibility } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
   import { Flash } from "../../flash.svelte.ts";
@@ -20,18 +20,23 @@
   const flash = new Flash();
   let open = $state(true);
 
-  // Polls the current viewer can see. Players see the ones they were sent a view for
-  // (poll_views); Admin sees every poll (no vote). Shared data comes from game.polls.
+  // Polls the current viewer can see and can still vote in. Players see the ones they were sent a
+  // view for (poll_views); Admin sees every poll (no vote). Shared data comes from game.polls.
+  //
+  // Resolved polls are filtered out rather than absent: game.polls keeps them so a viewer gaining
+  // the poll's viewport later can replay its history, so "is this vote still live" is `outcome`.
   const polls = $derived.by(() => {
     const out: { id: string; data: PollData; view: PollView | null }[] = [];
     if (ui.viewer === "Admin") {
-      for (const [id, data] of game.polls) out.push({ id, data, view: null });
+      for (const [id, data] of game.polls) {
+        if (!data.outcome) out.push({ id, data, view: null });
+      }
       return out;
     }
     const view = game.views.get(ui.viewer);
     for (const [id, pv] of view?.poll_views ?? []) {
       const data = game.polls.get(id);
-      if (data) out.push({ id, data, view: pv });
+      if (data && !data.outcome) out.push({ id, data, view: pv });
     }
     return out;
   });
@@ -42,8 +47,7 @@
   function subjectHeading(subject: PollSubject): string {
     if ("Generic" in subject) return subject.Generic;
     if ("CivilianArrest" in subject) {
-      const nm = game.players.get(slotKeyToString(subject.CivilianArrest))?.display_name;
-      return nm ? `Arrest ${nm}` : "Civilian arrest";
+      return `Arrest ${playerLabel(slotKeyToString(subject.CivilianArrest), game.players)}`;
     }
     const name = Object.keys(subject.OrgAbility as Record<string, unknown>)[0] ?? "";
     return name.replace(/([a-z])([A-Z])/g, "$1 $2");
@@ -71,7 +75,7 @@
   function formatArgValue(v: unknown): string {
     if (typeof v === "boolean") return v ? "yes" : "no";
     if (typeof v === "object" && v !== null) {
-      return game.players.get(slotKeyToString(v as never))?.display_name ?? "Unknown";
+      return playerLabel(slotKeyToString(v as never), game.players);
     }
     return String(v);
   }
@@ -91,7 +95,7 @@
     return out;
   }
 
-  async function send(id: string, payload: ActionPayload, ok: string) {
+  async function send(id: string, payload: Action, ok: string) {
     const err = await client.dispatch({
       actor: viewerToActor(ui.viewer),
       timestamp: now(),
@@ -153,7 +157,7 @@
               {scopeLabel(p.data.scope)}
             </span>
             {#if p.data.opener}
-              <span>started by {p.data.opener}</span>
+              <span>started by {game.actor_name(p.data.opener)}</span>
             {/if}
           </div>
 

@@ -3,7 +3,7 @@
   // string key. The engine is the authority on valid targets (self-target, etc.), so
   // every player is offered here.
   import { getContext } from "svelte";
-  import { GAME_STATE_KEY } from "../../../game_state.svelte.ts";
+  import { GAME_STATE_KEY, playerLabel } from "../../../game_state.svelte.ts";
   import type { GameState } from "../../../game_state.svelte.ts";
 
   let {
@@ -27,10 +27,10 @@
 
 <select
   bind:value
-  class="w-full rounded-md bg-neutral-800 px-2 py-2 text-sm text-neutral-200"
+  class="w-full rounded-md border border-edge bg-panel px-2 py-2 text-sm text-ink"
 >
   <option value="" disabled>{placeholder}</option>
-  {#each players as [id, p] (id)}
-    <option value={id}>{p.display_name}</option>
+  {#each players as [id] (id)}
+    <option value={id}>{playerLabel(id, game.players)}</option>
   {/each}
 </select>

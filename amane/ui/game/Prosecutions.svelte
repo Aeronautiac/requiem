@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { actorLabel, GAME_STATE_KEY } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import type { GameState, ProsecutionData } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
@@ -23,13 +23,7 @@
   const prosecutions = $derived([...(view?.prosecutions.entries() ?? [])]);
 
   function display_string(display: ActorDisplay): string {
-    if (display === "Mysterious") return "???";
-    if (display === "System") return "System";
-    if ("Raw" in display)
-      return game.players.get(slotKeyToString(display.Raw))?.display_name ?? "Unknown";
-    if ("Role" in display) return display.Role;
-    if ("Org" in display) return "Org";
-    return "Unknown";
+    return actorLabel(display, game.players);
   }
 
   function phase_text(phase: ProsecutionPhaseView): string {

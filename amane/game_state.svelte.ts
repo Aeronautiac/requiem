@@ -1,5 +1,5 @@
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import type { AbilityName, ActorDisplay, ActorKey, ActionResponse, BugContext, BugKey, CommandPayload, CommandRecipient, NotebookKey, OrganizationName, PassiveType, PollOutcome, PollSubject, PollVisibility, ProsecutionKey, ProsecutionPhaseView, Role } from "./bindings";
+import type { AbilityKey, AbilityName, ActorDisplay, BugContext, BugKey, CommandPayload, CommandRecipient, NotebookKey, OrganizationName, PassiveType, PollOutcome, PollSubject, PollVisibility, ProfileUpdate, ProsecutionKey, ProsecutionPhaseView, Role } from "./bindings";
 import { slotKeyFromString, slotKeyToString } from "./bindings";
 
 // store all messages and events in the top level, but give every view a copy 
@@ -154,7 +154,9 @@ export type PollNoticeEvent = {
     poll_id: string,
     subject: PollSubject,
     outcome: PollOutcome | null,
-    opener: string | null, // resolved display name of who opened the vote (null = none/on close)
+    // Actor KEY of who opened the vote (null = none, and always null on a close notice). Resolved
+    // for display at render time — see PollData.opener for why it is not a name.
+    opener: string | null,
   }
 }
 
@@ -171,7 +173,14 @@ export type PollData = {
   accept: number,
   reject: number,
   potential: number,
-  opener: string | null, // resolved display name of who opened the vote (null = none)
+  // Actor KEY of whoever opened the vote (null = none), not a name. Resolved for display at
+  // render time via actor_name: a name resolved at apply time would be whatever `players` happened
+  // to hold then, and a view replaying this later would resolve it differently.
+  opener: string | null,
+  // Set once the poll has resolved. The entry is KEPT rather than deleted — client state is
+  // monotonic, and a view that gains the poll's viewport later replays its whole history and has to
+  // reach the same place. Consumers showing live polls filter on this being null.
+  outcome: PollOutcome | null,
 }
 
 // A viewer's personal relationship to a poll (from the directed UpdatePollView). Having
@@ -267,6 +276,22 @@ export class GameView {
   // not "have I ever seen any".
   viewports = new SvelteSet<string>();
 
+  // viewport key -> the log position, exclusive, up to which THIS view has been given that
+  // viewport's commands. Monotonic; every write goes through deliver_to.
+  //
+  // Per-VIEW, which is the whole point. The server's equivalent is per-connection, so a connection
+  // holding several actors is sent a viewport's history exactly once no matter how many of its
+  // actors enter. This is what lets the second one be handed its own copy. See GameState.#backfill.
+  #watermark = new Map<string, number>();
+
+  delivered(viewport: string): number {
+    return this.#watermark.get(viewport) ?? 0;
+  }
+
+  deliver_to(viewport: string, position: number) {
+    this.#watermark.set(viewport, Math.max(this.delivered(viewport), position));
+  }
+
   // Is this view's snapshot of a prosecution stale? True once it has lost access to the viewport
   // the updates came through: nothing further will arrive, so what it holds is the last thing it
   // heard rather than the current state. This is what the deleted FreezeProsecutionView command
@@ -276,58 +301,50 @@ export class GameView {
     return viewport != null && !this.viewports.has(viewport);
   }
 
-  // structuredClone can't clone a GameView: it drops the class prototype and
-  // turns the SvelteMaps into plain Maps (losing reactivity), and can throw on
-  // the maps' internal reactive state. Clone by hand into fresh SvelteMaps,
-  // copying each value object so views don't share mutable state.
-  clone(): GameView {
-    const copy = new GameView();
-    for (const [id, cv] of this.channel_views) {
-      const members = new SvelteMap<string, ChannelMemberView>();
-      for (const [dkey, m] of cv.members) {
-        members.set(dkey, {
-          display: m.display,
-          perms: m.perms,
-          had_positive: m.had_positive,
-        });
+}
+
+// Every command this client has received, in the order it received them, plus the index over the
+// viewport-addressed ones.
+//
+// Deliberately the same structure as yagami's History: the server holds exactly this and filters it
+// per connection, and the client's problem is the same one at a finer granularity. Not reactive —
+// nothing renders from the log itself, only from the state applying it produces.
+class History {
+  #log: CommandPayload[] = [];
+  // viewport key -> its positions in #log, ascending. Positions, not payloads: there is exactly one
+  // copy of every command.
+  #index = new Map<string, number[]>();
+
+  // Record one received command and return its position, which is what watermarks are measured in.
+  append(payload: CommandPayload): number {
+    const pos = this.#log.length;
+    this.#log.push(payload);
+
+    const viewport = recipientToViewport(payload.recipient);
+    if (viewport !== undefined) {
+      let positions = this.#index.get(viewport);
+      if (!positions) {
+        positions = [];
+        this.#index.set(viewport, positions);
       }
-      copy.channel_views.set(id, {
-        perms: { ...cv.perms },
-        members,
-        displays: [...cv.displays],
-      });
+      positions.push(pos);
     }
-    for (const [id, ability] of this.abilities) {
-      copy.abilities.set(id, $state.snapshot(ability));
+
+    return pos;
+  }
+
+  // Everything addressed to `viewport` in [from, until), with each command's position. Walks that
+  // viewport's positions rather than the log, so it costs what it yields.
+  //
+  // Note what CANNOT come back from here: EnterViewport and ExitViewport are addressed to the actor
+  // they concern, never to a viewport, so a replay of a viewport's history can never contain another
+  // access change. That is what keeps #backfill from recursing.
+  *range(viewport: string, from: number, until: number): Generator<[number, CommandPayload]> {
+    for (const pos of this.#index.get(viewport) ?? []) {
+      if (pos < from) continue;
+      if (pos >= until) return;
+      yield [pos, this.#log[pos]];
     }
-    for (const [id, pv] of this.passives) {
-      copy.passives.set(id, { ...pv });
-    }
-    for (const gc of this.owned_gcs) {
-      copy.owned_gcs.add(gc);
-    }
-    for (const [id, pv] of this.poll_views) {
-      copy.poll_views.set(id, { ...pv });
-    }
-    for (const [id, pd] of this.prosecutions) {
-      copy.prosecutions.set(id, { ...pd });
-    }
-    for (const key of this.visible_bugs) {
-      copy.visible_bugs.add(key);
-    }
-    for (const key of this.viewports) {
-      copy.viewports.add(key);
-    }
-    for (const event of this.events) {
-      copy.events.push(event);
-    }
-    for (const [key, ch] of this.info_channels) {
-      const copy_ch = new_channel(ch.kind, ch.category, ch.name);
-      copy_ch.archived = ch.archived;
-      for (const event of ch.events) copy_ch.events.push(event);
-      copy.info_channels.set(key, copy_ch);
-    }
-    return copy;
   }
 }
 
@@ -352,7 +369,7 @@ export function displayKey(d: ActorDisplay): string {
 export function actorLabel(d: ActorDisplay, players: ReadonlyMap<string, Player>): string {
   if (d === "Mysterious") return "???";
   if (d === "System") return "System";
-  if ("Raw" in d) return players.get(slotKeyToString(d.Raw))?.display_name ?? "Unknown";
+  if ("Raw" in d) return playerLabel(slotKeyToString(d.Raw), players);
   if ("Role" in d) return d.Role;
   if ("Org" in d) return "Org";
   return "Unknown";
@@ -369,8 +386,22 @@ export function hasPositivePerms(perms: number): boolean {
   return (perms & (PERM_SEND | PERM_VIEW | PERM_LOGGABILITY)) !== 0;
 }
 
+// A player slot this client has been told about (from MapPlayer).
+//
+// The slot comes first and always; the NAME is a separate server-level fact that may never arrive.
+// So `display_name` is nullable, and every render site goes through `playerLabel` rather than
+// reaching for the field — an unnamed slot is a normal, permanent state, not a missing value.
 export interface Player {
-  display_name: string;
+  display_name: string | null;
+}
+
+// What to call a player slot. Falls back to a generated label rather than a bare key, matching how
+// every other unnamed object in the UI reads ("lounge-3", "trial-1v0").
+export function playerLabel(id: string, players: ReadonlyMap<string, Player>): string {
+  const name = players.get(id)?.display_name;
+  if (name) return name;
+  const key = slotKeyFromString(id);
+  return `player-${key.idx}v${key.version}`;
 }
 
 // Admin-facing per-player facts, populated from the System copy of the personal-info commands
@@ -381,7 +412,7 @@ export interface PlayerInfo {
   true_name?: string;
 }
 
-export function new_player(display_name: string): Player {
+export function new_player(display_name: string | null): Player {
   let player: Player = $state({ display_name });
   return player;
 }
@@ -426,6 +457,46 @@ export function new_channel(kind: ChannelKind, category: ChannelCategory, name: 
   let channel: Channel = $state({ kind, category, name, archived: false, events: [] });
   return channel;
 }
+
+// Create or refresh one entry in an ability list. Shared because the same UpdateAbilityView lands
+// either in a player's own list or in an org's shared one, depending only on how it was addressed.
+// Takes the command's fields directly: the engine's variant is an inline struct, so bindings has
+// no name for it.
+function upsert_ability(
+  abilities: SvelteMap<string, AbilityView>,
+  { ability_id, ability_name, success_usages_remaining, failure_usages_remaining, iterations_to_reset }: {
+    ability_id: AbilityKey;
+    ability_name: AbilityName;
+    success_usages_remaining: number;
+    failure_usages_remaining: number;
+    iterations_to_reset: number;
+  },
+) {
+  const id = slotKeyToString(ability_id);
+  const existing = abilities.get(id);
+  if (existing) {
+    existing.success_usages_remaining = success_usages_remaining;
+    existing.failure_usages_remaining = failure_usages_remaining;
+    existing.iterations_to_reset = iterations_to_reset;
+    return;
+  }
+  const view: AbilityView = $state({
+    name: ability_name,
+    success_usages_remaining,
+    failure_usages_remaining,
+    iterations_to_reset,
+  });
+  abilities.set(id, view);
+}
+
+// A kidnapping this client has been told about. Kept after its reveal rather than deleted: the
+// reveal command carries only the kidnapping's id, so resolving the victim is a lookup here, and a
+// view replaying that reveal later must resolve the same one.
+export type TrackedKidnapping = {
+  victim: string;
+  duration: number | null; // null = indefinite (no scheduled auto-release)
+  revealed: boolean;
+};
 
 // Synthetic key of the single, per-viewer read-only Notifications info channel. It is the one
 // place directed-at-you personal events land: reveal results (true names, notebook holdings)
@@ -507,10 +578,10 @@ export class GameState {
   // relayed messages). Held globally like channels; per-viewer visibility is each view's
   // visible_bugs, opened by EnterViewport on the bug's viewport.
   bugs = new SvelteMap<string, Channel>();
-  // kidnapping id -> tracked kidnapping (victim + optional auto-release duration). Populated
-  // by the Kidnapping world event; the KidnapReveal event references the id to resolve the
-  // victim, and this is the hook for a future live-countdown timer. Held globally like bugs.
-  kidnappings = new SvelteMap<string, { victim: string; duration: number | null }>();
+  // kidnapping id -> tracked kidnapping. Populated by the Kidnapping world event; the KidnapReveal
+  // event references the id to resolve the victim, and this is the hook for a future live-countdown
+  // timer. Held globally like bugs. See TrackedKidnapping for why entries outlive their reveal.
+  kidnappings = new SvelteMap<string, TrackedKidnapping>();
 
   constructor() {
     // System (admin) is not a player: it bypasses channel perms (see is_admin), so its
@@ -520,13 +591,78 @@ export class GameState {
     this.views.set("System", new GameView());
   }
 
+  // Every command received, in order. The source the per-view state below is built from, and what
+  // lets a view that gains a viewport be handed that viewport's past. See #backfill.
+  #history = new History();
+
   // Apply a batch of commands in push order. The public seam the Sequencer drives;
   // command ordering within a batch is significant (create-before-reference,
   // last-write-wins perms), so never reorder.
   apply_batch(commands: CommandPayload[]) {
-    for (const cmd of commands) {
-      this.handle_command(cmd);
+    for (const payload of commands) {
+      this.#apply(payload);
     }
+  }
+
+  // Apply one command: record it, run its global effect once, then its per-view effect for each of
+  // this client's views that receives it.
+  //
+  // The split is the rule for where state lives, rather than a comment on each command. Anything in
+  // #apply_global happens once per command and is shared by every view; anything in #apply_to_view
+  // happens once per receiving view and may be REPLAYED later for a view that gains the viewport
+  // afterwards. Which function a new command goes in IS the decision.
+  //
+  // The consequence of replay is that a per-view handler may not destroy anything: it can be run
+  // long after the fact, and whatever it reads must still be there. That is why a resolved poll and
+  // a revealed kidnapping are marked rather than deleted.
+  #apply(payload: CommandPayload) {
+    const pos = this.#history.append(payload);
+    this.#apply_global(payload);
+    for (const view of this.#recipients(payload.recipient)) {
+      this.#apply_to_view(view, payload, pos);
+    }
+  }
+
+  // Which of this client's views a command lands in.
+  //
+  // The server already decided this CONNECTION may see it; this decides which of the views the
+  // connection holds. An Actor-addressed command names exactly one. A Viewport-addressed one names
+  // none — the server sent it because SOME actor here has access, and which ones is a question only
+  // the client can answer. Fanning out here is what lets one client hold several actors without the
+  // protocol having to know.
+  #recipients(recipient: CommandRecipient): GameView[] {
+    const viewport = recipientToViewport(recipient);
+    if (viewport === undefined) {
+      const view = this.actor_view(recipient);
+      return view ? [view] : [];
+    }
+
+    const out: GameView[] = [];
+    for (const [key, view] of this.views) {
+      // System reads every viewport — the server sends it everything, and it holds no actors of its
+      // own to enter with. That is what makes admin able to watch a deception: they see the fiction
+      // through the same viewport the players do, and any truth the engine exposes arrives
+      // separately as a System-addressed command to compose against it.
+      if (key === "System" || view.viewports.has(viewport)) out.push(view);
+    }
+    return out;
+  }
+
+  // Hand one view the part of a viewport's past it has not been given.
+  //
+  // This exists because the server backfills a viewport once per CONNECTION — only its first holder
+  // — which is correct for a connection and insufficient here, where state is per-actor. A key
+  // holding several actors (an admin key holds every actor) has already been sent viewports that a
+  // view entering now never saw, and no second backfill is coming.
+  //
+  // The two backfills are complementary and cannot overlap: the server sends what the connection
+  // lacked, this replays what the connection had and this view lacked. The watermark is what
+  // separates them, and it would suppress a double anyway.
+  #backfill(view: GameView, viewport: string, until: number) {
+    for (const [pos, payload] of this.#history.range(viewport, view.delivered(viewport), until)) {
+      this.#apply_to_view(view, payload, pos);
+    }
+    view.deliver_to(viewport, until);
   }
 
   // The view for an actor, created on demand.
@@ -548,13 +684,13 @@ export class GameState {
     return view;
   }
 
-  // Does the named view receive a command addressed this way? The public form of target_views,
+  // Does the named view receive a command addressed this way? The public form of #recipients,
   // for callers that already know which view they care about (e.g. deciding whether to toast for
   // the one the user is looking at).
   view_receives(recipient: CommandRecipient, view_key: string): boolean {
     const viewport = recipientToViewport(recipient);
     if (viewport !== undefined) {
-      if (view_key === "System") return true; // see target_views
+      if (view_key === "System") return true; // see #recipients
       return this.views.get(view_key)?.viewports.has(viewport) ?? false;
     }
     return recipientToView(recipient) === view_key;
@@ -562,61 +698,15 @@ export class GameState {
 
   // The single view an Actor-addressed command lands in, created if this is the first thing
   // we've seen for that actor. Returns undefined only for a recipient that names no single
-  // view (System when it has somehow gone missing, or a Viewport — use target_views for those).
+  // view (System when it has somehow gone missing, or a Viewport — use #recipients for those).
   private actor_view(recipient: CommandRecipient): GameView | undefined {
     const key = recipientToView(recipient);
     return key === undefined ? undefined : this.view_for(key);
   }
 
-  // Every one of this client's views that the command should land in.
-  //
-  // A Viewport-addressed command names no view: the server sent it because SOME actor this
-  // client holds has access, and which ones is a question only the client can answer. Fanning
-  // out here is what lets one client hold several actors without the protocol having to know.
-  private target_views(recipient: CommandRecipient): GameView[] {
-    const viewport = recipientToViewport(recipient);
-    if (viewport !== undefined) {
-      // System reads every viewport — the server sends it everything, and it holds no actors of
-      // its own to enter with. That is what makes admin able to watch a deception: they see the
-      // fiction through the same viewport the players do, and any truth the engine exposes
-      // arrives separately as a System-addressed command to compose against it.
-      const out: GameView[] = [this.system_view()];
-      for (const [key, view] of this.views) {
-        if (key !== "System" && view.viewports.has(viewport)) out.push(view);
-      }
-      return out;
-    }
-    const view = this.actor_view(recipient);
-    return view ? [view] : [];
-  }
-
-  private handle_command({ recipient, cmd, timestamp }: CommandPayload) {
-    // Access changes. Addressed to the actor concerned, so they land in exactly one view.
-    //
-    // Everything previously addressed to the viewport follows this command, so anything that
-    // needs to know WHAT the viewport is has to wait for that content to arrive — which is why
-    // the bug hookup below is written from both sides.
-    if ("EnterViewport" in cmd) {
-      const { viewport } = cmd.EnterViewport;
-      const view = this.actor_view(recipient);
-      if (view) {
-        const key = slotKeyToString(viewport);
-        view.viewports.add(key);
-        // If this viewport has already been identified as a bug's, the gate opens now;
-        // otherwise NewBug opens it when it arrives in the backfill.
-        const bug = this.#viewport_to_bug.get(key);
-        if (bug) view.visible_bugs.add(bug);
-      }
-      return;
-    }
-
-    // Access lost. Nothing already received is dropped — this only means no more is coming.
-    if ("ExitViewport" in cmd) {
-      const view = this.actor_view(recipient);
-      view?.viewports.delete(slotKeyToString(cmd.ExitViewport.viewport));
-      return;
-    }
-
+  // What a command does to state every view shares. Runs exactly once, and is never replayed —
+  // so unlike a per-view handler this one may consume what it reads.
+  #apply_global({ recipient, cmd, timestamp }: CommandPayload) {
     if ("MapLounge" in cmd) {
       const { channel_id, contact_id } = cmd.MapLounge;
       // Lounges are identified by their contact-channel id.
@@ -639,16 +729,15 @@ export class GameState {
       return;
     }
 
-    // Per-recipient: tells this player whether they now own the gc. Drives the
-    // group-chat controls (only the owner may add/remove/transfer).
-    if ("GcOwnerStatus" in cmd) {
-      const player_id = recipientToPlayer(recipient);
-      if (player_id) {
-        const view = this.view_for(player_id);
-        const gc_key = slotKeyToString(cmd.GcOwnerStatus.gc_id);
-        if (cmd.GcOwnerStatus.owner) view?.owned_gcs.add(gc_key);
-        else view?.owned_gcs.delete(gc_key);
-      }
+    // A player slot exists. The engine says nothing about who is on it — that arrives on the
+    // profile channel, possibly never, so the entry starts unnamed and renders as `player-<slot>`.
+    //
+    // Created here rather than from an action response, which is what makes the roster
+    // reconstructible: the response reaches only the connection that submitted AddPlayer, so any
+    // other client (and the submitter after a rejoin) used to have an empty players map.
+    if ("MapPlayer" in cmd) {
+      const key = slotKeyToString(cmd.MapPlayer.player_id);
+      if (!this.players.has(key)) this.players.set(key, new_player(null));
       return;
     }
 
@@ -732,53 +821,6 @@ export class GameState {
       return;
     }
 
-    // this should only ever be targetted toward players. ignore anything else.
-    if ("UpdateChannelView" in cmd) {
-      const channel_id = slotKeyToString(cmd.UpdateChannelView.channel_id);
-
-      const player_id = recipientToPlayer(recipient);
-      if (player_id) {
-        const view = this.view_for(player_id);
-        const p = cmd.UpdateChannelView.perms;
-        const loggability_control = (p & PERM_LOGGABILITY) !== 0;
-        const read = (p & PERM_VIEW) !== 0;
-        const send = (p & PERM_SEND) !== 0;
-        const existing = view.channel_views.get(channel_id);
-        const old_perms = existing?.perms;
-        let read_updated: number = timestamp;
-        let had_positive = read || send || loggability_control;
-        if (old_perms) {
-          if (read === old_perms.read) {
-            read_updated = old_perms.read_updated;
-          }
-          had_positive ||= old_perms.had_positive;
-        }
-        const perms: ChannelPerms = {
-          had_positive,
-          read_updated,
-          loggability_control,
-          read,
-          send,
-        };
-        // Perms is the membership signal: an UpdateChannelView creates the channel
-        // entry if absent, preserving members if it already existed. Re-set the map key
-        // (rather than mutating in place) so perms/displays updates trigger reactivity.
-        view.channel_views.set(channel_id, {
-          perms,
-          members: existing?.members ?? new SvelteMap(),
-          displays: cmd.UpdateChannelView.displays,
-        });
-
-        // Notify the viewer when they RECEIVE a notebook (any source): a notebook channel
-        // going from no-read to read means the book is now in their hands. Frontend-derived,
-        // no engine command. Fires once per gain (not on refreshes while already held).
-        if (read && !(old_perms?.read ?? false) && this.#channel_to_notebook.has(channel_id)) {
-          this.push_notif(recipient, timestamp, { NotebookReceived: {} });
-        }
-      }
-      return;
-    }
-
     // can only be directed to system
     if ("ArchiveChannel" in cmd) {
       const channel_id = slotKeyToString(cmd.ArchiveChannel.channel_id);
@@ -798,34 +840,6 @@ export class GameState {
     if ("NotebookBorrowingStatus" in cmd) {
       const { notebook_id, borrowed } = cmd.NotebookBorrowingStatus;
       this.#notebook_borrowed.set(slotKeyToString(notebook_id), borrowed);
-      return;
-    }
-
-    // A member (identified by a display) was made visible in a channel.
-    // The roster is addressed to the channel's viewport, so it lands in every view of ours that
-    // can read that channel rather than being re-sent per member. A view with no channel entry
-    // yet is skipped: the entry is created by UpdateChannelView, which the engine emits first.
-    if ("ShowChannelMember" in cmd) {
-      const { channel_id, display, channel_perms } = cmd.ShowChannelMember;
-      for (const view of this.target_views(recipient)) {
-        const entry = view.channel_views.get(slotKeyToString(channel_id));
-        if (!entry) continue;
-        const key = displayKey(display);
-        const had_positive =
-          (entry.members.get(key)?.had_positive ?? false) ||
-          hasPositivePerms(channel_perms);
-        entry.members.set(key, { display, perms: channel_perms, had_positive });
-      }
-      return;
-    }
-
-    if ("RemoveChannelMember" in cmd) {
-      const { channel_id, display } = cmd.RemoveChannelMember;
-      for (const view of this.target_views(recipient)) {
-        view.channel_views
-          .get(slotKeyToString(channel_id))
-          ?.members.delete(displayKey(display));
-      }
       return;
     }
 
@@ -874,44 +888,17 @@ export class GameState {
       return;
     }
 
+    // An ORG's abilities are held globally — every member sees the same list — and are addressed
+    // to the org channel's viewport rather than to the org actor. A player's own abilities are
+    // Actor-addressed and per-view; see #apply_to_view.
     if ("UpdateAbilityView" in cmd) {
-      const { ability_id, ability_name, success_usages_remaining, failure_usages_remaining, iterations_to_reset } = cmd.UpdateAbilityView;
-      // An org-owned ability is directed to Actor(org); route it to the org's shared
-      // ability list rather than a player view.
-      const abilities = this.abilities_for_recipient(recipient);
-      if (abilities) {
-        const id = slotKeyToString(ability_id);
-        const existing = abilities.get(id);
-        if (existing) {
-          existing.success_usages_remaining = success_usages_remaining;
-          existing.failure_usages_remaining = failure_usages_remaining;
-          existing.iterations_to_reset = iterations_to_reset;
-        } else {
-          let av: AbilityView = $state({ name: ability_name, success_usages_remaining, failure_usages_remaining, iterations_to_reset });
-          abilities.set(id, av);
-        }
-      }
+      const abilities = this.#org_abilities(recipient);
+      if (abilities) upsert_ability(abilities, cmd.UpdateAbilityView);
       return;
     }
 
     if ("RemoveAbility" in cmd) {
-      this.abilities_for_recipient(recipient)?.delete(slotKeyToString(cmd.RemoveAbility.ability_id));
-      return;
-    }
-
-    // A passive the recipient now holds. Player-addressed only in practice: an org's passives
-    // ride the org channel's viewport, and actor_view yields nothing for those, so they are
-    // dropped — orgs have no passive list to show them in yet.
-    if ("UpdatePassiveView" in cmd) {
-      const { passive_id, passive_type } = cmd.UpdatePassiveView;
-      const view = this.actor_view(recipient);
-      view?.passives.set(slotKeyToString(passive_id), { type: passive_type });
-      return;
-    }
-
-    if ("RemovePassive" in cmd) {
-      const view = this.actor_view(recipient);
-      view?.passives.delete(slotKeyToString(cmd.RemovePassive.passive_id));
+      this.#org_abilities(recipient)?.delete(slotKeyToString(cmd.RemoveAbility.ability_id));
       return;
     }
 
@@ -920,213 +907,100 @@ export class GameState {
     if ("UpdatePoll" in cmd) {
       const { poll_id, subject, scope, accept, reject, potential, opener } = cmd.UpdatePoll;
       const key = slotKeyToString(poll_id);
-      const opener_name = opener ? this.actor_name(slotKeyToString(opener)) : null;
+      const opener_key = opener ? slotKeyToString(opener) : null;
+      const existing = this.polls.get(key);
       // First sight = the vote just opened; drop the "vote started" notice into its scoped
       // channel (later UpdatePolls are tally refreshes).
-      if (!this.polls.has(key)) {
-        this.poll_notice(scope, key, subject, null, timestamp, opener_name);
+      if (!existing) {
+        this.poll_notice(scope, key, subject, null, timestamp, opener_key);
       }
-      this.polls.set(key, { subject, scope, accept, reject, potential, opener: opener_name });
+      this.polls.set(key, {
+        subject, scope, accept, reject, potential,
+        opener: opener_key,
+        // an update after the close would be odd, but it must not un-resolve the poll.
+        outcome: existing?.outcome ?? null,
+      });
       return;
     }
 
-    // A poll concluded: drop the shared data and every viewer's personal view, and drop a
-    // resolution notice into its scoped channel.
+    // A poll concluded: record the outcome and drop a resolution notice into its scoped channel.
+    //
+    // The entry is kept, not deleted. A view gaining the poll's viewport later replays this whole
+    // history and must reach the same place, and the notice below reads the poll's own subject.
+    // Consumers showing live polls filter on `outcome`; the per-view poll_views entries are left
+    // alone for the same reason (nothing received is retracted).
     if ("ClosePoll" in cmd) {
       const { poll_id, outcome } = cmd.ClosePoll;
       const key = slotKeyToString(poll_id);
       const poll = this.polls.get(key);
-      // A resolution notice has no opener (it's the outcome, not the opening).
-      if (poll) this.poll_notice(poll.scope, key, poll.subject, outcome, timestamp, null);
-      this.polls.delete(key);
-      for (const view of this.views.values()) view.poll_views.delete(key);
+      if (poll) {
+        // A resolution notice has no opener (it's the outcome, not the opening).
+        this.poll_notice(poll.scope, key, poll.subject, outcome, timestamp, null);
+        // re-set rather than mutate: SvelteMap tracks its own get/set, not writes into a stored
+        // plain object, so mutating in place would leave the polls panel showing a live vote.
+        this.polls.set(key, { ...poll, outcome });
+      }
       return;
     }
 
-    // This player's personal view of a poll they can see (eligibility + their own vote).
-    if ("UpdatePollView" in cmd) {
-      const { poll_id, eligible, own_vote } = cmd.UpdatePollView;
-      const view = this.actor_view(recipient);
-      view?.poll_views.set(slotKeyToString(poll_id), { eligible, own_vote });
-      return;
-    }
-
-    // This viewer's prosecution snapshot. Globally, tag the trial channel ("Prosecution" kind for
-    // rendering + a channel->prosecution mapping for acting on it). Per-view: store the snapshot
-    // and emit a news event when the phase differs from what this view last held (a start when
-    // it's a new prosecution, an advance otherwise). Per-view diffing is what makes an absent
-    // player's backfill reproduce the ordered news timeline when they return.
+    // Tag the trial channel: "Prosecution" category for rendering, plus a channel->prosecution
+    // mapping for acting on it from inside. The snapshot itself is per-view; see #apply_to_view.
+    //
+    // The mapping is never untagged on close. It records that this channel WAS a trial's, which
+    // ending the trial does not make untrue, and a view replaying the history later still needs it.
     if ("UpdateProsecution" in cmd) {
-      const { prosecution_id, prosecutor_display, defendant_display, phase, trial_channel } = cmd.UpdateProsecution;
-      const key = slotKeyToString(prosecution_id);
-      const channelKey = trial_channel ? slotKeyToString(trial_channel) : null;
-      if (channelKey) {
-        this.#channel_to_prosecution.set(channelKey, key);
-        if (!this.channels.has(channelKey)) {
-          this.channels.set(channelKey, new_channel("Standard", "Prosecution", `trial-${prosecution_id.idx}v${prosecution_id.version}`));
-        }
-      }
-      const viewport = recipientToViewport(recipient) ?? null;
-      for (const view of this.target_views(recipient)) {
-        const prev = view.prosecutions.get(key);
-        view.prosecutions.set(key, { prosecutor_display, defendant_display, phase, trial_channel: channelKey, viewport });
-        if (!prev || !phaseViewEqual(prev.phase, phase)) {
-          view.events.push({
-            timestamp,
-            data: { ProsecutionEvent: { prosecution_id: key, prosecutor_display, defendant_display, phase, ended: false } },
-          });
-        }
+      const { prosecution_id, trial_channel } = cmd.UpdateProsecution;
+      if (!trial_channel) return;
+
+      const channel_key = slotKeyToString(trial_channel);
+      this.#channel_to_prosecution.set(channel_key, slotKeyToString(prosecution_id));
+      if (!this.channels.has(channel_key)) {
+        this.channels.set(channel_key, new_channel("Standard", "Prosecution", `trial-${prosecution_id.idx}v${prosecution_id.version}`));
       }
       return;
     }
 
-    // The prosecution ended. Per-view: if this view knew the prosecution, drop a terminal news
-    // event using its last-held displays, forget it, and untag its channel. A view that was
-    // absent for the whole thing receives the ordered timeline on re-entry and reaches the same
-    // place.
-    if ("CloseProsecution" in cmd) {
-      const key = slotKeyToString(cmd.CloseProsecution.prosecution_id);
-      for (const view of this.target_views(recipient)) {
-        const prev = view.prosecutions.get(key);
-        if (!prev) continue;
-        view.events.push({
-          timestamp,
-          data: { ProsecutionEvent: { prosecution_id: key, prosecutor_display: prev.prosecutor_display, defendant_display: prev.defendant_display, phase: prev.phase, ended: true } },
-        });
-        if (prev.trial_channel) this.#channel_to_prosecution.delete(prev.trial_channel);
-        view.prosecutions.delete(key);
-      }
-      return;
-    }
-
-    if ("Death" in cmd) {
-      const death = cmd.Death;
-      for (const view of this.target_views(recipient)) {
-        view.events.push({
-          timestamp,
-          data: {
-            Death: {
-              target_id: slotKeyToString(death.target_id),
-              true_name: death.true_name,
-              death_message: death.death_message,
-              role: death.role,
-              notebook_transferred: death.notebook_transferred,
-              ability_transferred: death.ability_transferred,
-            }
-          }
-        });
-      }
-    }
-
-    if ("AnonymousAnnouncement" in cmd) {
-      const annc = cmd.AnonymousAnnouncement;
-      for (const view of this.target_views(recipient)) {
-        view.events.push({
-          timestamp,
-          data: {
-            AnonymousAnnouncement: {
-              content: annc.content
-            }
-          }
-        });
-      }
-    }
-
+    // Track a kidnapping. Kept after its reveal rather than deleted — the reveal carries only the
+    // kidnapping's id, so resolving the victim from it is a lookup here, and a view replaying that
+    // reveal later has to resolve the same victim. `revealed` is also what a live countdown would
+    // stop on.
     if ("Kidnapping" in cmd) {
-      const kidnapping = cmd.Kidnapping;
-      const kidnapping_id = slotKeyToString(kidnapping.kidnapping_id);
-      const victim = slotKeyToString(kidnapping.target_id);
-      // Track the live kidnapping (the future-timer source; the reveal resolves its victim here).
-      this.kidnappings.set(kidnapping_id, { victim, duration: kidnapping.duration });
-      for (const view of this.target_views(recipient)) {
-        view.events.push({
-          timestamp,
-          data: {
-            Kidnapping: { kidnapping_id, target_id: victim, duration: kidnapping.duration }
-          }
-        });
-      }
+      const { kidnapping_id, target_id, duration } = cmd.Kidnapping;
+      this.kidnappings.set(slotKeyToString(kidnapping_id), {
+        victim: slotKeyToString(target_id),
+        duration,
+        revealed: false,
+      });
+      return;
     }
 
     if ("KidnapReveal" in cmd) {
-      const reveal = cmd.KidnapReveal;
-      const kidnapping_id = slotKeyToString(reveal.kidnapping_id);
-      const kidnapper = reveal.kidnapper ? slotKeyToString(reveal.kidnapper) : null;
-      // Resolve + denormalize the victim so the logged event renders standalone; then drop the
-      // kidnapping from the live map (it's over).
-      const victim = this.kidnappings.get(kidnapping_id)?.victim ?? null;
-      for (const view of this.target_views(recipient)) {
-        view.events.push({
-          timestamp,
-          data: { KidnapReveal: { kidnapping_id, victim, kidnapper } }
-        });
-      }
-      this.kidnappings.delete(kidnapping_id);
+      const key = slotKeyToString(cmd.KidnapReveal.kidnapping_id);
+      const kidnapping = this.kidnappings.get(key);
+      // re-set rather than mutate: SvelteMap tracks its own get/set, not writes into a stored value.
+      if (kidnapping) this.kidnappings.set(key, { ...kidnapping, revealed: true });
+      return;
     }
 
-    if ("PseudocideRevival" in cmd) {
-      const revival = cmd.PseudocideRevival;
-      for (const view of this.target_views(recipient)) {
-        view.events.push({
-          timestamp,
-          data: {
-            PseudocideRevival: {
-              target_id: slotKeyToString(revival.target_id),
-            }
-          }
-        });
-      }
-    }
-
-    if ("RevealTrueName" in cmd) {
-      const reveal = cmd.RevealTrueName;
-      // TODO(orgs): when the recipient actor is an organization, this should render in
-      // the org's shared info channel, gated by the same view perms as the org's lounge
-      // channel (so each member sees it iff they can see that channel) — not in a single
-      // player's view. Orgs aren't modeled on the frontend yet, so route to the player
-      // view for now (TrueNameInvite pushes this to the org actor, which has no view).
-      this.push_notif(recipient, timestamp, {
-        RevealTrueName: {
-          target_id: slotKeyToString(reveal.target_id),
-          true_name: reveal.true_name,
-        },
-      });
-    }
-
-    if ("RevealNotebookHolding" in cmd) {
-      const reveal = cmd.RevealNotebookHolding;
-      this.push_notif(recipient, timestamp, {
-        RevealNotebookHolding: {
-          target_id: slotKeyToString(reveal.target_id),
-          holding: reveal.holding,
-        },
-      });
-    }
-
-    // A bug was created (System-directed). Register its global surveillance feed. The
-    // target is deliberately not carried — identity leaks only through relayed message
-    // displays — so the feed is named by the bug's slot.
-    // The command that introduces a bug, addressed to the bug's own viewport — so it is also
-    // what tells us which bug that viewport belongs to. Anyone already holding the viewport when
-    // this lands has just been let in, which is the ordinary case: the Enter comes first and this
-    // arrives at the head of the backfill behind it.
+    // The command that introduces a bug, addressed to the bug's own viewport — so it is also what
+    // tells us which bug that viewport belongs to. The target is deliberately not carried; identity
+    // leaks only through relayed message displays, so the feed is named by the bug's slot.
+    //
+    // Opening a viewer's gate is the per-view half, and it needs no hookup from this side: a view
+    // holding the viewport now receives this live, and one entering later replays it out of the
+    // viewport's history.
     if ("NewBug" in cmd) {
       const key = bugChannelKey(cmd.NewBug.bug_key);
       if (!this.bugs.has(key)) {
         this.bugs.set(key, new_channel("Bug", "Bug", `bug-${cmd.NewBug.bug_key.idx}v${cmd.NewBug.bug_key.version}`));
       }
       const viewport = recipientToViewport(recipient);
-      if (viewport !== undefined) {
-        this.#viewport_to_bug.set(viewport, key);
-        for (const view of this.views.values()) {
-          if (view.viewports.has(viewport)) view.visible_bugs.add(key);
-        }
-      }
+      if (viewport !== undefined) this.#viewport_to_bug.set(viewport, key);
       return;
     }
 
     // A relayed message captured by a bug. Stored globally; per-viewer visibility is the
-    // visible_bugs gate above. Rendered like any channel message — the sender display is the
+    // visible_bugs gate. Rendered like any channel message — the sender display is the
     // target's own, which is what reveals them.
     if ("AddBugMessage" in cmd) {
       const { bug_key, display, content } = cmd.AddBugMessage;
@@ -1142,57 +1016,323 @@ export class GameState {
       return;
     }
 
-    // The viewer was told they've been bugged (directed to the target). A personal event, so
-    // it lands in their Notifications info channel — never News. Context only (never who).
-    if ("Bugged" in cmd) {
-      this.push_notif(recipient, timestamp, { Bugged: { context: cmd.Bugged.context } });
-      return;
-    }
-
-    // Personal-info commands go to two explicit recipients: the player copy (Actor) lands in
-    // their Notifications log (and System's per-player mirror); the System copy feeds the
-    // admin per-player inspector (player_info).
-    if ("RoleUpdate" in cmd) {
-      const { target_id, role } = cmd.RoleUpdate;
-      if (recipient === "System") {
-        const key = slotKeyToString(target_id);
-        this.player_info.set(key, { ...this.player_info.get(key), role });
-      } else {
-        this.push_notif(recipient, timestamp, { RoleUpdate: { role } });
+    // Personal-info commands go to two explicit recipients. This is the System copy, which feeds
+    // the admin per-player inspector; the player's own copy lands in their Notifications log
+    // (see #apply_to_view).
+    if (recipient === "System") {
+      if ("RoleUpdate" in cmd) {
+        const key = slotKeyToString(cmd.RoleUpdate.target_id);
+        this.player_info.set(key, { ...this.player_info.get(key), role: cmd.RoleUpdate.role });
+        return;
       }
-      return;
-    }
-
-    if ("TrueNameUpdate" in cmd) {
-      const { target_id, true_name } = cmd.TrueNameUpdate;
-      if (recipient === "System") {
-        const key = slotKeyToString(target_id);
-        this.player_info.set(key, { ...this.player_info.get(key), true_name });
-      } else {
-        this.push_notif(recipient, timestamp, { TrueNameUpdate: { true_name } });
+      if ("TrueNameUpdate" in cmd) {
+        const key = slotKeyToString(cmd.TrueNameUpdate.target_id);
+        this.player_info.set(key, { ...this.player_info.get(key), true_name: cmd.TrueNameUpdate.true_name });
+        return;
       }
-      return;
     }
   }
 
-  handle_response(response: ActionResponse, args?: Record<string, unknown>) {
-    if ("AddPlayer" in response) {
-      this.add_player(response.AddPlayer.id, args?.display_name as string);
+  // What a command does to ONE view's own state.
+  //
+  // Called once per receiving view, and REPLAYED for a view that gains the command's viewport
+  // afterwards — so nothing here may destroy state it or a later replay depends on, and nothing
+  // global belongs here (it would run once per view). See #apply and #backfill.
+  #apply_to_view(view: GameView, { recipient, cmd, timestamp }: CommandPayload, pos: number) {
+    // Record how far this view has been given the viewport, so a later entry by another of this
+    // client's actors knows where its own gap begins.
+    const viewport = recipientToViewport(recipient);
+    if (viewport !== undefined) view.deliver_to(viewport, pos + 1);
+
+    // Access gained. Everything previously addressed to the viewport is handed over right here,
+    // out of the log — the server only sends a backfill for a viewport the whole CONNECTION lacked.
+    if ("EnterViewport" in cmd) {
+      const key = slotKeyToString(cmd.EnterViewport.viewport);
+      view.viewports.add(key);
+      this.#backfill(view, key, pos);
       return;
+    }
+
+    // Access lost. Nothing already received is dropped — this only means no more is coming.
+    if ("ExitViewport" in cmd) {
+      view.viewports.delete(slotKeyToString(cmd.ExitViewport.viewport));
+      return;
+    }
+
+    // Tells this player whether they now own the gc. Drives the group-chat controls
+    // (only the owner may add/remove/transfer).
+    if ("GcOwnerStatus" in cmd) {
+      const gc_key = slotKeyToString(cmd.GcOwnerStatus.gc_id);
+      if (cmd.GcOwnerStatus.owner) view.owned_gcs.add(gc_key);
+      else view.owned_gcs.delete(gc_key);
+      return;
+    }
+
+    if ("UpdateChannelView" in cmd) {
+      const channel_id = slotKeyToString(cmd.UpdateChannelView.channel_id);
+      const p = cmd.UpdateChannelView.perms;
+      const loggability_control = (p & PERM_LOGGABILITY) !== 0;
+      const read = (p & PERM_VIEW) !== 0;
+      const send = (p & PERM_SEND) !== 0;
+      const existing = view.channel_views.get(channel_id);
+      const old_perms = existing?.perms;
+      let read_updated: number = timestamp;
+      let had_positive = read || send || loggability_control;
+      if (old_perms) {
+        if (read === old_perms.read) {
+          read_updated = old_perms.read_updated;
+        }
+        had_positive ||= old_perms.had_positive;
+      }
+      // Perms is the membership signal: an UpdateChannelView creates the channel
+      // entry if absent, preserving members if it already existed. Re-set the map key
+      // (rather than mutating in place) so perms/displays updates trigger reactivity.
+      view.channel_views.set(channel_id, {
+        perms: { had_positive, read_updated, loggability_control, read, send },
+        members: existing?.members ?? new SvelteMap(),
+        displays: cmd.UpdateChannelView.displays,
+      });
+
+      // Notify the viewer when they RECEIVE a notebook (any source): a notebook channel
+      // going from no-read to read means the book is now in their hands. Frontend-derived,
+      // no engine command. Fires once per gain (not on refreshes while already held).
+      if (read && !(old_perms?.read ?? false) && this.#channel_to_notebook.has(channel_id)) {
+        this.push_notif(view, recipient, timestamp, { NotebookReceived: {} });
+      }
+      return;
+    }
+
+    // The roster rides the channel's viewport rather than being re-sent per member, so it lands in
+    // every view of ours that can read the channel. A view with no channel entry yet is skipped:
+    // the entry is created by UpdateChannelView, which the engine emits first.
+    if ("ShowChannelMember" in cmd) {
+      const { channel_id, display, channel_perms } = cmd.ShowChannelMember;
+      const entry = view.channel_views.get(slotKeyToString(channel_id));
+      if (!entry) return;
+      const key = displayKey(display);
+      const had_positive =
+        (entry.members.get(key)?.had_positive ?? false) || hasPositivePerms(channel_perms);
+      entry.members.set(key, { display, perms: channel_perms, had_positive });
+      return;
+    }
+
+    if ("RemoveChannelMember" in cmd) {
+      const { channel_id, display } = cmd.RemoveChannelMember;
+      view.channel_views.get(slotKeyToString(channel_id))?.members.delete(displayKey(display));
+      return;
+    }
+
+    // A player's own abilities. An org's are held globally and handled in #apply_global; they
+    // arrive on the org channel's viewport, so that is what tells the two apart.
+    if ("UpdateAbilityView" in cmd) {
+      if (viewport === undefined) upsert_ability(view.abilities, cmd.UpdateAbilityView);
+      return;
+    }
+
+    if ("RemoveAbility" in cmd) {
+      if (viewport === undefined) view.abilities.delete(slotKeyToString(cmd.RemoveAbility.ability_id));
+      return;
+    }
+
+    // A passive the viewer now holds. Player-addressed in practice: an org's passives ride the org
+    // channel's viewport, and orgs have no passive list to show them in yet, so those land in
+    // whichever views can read that channel. Harmless, and it goes away when orgs get one.
+    if ("UpdatePassiveView" in cmd) {
+      const { passive_id, passive_type } = cmd.UpdatePassiveView;
+      view.passives.set(slotKeyToString(passive_id), { type: passive_type });
+      return;
+    }
+
+    if ("RemovePassive" in cmd) {
+      view.passives.delete(slotKeyToString(cmd.RemovePassive.passive_id));
+      return;
+    }
+
+    // This viewer's personal view of a poll they can see (eligibility + their own vote).
+    if ("UpdatePollView" in cmd) {
+      const { poll_id, eligible, own_vote } = cmd.UpdatePollView;
+      view.poll_views.set(slotKeyToString(poll_id), { eligible, own_vote });
+      return;
+    }
+
+    // The viewer's bug gate. Opened here rather than on EnterViewport, so the two routes into a
+    // bug — holding the viewport when it is created, and entering the viewport afterwards — are
+    // the same one line: the replay hands a late entrant this very command.
+    if ("NewBug" in cmd) {
+      view.visible_bugs.add(bugChannelKey(cmd.NewBug.bug_key));
+      return;
+    }
+
+    // This viewer's prosecution snapshot, plus a news event when the phase differs from what this
+    // view last held (a start when it's a new prosecution, an advance otherwise). Per-view rather
+    // than global so each view diffs the stream IT receives — which is what makes an absent
+    // player's backfill reproduce the ordered news timeline when they return.
+    if ("UpdateProsecution" in cmd) {
+      const { prosecution_id, prosecutor_display, defendant_display, phase, trial_channel } = cmd.UpdateProsecution;
+      const key = slotKeyToString(prosecution_id);
+      const prev = view.prosecutions.get(key);
+      view.prosecutions.set(key, {
+        prosecutor_display,
+        defendant_display,
+        phase,
+        trial_channel: trial_channel ? slotKeyToString(trial_channel) : null,
+        viewport: viewport ?? null,
+      });
+      if (!prev || !phaseViewEqual(prev.phase, phase)) {
+        view.events.push({
+          timestamp,
+          data: { ProsecutionEvent: { prosecution_id: key, prosecutor_display, defendant_display, phase, ended: false } },
+        });
+      }
+      return;
+    }
+
+    // The prosecution ended. If this view knew it, drop a terminal news event using the displays it
+    // last held, and forget it. A view that was absent for the whole thing receives the ordered
+    // timeline on entry and reaches the same place.
+    if ("CloseProsecution" in cmd) {
+      const key = slotKeyToString(cmd.CloseProsecution.prosecution_id);
+      const prev = view.prosecutions.get(key);
+      if (!prev) return;
+      view.events.push({
+        timestamp,
+        data: { ProsecutionEvent: { prosecution_id: key, prosecutor_display: prev.prosecutor_display, defendant_display: prev.defendant_display, phase: prev.phase, ended: true } },
+      });
+      view.prosecutions.delete(key);
+      return;
+    }
+
+    // ---- world events: this view's news feed ----
+
+    if ("Death" in cmd) {
+      const death = cmd.Death;
+      view.events.push({
+        timestamp,
+        data: {
+          Death: {
+            target_id: slotKeyToString(death.target_id),
+            true_name: death.true_name,
+            death_message: death.death_message,
+            role: death.role,
+            notebook_transferred: death.notebook_transferred,
+            ability_transferred: death.ability_transferred,
+          }
+        }
+      });
+      return;
+    }
+
+    if ("AnonymousAnnouncement" in cmd) {
+      view.events.push({
+        timestamp,
+        data: { AnonymousAnnouncement: { content: cmd.AnonymousAnnouncement.content } },
+      });
+      return;
+    }
+
+    if ("Kidnapping" in cmd) {
+      const { kidnapping_id, target_id, duration } = cmd.Kidnapping;
+      view.events.push({
+        timestamp,
+        data: {
+          Kidnapping: {
+            kidnapping_id: slotKeyToString(kidnapping_id),
+            target_id: slotKeyToString(target_id),
+            duration,
+          }
+        },
+      });
+      return;
+    }
+
+    if ("KidnapReveal" in cmd) {
+      const kidnapping_id = slotKeyToString(cmd.KidnapReveal.kidnapping_id);
+      // The command names only the kidnapping, so the victim is resolved from the tracked one —
+      // which is still there, because a reveal marks it rather than deleting it.
+      view.events.push({
+        timestamp,
+        data: {
+          KidnapReveal: {
+            kidnapping_id,
+            victim: this.kidnappings.get(kidnapping_id)?.victim ?? null,
+            kidnapper: cmd.KidnapReveal.kidnapper ? slotKeyToString(cmd.KidnapReveal.kidnapper) : null,
+          }
+        },
+      });
+      return;
+    }
+
+    if ("PseudocideRevival" in cmd) {
+      view.events.push({
+        timestamp,
+        data: { PseudocideRevival: { target_id: slotKeyToString(cmd.PseudocideRevival.target_id) } },
+      });
+      return;
+    }
+
+    // ---- directed personal events: this view's Notifications feed ----
+
+    if ("RevealTrueName" in cmd) {
+      // TODO(orgs): an org recipient should render this in the org's shared info channel, gated by
+      // the same view perms as the org's channel, rather than in a single player's view.
+      this.push_notif(view, recipient, timestamp, {
+        RevealTrueName: {
+          target_id: slotKeyToString(cmd.RevealTrueName.target_id),
+          true_name: cmd.RevealTrueName.true_name,
+        },
+      });
+      return;
+    }
+
+    if ("RevealNotebookHolding" in cmd) {
+      this.push_notif(view, recipient, timestamp, {
+        RevealNotebookHolding: {
+          target_id: slotKeyToString(cmd.RevealNotebookHolding.target_id),
+          holding: cmd.RevealNotebookHolding.holding,
+        },
+      });
+      return;
+    }
+
+    // The viewer was told they've been bugged (directed to the target). A personal event, so it
+    // lands in their Notifications channel — never News. Context only (never who).
+    if ("Bugged" in cmd) {
+      this.push_notif(view, recipient, timestamp, { Bugged: { context: cmd.Bugged.context } });
+      return;
+    }
+
+    // The player's own copy of a personal-info command. The System copy feeds the admin inspector
+    // and is handled in #apply_global.
+    if (recipient !== "System") {
+      if ("RoleUpdate" in cmd) {
+        this.push_notif(view, recipient, timestamp, { RoleUpdate: { role: cmd.RoleUpdate.role } });
+        return;
+      }
+      if ("TrueNameUpdate" in cmd) {
+        this.push_notif(view, recipient, timestamp, { TrueNameUpdate: { true_name: cmd.TrueNameUpdate.true_name } });
+        return;
+      }
+    }
+  }
+
+  // Apply a profile update: what the SERVER knows about who occupies a slot, on its own channel
+  // beside the command stream.
+  //
+  // The server only ever sends these for actors whose MapPlayer this connection already received,
+  // so an entry here is never the first we hear of a player. The guard below is not a permission
+  // check — it is that ordering stated locally, so a profile arriving for an unknown slot is
+  // dropped rather than conjuring a player out of the presentation channel.
+  apply_profiles(update: ProfileUpdate) {
+    for (const [id, profile] of update.profiles) {
+      const key = slotKeyToString(id);
+      const player = this.players.get(key);
+      if (!player) continue;
+      player.display_name = profile.display_name;
     }
   }
 
   system_view(): GameView {
     return this.views.get("System")!;
-  }
-
-  // Register a player from the AddPlayer response. The view itself is usually already there —
-  // this player's own creation commands were applied a moment ago and created it — so all this
-  // reliably adds is the display name, which only the response carries.
-  add_player(id: ActorKey, display_name: string) {
-    const key = slotKeyToString(id);
-    this.view_for(key);
-    this.players.set(key, new_player(display_name));
   }
 
   // Resolve a channel key to its Channel. "info:*" keys are frontend-only, read-only
@@ -1210,12 +1350,9 @@ export class GameState {
     return this.channels.get(key);
   }
 
-  // The viewer's single read-only Notifications info channel — the one home for every
-  // directed personal event (reveals, bug alerts). Created lazily on first use. Returns
-  // undefined when the recipient maps to no known view (e.g. an org actor, not modeled yet).
-  private notif_channel(view_key: string | undefined): Channel | undefined {
-    const view = view_key ? this.views.get(view_key) : undefined;
-    if (!view) return undefined;
+  // One view's single read-only Notifications info channel — the one home for every directed
+  // personal event (reveals, bug alerts). Created lazily on first use.
+  private notif_channel(view: GameView): Channel {
     let channel = view.info_channels.get(NOTIF_CHANNEL);
     if (!channel) {
       channel = new_channel("Info", "Personal", "Notifications");
@@ -1232,21 +1369,24 @@ export class GameState {
     const view = this.system_view();
     let channel = view.info_channels.get(key);
     if (!channel) {
-      const name = this.players.get(player_key)?.display_name ?? player_key;
-      channel = new_channel("Info", "Personal", `Notifications-${name}`);
+      // Denormalised at creation, so a rename later leaves this channel under the old name. Fine
+      // for now — it is admin-only scaffolding — but it is the same apply-time-resolution hazard
+      // the poll opener had, and it wants a render-time lookup when this view is built properly.
+      channel = new_channel("Info", "Personal", `Notifications-${playerLabel(player_key, this.players)}`);
       view.info_channels.set(key, channel);
     }
     return channel;
   }
 
-  // Route a directed personal notification event into the recipient player's own
-  // Notifications channel AND System's per-player mirror of it (so admin sees everyone's).
+  // Route a directed personal notification event into the target view's own Notifications
+  // channel AND System's per-player mirror of it (so admin sees everyone's).
   private push_notif(
+    view: GameView,
     recipient: CommandRecipient,
     timestamp: number,
     data: InfoEvent,
   ) {
-    this.notif_channel(recipientToView(recipient))?.events.push({ timestamp, data });
+    this.notif_channel(view).events.push({ timestamp, data });
     const player_key = recipientToPlayer(recipient);
     // only real players get a System mirror (skip org actors, which have no player entry)
     if (player_key && this.players.has(player_key)) {
@@ -1254,20 +1394,28 @@ export class GameState {
     }
   }
 
+  // The org ability list a command targets, or undefined if it is not an org's. An org's abilities
+  // are addressed to its channel's viewport rather than to the org actor — "everyone in the org" is
+  // expressed as "everyone who can see the org's channel".
+  #org_abilities(recipient: CommandRecipient): SvelteMap<string, AbilityView> | undefined {
+    const viewport = recipientToViewport(recipient);
+    if (viewport === undefined) return undefined;
+    const org_key = this.#viewport_to_org.get(viewport);
+    return org_key ? this.orgs.get(org_key)?.abilities : undefined;
+  }
 
-  // Push a poll notice — "started" when outcome is null, else the resolution — into the
-  // channel the poll's scope maps to: a channel directly, the world/news feed for
-  // AllPresent, or (once orgs exist) the org's channel. No-op if that channel is unknown.
   // Resolve an actor key to a display name — a player, or an org (a vote opener may be either,
   // e.g. an org-driven civilian arrest). Unknown keys fall back to "Unknown".
-  private actor_name(key: string): string {
-    const player = this.players.get(key);
-    if (player) return player.display_name;
+  actor_name(key: string): string {
+    if (this.players.has(key)) return playerLabel(key, this.players);
     const org = this.orgs.get(key);
     if (org) return orgDisplayName(org.name);
     return "Unknown";
   }
 
+  // Push a poll notice — "started" when outcome is null, else the resolution — into the channel the
+  // poll's scope maps to: a channel directly, the world/news feed for AllPresent, or the org's
+  // channel. No-op if that channel is unknown.
   private poll_notice(
     scope: PollVisibility,
     poll_id: string,
@@ -1321,24 +1469,11 @@ export class GameState {
     if (display === "Mysterious") return "???";
     if (display === "System") return "System";
     if ("Raw" in display)
-      return this.players.get(slotKeyToString(display.Raw))?.display_name ?? "Unknown";
+      return playerLabel(slotKeyToString(display.Raw), this.players);
     if ("Role" in display) return display.Role;
     // Org display: resolve to the org's name (display.Org is its actor key).
     const org = this.orgs.get(slotKeyToString(display.Org));
     return org ? orgDisplayName(org.name) : "Org";
-  }
-
-  // The abilities map an ability command targets: an org's shared list when it came through
-  // that org's channel viewport, otherwise the addressed player's own list.
-  private abilities_for_recipient(
-    recipient: CommandRecipient,
-  ): SvelteMap<string, AbilityView> | undefined {
-    const viewport = recipientToViewport(recipient);
-    if (viewport !== undefined) {
-      const org_key = this.#viewport_to_org.get(viewport);
-      return org_key ? this.orgs.get(org_key)?.abilities : undefined;
-    }
-    return this.actor_view(recipient)?.abilities;
   }
 
   // The org backing a channel, if it is an org channel. Returns the string org key.

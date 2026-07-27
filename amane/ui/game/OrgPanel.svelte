@@ -1,12 +1,12 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { GAME_STATE_KEY, playerLabel } from "../../game_state.svelte.ts";
   import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import type { ActionPayload } from "../../bindings";
+  import type { Action } from "../../bindings";
   import { slotKeyFromString } from "../../bindings";
   import { viewerToActor } from "../../types";
   import { Flash } from "../../flash.svelte.ts";
@@ -43,7 +43,7 @@
   const org_members = $derived(
     [...(org?.members ?? [])].map((id) => ({
       id,
-      name: game.players.get(id)?.display_name ?? "Unknown",
+      name: playerLabel(id, game.players),
     })),
   );
 
@@ -57,7 +57,7 @@
   let add_leader = $state(false);
   let add_og = $state(false);
 
-  async function send(payload: ActionPayload, ok: string) {
+  async function send(payload: Action, ok: string) {
     const err = await client.dispatch({
       actor: viewerToActor(ui.viewer),
       timestamp: now(),
@@ -148,12 +148,12 @@
         {#if candidates.length === 0}
           <p class="px-2 py-1 text-xs text-neutral-600">No one to add</p>
         {:else}
-          {#each candidates as [id, player] (id)}
+          {#each candidates as [id] (id)}
             <button
               class="flex w-full items-center justify-between rounded px-2 py-1 text-sm text-neutral-300 hover:bg-neutral-800"
               onclick={() => add_member(id)}
             >
-              <span>{player.display_name}</span>
+              <span>{playerLabel(id, game.players)}</span>
               <span class="text-xs text-neutral-600">add</span>
             </button>
           {/each}

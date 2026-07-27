@@ -1,11 +1,8 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import Dialog from "$lib/components/ui/dialog/dialog.svelte";
-  import DialogContent from "$lib/components/ui/dialog/dialog-content.svelte";
-  import DialogHeader from "$lib/components/ui/dialog/dialog-header.svelte";
-  import DialogTitle from "$lib/components/ui/dialog/dialog-title.svelte";
-  import Input from "$lib/components/ui/input/input.svelte";
-  import { Button } from "$lib/components/ui/button";
+  import Dialog from "../kit/Dialog.svelte";
+  import Input from "../kit/Input.svelte";
+  import Button from "../kit/Button.svelte";
   import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
   import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
@@ -82,38 +79,32 @@
   }
 </script>
 
-<Dialog bind:open>
-  <DialogContent>
-    <DialogHeader>
-      <DialogTitle>Write Name</DialogTitle>
-    </DialogHeader>
+<Dialog bind:open title="Write Name">
+  <Input bind:value={true_name} placeholder="True Name" />
+  <Input bind:value={death_message} placeholder="Death Message (optional)" />
 
-    <Input bind:value={true_name} placeholder="True Name" />
-    <Input bind:value={death_message} placeholder="Death Message (optional)" />
-
-    <div>
-      <p class="mb-1 text-xs text-neutral-400">Delay</p>
-      <div class="grid grid-cols-4 gap-2">
-        <label class="flex flex-col gap-1 text-xs text-neutral-400">
-          Seconds
-          <Input type="number" min="0" bind:value={seconds} />
-        </label>
-        <label class="flex flex-col gap-1 text-xs text-neutral-400">
-          Minutes
-          <Input type="number" min="0" bind:value={minutes} />
-        </label>
-        <label class="flex flex-col gap-1 text-xs text-neutral-400">
-          Hours
-          <Input type="number" min="0" bind:value={hours} />
-        </label>
-        <label class="flex flex-col gap-1 text-xs text-neutral-400">
-          Days
-          <Input type="number" min="0" bind:value={days} />
-        </label>
-      </div>
+  <div>
+    <p class="mb-1 text-xs text-ink-dim">Delay</p>
+    <div class="grid grid-cols-4 gap-2">
+      <label class="flex flex-col gap-1 text-xs text-ink-dim">
+        Seconds
+        <Input type="number" min="0" bind:value={seconds} />
+      </label>
+      <label class="flex flex-col gap-1 text-xs text-ink-dim">
+        Minutes
+        <Input type="number" min="0" bind:value={minutes} />
+      </label>
+      <label class="flex flex-col gap-1 text-xs text-ink-dim">
+        Hours
+        <Input type="number" min="0" bind:value={hours} />
+      </label>
+      <label class="flex flex-col gap-1 text-xs text-ink-dim">
+        Days
+        <Input type="number" min="0" bind:value={days} />
+      </label>
     </div>
+  </div>
 
-    <Button onclick={submit}>Write</Button>
-    <FlashDisplay {flash} />
-  </DialogContent>
+  <Button onclick={submit}>Write</Button>
+  <FlashDisplay {flash} />
 </Dialog>

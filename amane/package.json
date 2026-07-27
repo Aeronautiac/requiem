@@ -4,12 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "description": "requiem's client core: protocol, state model and UI. Hosts inject a transport.",
+  "scripts": {
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "devDependencies": {
+    "svelte-check": "^4",
+    "typescript": "^5"
+  },
   "dependencies": {
-    "@lucide/svelte": "^1.21.0",
-    "bits-ui": "^2.18.1",
-    "clsx": "^2.1.1",
     "svelte": "^5",
-    "tailwind-merge": "^3.6.0",
-    "tailwind-variants": "^3.2.2"
+    "tailwindcss": "^4"
   }
 }

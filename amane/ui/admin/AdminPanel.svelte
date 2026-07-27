@@ -4,7 +4,7 @@
   import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
   import type { ActionRequest } from "../../bindings";
-  import Button from "$lib/components/ui/button/button.svelte";
+  import Button from "../kit/Button.svelte";
   import { Flash } from "../../flash.svelte.ts";
   import FlashDisplay from "../Flash.svelte";
   import { now, add_offset, time_offset } from "../../time.svelte.ts";
@@ -137,7 +137,7 @@
   >
 
   <Button
-    variant="destructive"
+    variant="danger"
     onclick={async () => {
       const err = await client.dispatch({
         actor: "Admin",

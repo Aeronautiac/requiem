@@ -1,7 +1,6 @@
 [workspace]
 resolver = "3"
 members = [
-  "armonia/src-tauri",
   "lawliet/lawliet-types",
   "lawliet/lawliet-runtime",
   "lawliet/lawliet-core",

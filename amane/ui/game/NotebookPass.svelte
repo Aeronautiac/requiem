@@ -2,11 +2,8 @@
   // Pass (lend) a notebook to another player. Silent — it just dispatches LendNotebook; no
   // logging or channel event. Mirrors the NotebookWrite modal, opened from the notebook channel.
   import { getContext } from "svelte";
-  import Dialog from "$lib/components/ui/dialog/dialog.svelte";
-  import DialogContent from "$lib/components/ui/dialog/dialog-content.svelte";
-  import DialogHeader from "$lib/components/ui/dialog/dialog-header.svelte";
-  import DialogTitle from "$lib/components/ui/dialog/dialog-title.svelte";
-  import { Button } from "$lib/components/ui/button";
+  import Dialog from "../kit/Dialog.svelte";
+  import Button from "../kit/Button.svelte";
   import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
   import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
@@ -60,15 +57,9 @@
   }
 </script>
 
-<Dialog bind:open>
-  <DialogContent>
-    <DialogHeader>
-      <DialogTitle>Pass Notebook</DialogTitle>
-    </DialogHeader>
+<Dialog bind:open title="Pass Notebook">
+  <PlayerSelect bind:value={target} placeholder="Pass to" />
 
-    <PlayerSelect bind:value={target} placeholder="Pass to" />
-
-    <Button onclick={submit}>Pass</Button>
-    <FlashDisplay {flash} />
-  </DialogContent>
+  <Button onclick={submit}>Pass</Button>
+  <FlashDisplay {flash} />
 </Dialog>

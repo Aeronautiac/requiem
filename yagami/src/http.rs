@@ -399,6 +399,7 @@ pub async fn create_game(
                 inbox,
                 tickets: HashMap::new(),
                 connections: HashMap::new(),
+                profiles: HashMap::new(),
                 keys: HashMap::from([(
                     admin_key.clone(),
                     // child of the game token, so tearing the game down takes this key's

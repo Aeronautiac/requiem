@@ -1,0 +1,23 @@
+{
+  // amane is a library, so it owns its own build contract. It previously had none: armonia's
+  // tsconfig reached in with `include: ["../amane/**/*"]` and defined amane's OWN `$lib` alias,
+  // which meant the package could only be checked through a consumer. Deleting the consumer took
+  // the ability to typecheck the library with it.
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "strict": true
+    // No path aliases, deliberately. amane's own imports are all relative, so nothing outside the
+    // package has to know its internal layout to build it — `$lib` used to be declared by the HOST,
+    // which is what made the library unbuildable on its own.
+  },
+  "include": ["**/*.ts", "**/*.svelte"]
+}

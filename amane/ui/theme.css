@@ -1,0 +1,26 @@
+/* The whole theme, in one block.
+ *
+ * Every colour the UI kit uses is named here and nowhere else, so retheming is editing this file
+ * rather than hunting `bg-neutral-800` through forty components. Tailwind v4 turns each
+ * `--color-x` into the full set of utilities (`bg-x`, `text-x`, `border-x`, …), so the names below
+ * ARE the vocabulary components are allowed to use.
+ *
+ * Values currently match the neutral palette the app already renders in, so nothing shifts; they
+ * are meant to be replaced wholesale later. Roles, not shades — a component asking for `panel`
+ * keeps meaning the right thing after the palette changes, `neutral-900` does not.
+ */
+@theme {
+  --color-surface: #0a0a0a; /* app background, furthest back */
+  --color-panel: #171717; /* cards, dialogs, inputs */
+  --color-raised: #262626; /* hover states and controls sitting on a panel */
+  --color-edge: #404040; /* borders and dividers */
+
+  --color-ink: #e5e5e5; /* primary text */
+  --color-ink-dim: #737373; /* secondary text, placeholders */
+
+  --color-accent: #e5e5e5; /* primary action fill */
+  --color-accent-ink: #171717; /* text on top of accent */
+
+  --color-danger: #dc2626; /* destructive action fill */
+  --color-danger-ink: #ffffff; /* text on top of danger */
+}

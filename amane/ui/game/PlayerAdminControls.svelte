@@ -40,6 +40,7 @@
   // so this just defaults rather than tracking `info` (which would only capture its initial value).
   let role = $state<Role>("Civilian");
   let true_name = $state("");
+  let display_name = $state("");
 
   async function run(payload: Action, ok: string) {
     const request: ActionRequest = {
@@ -62,6 +63,24 @@
       return;
     }
     run({ SetTrueName: { target_id: target, true_name: name } }, "True name set.");
+  }
+  // A CONTROL, not an action: a profile is the server's record of who is playing the slot, and the
+  // engine has no concept of it. (True name above is the opposite — a mechanic, secret, and the
+  // thing you write in a notebook.)
+  //
+  // The control replaces the whole profile, so this states every field. As Profile grows, this
+  // form grows with it rather than sprouting a control per field.
+  async function set_profile() {
+    const name = display_name.trim();
+    if (!name) {
+      flash.set_error("Enter a name.");
+      return;
+    }
+    const err = await client.control({
+      SetProfile: { actor: target, profile: { display_name: name } },
+    });
+    if (err) flash.set_error(err);
+    else flash.set_success("Profile updated.");
   }
   function kill() {
     run(
@@ -117,7 +136,21 @@
       class="shrink-0 rounded bg-neutral-700 px-2 py-0.5 text-neutral-200 hover:bg-neutral-600"
       onclick={set_true_name}
     >
-      Set name
+      Set true name
+    </button>
+  </div>
+
+  <div class="flex items-center gap-1">
+    <input
+      bind:value={display_name}
+      placeholder="New display name"
+      class="min-w-0 flex-1 rounded bg-neutral-800 px-1 py-0.5 text-neutral-200"
+    />
+    <button
+      class="shrink-0 rounded bg-neutral-700 px-2 py-0.5 text-neutral-200 hover:bg-neutral-600"
+      onclick={set_profile}
+    >
+      Set display name
     </button>
   </div>
 

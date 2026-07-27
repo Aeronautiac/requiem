@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import Input from "$lib/components/ui/input/input.svelte";
-  import { GAME_STATE_KEY, displayKey } from "../../game_state.svelte.ts";
+  import Input from "../kit/Input.svelte";
+  import { actorLabel, GAME_STATE_KEY, displayKey, playerLabel } from "../../game_state.svelte.ts";
   import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
@@ -10,8 +10,8 @@
   import type { ActionRequest, ActorDisplay, PollSubject, ProsecutionPhaseView } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
-  import { formatDuration } from "$lib/utils";
-  import Button from "$lib/components/ui/button/button.svelte";
+  import { formatDuration } from "../../lib/utils";
+  import Button from "../kit/Button.svelte";
   import Message from "./Message.svelte";
   import Announcement from "./Announcement.svelte";
   import NotebookWrite from "./NotebookWrite.svelte";
@@ -129,15 +129,14 @@
   }
 
   function player_name(id: string): string {
-    return game.players.get(id)?.display_name ?? "Unknown";
+    return playerLabel(id, game.players);
   }
 
   // Short label for a poll notice rendered in-channel (the Polls panel is where you vote).
   function poll_notice_text(subject: PollSubject): string {
     if ("Generic" in subject) return subject.Generic;
     if ("CivilianArrest" in subject) {
-      const nm = game.players.get(slotKeyToString(subject.CivilianArrest))?.display_name;
-      return nm ? `Arrest ${nm}` : "Civilian arrest";
+      return `Arrest ${playerLabel(slotKeyToString(subject.CivilianArrest), game.players)}`;
     }
     const beh = subject.OrgAbility as Record<string, unknown>;
     const name = Object.keys(beh)[0] ?? "";
@@ -153,16 +152,7 @@
   }
 
   function display_string(display: ActorDisplay): string {
-    if (display === "Mysterious") return "???";
-    if (display === "System") return "System";
-    if ("Raw" in display)
-      return (
-        game.players.get(slotKeyToString(display.Raw))?.display_name ??
-        "Unknown"
-      );
-    if ("Role" in display) return display.Role;
-    if ("Org" in display) return "Org";
-    return "Unknown";
+    return actorLabel(display, game.players);
   }
 
   // Discord-style chunking: a message is a "continuation" (its sender header is dropped)
@@ -460,7 +450,7 @@
               color="#6366f1"
               description={pn.outcome ? `Vote ${pn.outcome}` : "Vote started"}
               content={pn.opener
-                ? `${poll_notice_text(pn.subject)}\nStarted by ${pn.opener}`
+                ? `${poll_notice_text(pn.subject)}\nStarted by ${game.actor_name(pn.opener)}`
                 : poll_notice_text(pn.subject)}
             />
           {:else if "PseudocideRevival" in event.data}
@@ -591,16 +581,8 @@
           </div>
 
           {#if notebook_id}
-            <Button
-              size="sm"
-              class="border border-neutral-700 bg-neutral-800 text-neutral-200 hover:bg-neutral-700"
-              onclick={() => (pass_open = true)}>Pass</Button
-            >
-            <Button
-              size="sm"
-              class="bg-red-600 text-white hover:bg-red-700"
-              onclick={() => (write_open = true)}>Write</Button
-            >
+            <Button size="sm" variant="ghost" onclick={() => (pass_open = true)}>Pass</Button>
+            <Button size="sm" variant="danger" onclick={() => (write_open = true)}>Write</Button>
           {/if}
         </div>
       </footer>

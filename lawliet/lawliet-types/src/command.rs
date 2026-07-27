@@ -178,6 +178,20 @@ pub enum Command {
         sender_display: ActorDisplay,
     },
 
+    // register a player: the raw actor slot exists, and that is the whole of what the engine has
+    // to say about it. No presentation rides here — a display name is a server-level fact about
+    // WHO is playing the slot, with a different lifetime, and it arrives on its own channel.
+    // (`true_name` is deliberately not it: that is a MECHANIC, secret, and the thing written in a
+    // notebook.)
+    //
+    // Addressed to the presence viewport like a world event, and emitted after the new player has
+    // entered it. Their watermark starts at zero, so entry backfills every prior MapPlayer — a
+    // player joining late is handed the whole roster, and an absent one learns of arrivals when
+    // presence returns. No new visibility rule.
+    MapPlayer {
+        player_id: ActorKey,
+    },
+
     // map a lounge id to a channel id. contact_id is the lounge's strictly-increasing
     // contact-channel id, used for display (e.g. "lounge-<contact_id>") and to reference the
     // contact channel (tap-ins, contact logs).

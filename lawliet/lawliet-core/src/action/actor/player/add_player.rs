@@ -9,9 +9,10 @@ use crate::{
         ActionResult, AddChargePool, AddToWorldChannels, CreateAndGiveAbility, GiveRole,
         SetTrueName,
     },
+    command::Command,
     common::{ActorKey, Version},
     engine::Engine,
-    helpers::{get_actor_mut, get_charge_pool_mut, sync_presence},
+    helpers::{cmd_world_event, get_actor_mut, get_charge_pool_mut, sync_presence},
 };
 
 // true names must be unique
@@ -50,6 +51,11 @@ impl ActionInterface for AddPlayer {
             // falls out of ordinary backfill with no separate stream and no born-position
             // bookkeeping on the server.
             sync_presence(eng, ctx, mutate);
+
+            // Announce the slot, AFTER the entry above so this player's own backfill of the
+            // presence viewport hands them every earlier MapPlayer — i.e. the existing roster —
+            // before their own arrival goes out to everyone else.
+            cmd_world_event(eng, ctx, Command::MapPlayer { player_id });
 
             // add pools BEFORE giving abilities (the pools must exist beforehand)
             let pools = eng.config.player_config.charge_pools.clone();

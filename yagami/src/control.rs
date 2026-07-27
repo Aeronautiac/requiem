@@ -6,10 +6,12 @@
 
 use std::collections::HashSet;
 
+use lawliet_types::common::ActorKey;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth::{Capability, Key, KeyData, Privileges, Ticket, to_flags},
+    delivery::push_profiles,
     game::GameEvent,
     state::{GameHandle, GameId, WrappedServerState, lock_state},
     wire::{ControlError, ControlOutcome, ControlResponse, GameControl},
@@ -158,6 +160,35 @@ fn apply_privilege_change(game: &mut GameHandle, key: &Key, before: Privileges) 
     }
 }
 
+// Push one actor's profile to every connection already entitled to it.
+//
+// Entitlement is not decided here: `profiles_for` drops any actor the connection has not been
+// delivered a MapPlayer for, so naming someone can never announce their existence to a viewer the
+// command stream kept them from. A connection that learns of them LATER is handed the name then,
+// by whichever delivery introduced them.
+//
+// No log is needed, so this runs in place under the control's own lock — same shape as `narrow`.
+fn announce_profile(game: &mut GameHandle, actor: ActorKey) {
+    let GameHandle {
+        connections,
+        profiles,
+        ..
+    } = game;
+
+    for conn in connections.values_mut() {
+        if conn.dropped {
+            continue;
+        }
+        let Some(cursor) = conn.cursor.as_ref() else {
+            continue; // not attached; its catch-up will carry the roster
+        };
+        let Some(update) = cursor.profiles_for(profiles, std::iter::once(actor)) else {
+            continue;
+        };
+        push_profiles(conn, update);
+    }
+}
+
 // carry out one control. authority over the target is checked per-control rather than up front,
 // because CreateKey has no target and EndGame's target is the game itself.
 pub fn manage(
@@ -246,6 +277,15 @@ pub fn manage(
             apply_privilege_change(game, key, before);
 
             Ok(ControlResponse::ActorScopeSet)
+        }
+
+        GameControl::SetProfile { actor, profile } => {
+            // No may_manage: the target is an actor slot, not a key, so none of the key-authority
+            // rules apply. Holding Administer is the whole requirement, checked by handle_control.
+            game.profiles.insert(*actor, profile.clone());
+            announce_profile(game, *actor);
+
+            Ok(ControlResponse::ProfileSet)
         }
     }
 }

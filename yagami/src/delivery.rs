@@ -32,7 +32,8 @@ use crate::{
     auth::{Key, KeyData, Privileges, Ticket},
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
     wire::{
-        ActionOutcome, Batch, ExecOutcome, OutputData, ResponsePair, ServerInput, ServerOutput,
+        ActionOutcome, Batch, ExecOutcome, OutputData, Profile, ProfileUpdate, ResponsePair,
+        ServerInput, ServerOutput,
     },
 };
 
@@ -150,6 +151,14 @@ pub struct ViewportCursor {
     // "delivered up to here" -- never a position walked past without sending. That is what lets
     // `widen` seed a probe with these and trust them to suppress re-delivery.
     watermark: HashMap<ViewportKey, usize>,
+    // every actor whose MapPlayer this connection has been delivered -- i.e. every player it has
+    // been told exists.
+    //
+    // This gates the profile channel. Without it, sending a display name would be a second way to
+    // learn of a player, ungated by anything the command stream decided: a viewer who was never
+    // sent someone's MapPlayer would be handed their name anyway. Grows only here, and only from
+    // a command that actually went out.
+    known_actors: HashSet<ActorKey>,
 }
 
 impl ViewportCursor {
@@ -177,6 +186,8 @@ impl ViewportCursor {
 
         for pos in from..history.log.len() {
             let payload = &history.log[pos];
+            // where this command's output begins, so the tail can be inspected below.
+            let handed_over = out.len();
 
             let visible = match &payload.recipient {
                 CommandRecipient::System => reach.administers(),
@@ -241,6 +252,15 @@ impl ViewportCursor {
                 }
                 _ => {}
             }
+
+            // One place records what this connection has been TOLD, covering both routes a command
+            // reaches it by -- the live push above and the backfill spliced in by an entry. Doing it
+            // per-route is how the backfilled half gets forgotten, which is exactly what happened.
+            for delivered in &out[handed_over..] {
+                if let Command::MapPlayer { player_id } = &delivered.cmd {
+                    self.known_actors.insert(*player_id);
+                }
+            }
         }
 
         out
@@ -289,6 +309,7 @@ impl ViewportCursor {
         let mut probe = ViewportCursor {
             access: HashMap::new(),
             watermark: self.watermark.clone(),
+            known_actors: HashSet::new(),
         };
 
         let commands = probe.advance(&Reach::gained(before, after), history, 0);
@@ -298,8 +319,28 @@ impl ViewportCursor {
         for (viewport, holders) in probe.access {
             self.access.entry(viewport).or_default().extend(holders);
         }
+        self.known_actors.extend(probe.known_actors);
 
         commands
+    }
+
+    // The profiles out of `wanted` this connection is entitled to: those, and only those, whose
+    // MapPlayer it has already been delivered. Anything else would make this channel a second,
+    // ungated way to learn that a player exists.
+    //
+    // `None` when nothing is owed, and that has to stay silent: seq counts what a socket was
+    // actually sent, so it must not tick for an empty update.
+    pub fn profiles_for(
+        &self,
+        profiles: &HashMap<ActorKey, Profile>,
+        wanted: impl Iterator<Item = ActorKey>,
+    ) -> Option<ProfileUpdate> {
+        let entitled: Vec<(ActorKey, Profile)> = wanted
+            .filter(|actor| self.known_actors.contains(actor))
+            .filter_map(|actor| profiles.get(&actor).map(|profile| (actor, profile.clone())))
+            .collect();
+
+        (!entitled.is_empty()).then_some(ProfileUpdate { profiles: entitled })
     }
 }
 
@@ -310,22 +351,45 @@ impl ViewportCursor {
 // are the same shape -- take the lock, walk, push a batch -- and none of them decides anything about
 // visibility, which lives entirely in `ViewportCursor::advance`.
 
-// hand one batch to one connection, stamped with that connection's next sequence number.
+// hand one thing to one connection, stamped with that connection's next sequence number.
+//
+// Both channels go through here, which is what puts them in ONE order: a profile can never arrive
+// ahead of the MapPlayer that entitles the connection to it, because both are numbered from the
+// same counter as they are sent.
 //
 // best effort by design: a client whose outbox is full is CUT, not waited on. the alternatives are
 // unbounded memory growth or letting it silently miss mandatory state, and a client missing state is
 // worse than a client that has to reconnect.
-fn push_batch(conn: &mut ConnHandle, batch: Batch) {
+fn push(conn: &mut ConnHandle, data: OutputData) {
     conn.seq_num += 1;
     let output = ServerOutput {
         seq_num: conn.seq_num,
-        data: OutputData::Batch(batch),
+        data,
     };
 
     if conn.outbox.try_send(output).is_err() {
         conn.cancel.cancel();
         conn.dropped = true;
     }
+}
+
+fn push_batch(conn: &mut ConnHandle, batch: Batch) {
+    push(conn, OutputData::Batch(batch));
+}
+
+// For a profile change, which needs no log and so is sent from the control that made it.
+pub fn push_profiles(conn: &mut ConnHandle, update: ProfileUpdate) {
+    push(conn, OutputData::Profiles(update));
+}
+
+// The actors a just-delivered command run introduced this connection to. Their profiles are owed
+// immediately: the connection has just been told they exist, so withholding the name until some
+// later change would leave every existing player nameless on arrival.
+fn actors_introduced_by(commands: &[CommandPayload]) -> impl Iterator<Item = ActorKey> + '_ {
+    commands.iter().filter_map(|payload| match &payload.cmd {
+        Command::MapPlayer { player_id } => Some(*player_id),
+        _ => None,
+    })
 }
 
 // The privilege set a LIVE connection's key grants.
@@ -378,6 +442,7 @@ pub fn broadcast(
         tickets,
         connections,
         keys,
+        profiles,
         ..
     } = game;
 
@@ -402,9 +467,13 @@ pub fn broadcast(
         // no cursor means the connection has not attached yet; its catch-up will cover this batch.
         // the response still goes out -- it answers something this socket asked for, and holding it
         // back would leave the caller waiting on a reply that never comes.
-        let commands = match conn.cursor.as_mut() {
-            Some(cursor) => cursor.advance(&Reach::full(privileges), history, at),
-            None => Vec::new(),
+        let (commands, introduced) = match conn.cursor.as_mut() {
+            Some(cursor) => {
+                let commands = cursor.advance(&Reach::full(privileges), history, at);
+                let introduced = cursor.profiles_for(profiles, actors_introduced_by(&commands));
+                (commands, introduced)
+            }
+            None => (Vec::new(), None),
         };
 
         if commands.is_empty() && response.is_none() {
@@ -412,17 +481,26 @@ pub fn broadcast(
         }
 
         push_batch(conn, Batch { commands, response });
+        // after the batch, never before: the MapPlayer that entitles this connection to the profile
+        // is in the batch we just sent.
+        if let Some(update) = introduced {
+            push(conn, OutputData::Profiles(update));
+        }
     }
 }
 
 // The shell every ONE-connection delivery shares: take the lock, find the connection, resolve what
-// its key currently grants, and push whatever `batch` produced. Returning `None` sends nothing and
-// consumes no sequence number.
+// its key currently grants, and stamp out whatever `outputs` produced, in order. An empty result
+// sends nothing and consumes no sequence number.
+//
+// A list rather than one output because a delivery can owe both channels at once -- commands, then
+// the profiles those commands just entitled the connection to. They must go in that order and share
+// one counter, which is exactly what returning them together guarantees.
 fn deliver(
     state: &WrappedServerState,
     game_id: GameId,
     ticket: &Ticket,
-    batch: impl FnOnce(&mut ConnHandle, &Privileges) -> Option<Batch>,
+    outputs: impl FnOnce(&mut ConnHandle, &Privileges, &HashMap<ActorKey, Profile>) -> Vec<OutputData>,
 ) {
     let mut server_state = lock_state(state);
     let Some(game) = server_state.games.get_mut(&game_id) else {
@@ -434,6 +512,7 @@ fn deliver(
         tickets,
         connections,
         keys,
+        profiles,
         ..
     } = game;
 
@@ -446,11 +525,9 @@ fn deliver(
     }
 
     let privileges = live_privileges(tickets, keys, ticket);
-    let Some(batch) = batch(conn, privileges) else {
-        return;
-    };
-
-    push_batch(conn, batch);
+    for output in outputs(conn, privileges, profiles) {
+        push(conn, output);
+    }
 }
 
 // Tell whoever submitted an action that the engine died holding it. A server-issued action has no
@@ -466,14 +543,14 @@ pub fn deliver_crash(
     };
 
     // nothing new was logged, so there are no commands to go with it.
-    deliver(state, game_id, &ticket, |_, _| {
-        Some(Batch {
+    deliver(state, game_id, &ticket, |_, _, _| {
+        vec![OutputData::Batch(Batch {
             commands: Vec::new(),
             response: Some(ResponsePair {
                 input: ServerInput::Action(request),
                 output: ExecOutcome::Action(ActionOutcome::Crashed),
             }),
-        })
+        })]
     });
 }
 
@@ -492,20 +569,27 @@ pub fn deliver_catchup(
     history: &History,
     ticket: &Ticket,
 ) {
-    deliver(state, game_id, ticket, |conn, privileges| {
+    deliver(state, game_id, ticket, |conn, privileges, profiles| {
         // a fresh cursor walked over the whole log: attaching is re-living the stream from the
         // start, not reconstructing a snapshot of it.
         let mut cursor = ViewportCursor::default();
         let commands = cursor.advance(&Reach::full(privileges), history, 0);
 
+        // the roster as it stands, for exactly the players the replay just introduced. derived from
+        // the replay rather than from the profile map, so a connection is never handed a name for
+        // someone its own catch-up did not mention.
+        let roster = cursor.profiles_for(profiles, actors_introduced_by(&commands));
+
         // installed only now that the replay is going out, so a fan-out racing this either skips the
         // connection (no cursor yet, covered by the replay) or advances the cursor the replay left.
         conn.cursor = Some(cursor);
 
-        Some(Batch {
+        let mut outputs = vec![OutputData::Batch(Batch {
             commands,
             response: None,
-        })
+        })];
+        outputs.extend(roster.map(OutputData::Profiles));
+        outputs
     });
 }
 
@@ -518,7 +602,7 @@ pub fn deliver_widening(
     ticket: &Ticket,
     before: &Privileges,
 ) {
-    deliver(state, game_id, ticket, |conn, after| {
+    deliver(state, game_id, ticket, |conn, after, profiles| {
         // an unattached connection is never widened -- `apply_privilege_change` declines to send the
         // event for one, because the catch-up it is still owed walks the whole log under the new
         // privileges anyway. a cursor is also only ever installed, never taken away, so a connection
@@ -530,10 +614,20 @@ pub fn deliver_widening(
         };
 
         let commands = cursor.widen(before, after, history);
-        (!commands.is_empty()).then_some(Batch {
+        if commands.is_empty() {
+            return Vec::new();
+        }
+
+        // a widen can reach players this connection had never been told about, so it owes their
+        // profiles too.
+        let introduced = cursor.profiles_for(profiles, actors_introduced_by(&commands));
+
+        let mut outputs = vec![OutputData::Batch(Batch {
             commands,
             response: None,
-        })
+        })];
+        outputs.extend(introduced.map(OutputData::Profiles));
+        outputs
     });
 }
 
@@ -1002,6 +1096,79 @@ mod delivery_tests {
         // ...and back. "seen" is not re-sent; "missed" is.
         let commands = cursor.widen(&stripped, &held, &history);
         assert_eq!(tags(&commands), ["missed"]);
+    }
+
+    // ---- the profile gate --------------------------------------------------------------------
+    //
+    // A profile may only follow a MapPlayer the connection was actually delivered. Otherwise naming
+    // someone announces their existence to viewers the command stream deliberately kept them from.
+
+    fn map_player(who: ActorKey) -> CommandPayload {
+        payload(
+            CommandRecipient::Viewport(viewport(9)),
+            Command::MapPlayer { player_id: who },
+        )
+    }
+
+    fn named(who: ActorKey, name: &str) -> HashMap<ActorKey, Profile> {
+        HashMap::from([(
+            who,
+            Profile {
+                display_name: Some(name.to_string()),
+            },
+        )])
+    }
+
+    #[test]
+    fn a_profile_needs_its_map_player() {
+        let (a, watcher, vp) = (actor(1), actor(2), viewport(9));
+        let log = vec![map_player(a)];
+
+        // never entered the viewport the roster rides, so it was never told `a` exists.
+        let (blind, _) = connect(&privileges(&[watcher], false), &log);
+        assert!(
+            blind
+                .profiles_for(&named(a, "Light"), [a].into_iter())
+                .is_none()
+        );
+
+        // entered, so it was.
+        let log = vec![enter(vp, watcher), map_player(a)];
+        let (informed, _) = connect(&privileges(&[watcher], false), &log);
+        let update = informed
+            .profiles_for(&named(a, "Light"), [a].into_iter())
+            .expect("told of a, so entitled to a's profile");
+        assert_eq!(update.profiles[0].1.display_name.as_deref(), Some("Light"));
+    }
+
+    // Entering late must hand over the roster, not just future arrivals — the backfill delivers the
+    // earlier MapPlayers, so the gate has to open for them too.
+    #[test]
+    fn backfilled_map_players_open_the_gate() {
+        let (a, watcher, vp) = (actor(1), actor(2), viewport(9));
+        let log = vec![map_player(a), enter(vp, watcher)];
+
+        let (cursor, _) = connect(&privileges(&[watcher], false), &log);
+        assert!(
+            cursor
+                .profiles_for(&named(a, "Light"), [a].into_iter())
+                .is_some()
+        );
+    }
+
+    // An unnamed slot yields nothing rather than an empty entry: seq counts what a socket was
+    // actually sent, so an update with no content must not be pushed at all.
+    #[test]
+    fn an_unnamed_actor_yields_no_update() {
+        let (a, watcher, vp) = (actor(1), actor(2), viewport(9));
+        let log = vec![enter(vp, watcher), map_player(a)];
+
+        let (cursor, _) = connect(&privileges(&[watcher], false), &log);
+        assert!(
+            cursor
+                .profiles_for(&HashMap::new(), [a].into_iter())
+                .is_none()
+        );
     }
 
     #[test]

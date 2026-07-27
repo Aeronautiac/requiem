@@ -8,7 +8,8 @@
   import type { GameState } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
   import type { PassiveType } from "../../bindings";
-  import * as Dialog from "$lib/components/ui/dialog";
+  import Dialog from "../kit/Dialog.svelte";
+  import Button from "../kit/Button.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
@@ -29,27 +30,17 @@
   }
 </script>
 
-<Dialog.Root bind:open>
-  <Dialog.Trigger
-    class="h-8 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-200 hover:bg-neutral-800"
-  >
-    Passives
-  </Dialog.Trigger>
-  <Dialog.Content class="max-w-sm">
-    <Dialog.Header>
-      <Dialog.Title>Passives</Dialog.Title>
-    </Dialog.Header>
-    <div class="flex flex-col gap-1.5">
-      {#each passives as [id, pv] (id)}
-        <div
-          class="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-200"
-        >
-          {prettyPassive(pv.type)}
-        </div>
-      {/each}
-      {#if passives.length === 0}
-        <p class="py-2 text-sm text-neutral-600">No passives.</p>
-      {/if}
-    </div>
-  </Dialog.Content>
-</Dialog.Root>
+<Button variant="ghost" size="sm" onclick={() => (open = true)}>Passives</Button>
+
+<Dialog bind:open title="Passives" class="max-w-sm">
+  <div class="flex flex-col gap-1.5">
+    {#each passives as [id, pv] (id)}
+      <div class="rounded-md border border-edge bg-raised px-3 py-2 text-sm text-ink">
+        {prettyPassive(pv.type)}
+      </div>
+    {/each}
+    {#if passives.length === 0}
+      <p class="py-2 text-sm text-ink-dim">No passives.</p>
+    {/if}
+  </div>
+</Dialog>

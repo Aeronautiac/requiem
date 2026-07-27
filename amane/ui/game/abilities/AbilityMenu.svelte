@@ -5,7 +5,8 @@
   import type { GameState } from "../../../game_state.svelte.ts";
   import type { UiState } from "../../../ui_state.svelte.ts";
   import type { AbilityName } from "../../../bindings";
-  import * as Dialog from "$lib/components/ui/dialog";
+  import Dialog from "../../kit/Dialog.svelte";
+  import Button from "../../kit/Button.svelte";
   import AbilityCard from "./AbilityCard.svelte";
   import {
     ABILITY_UIS,
@@ -64,46 +65,51 @@
   }
 </script>
 
-<Dialog.Root bind:open onOpenChange={(o) => !o && (selectedId = null)}>
-  <Dialog.Trigger
-    class="h-8 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-200 hover:bg-neutral-800"
-  >
-    {orgId ? "Org abilities" : "Abilities"}
-  </Dialog.Trigger>
-  <Dialog.Content class="max-w-sm">
-    {#if selectedId && SelectedUi && selectedAbility}
-      <Dialog.Header>
-        <Dialog.Title class="flex items-center gap-2">
-          <button
-            class="text-neutral-500 hover:text-neutral-200"
-            onclick={() => (selectedId = null)}
-            aria-label="Back to abilities"
-          >
-            ←
-          </button>
-          {prettyAbility(selectedAbility.name)}
-        </Dialog.Title>
-      </Dialog.Header>
-      <SelectedUi abilityId={selectedId} {orgId} onDone={close} />
-    {:else}
-      <Dialog.Header>
-        <Dialog.Title>{orgId ? "Org abilities" : "Abilities"}</Dialog.Title>
-      </Dialog.Header>
-      <div class="flex flex-col gap-2">
-        {#each listed as ab (ab.id)}
-          <AbilityCard
-            name={ab.name}
-            successUsages={ab.successUsages}
-            failureUsages={ab.failureUsages}
-            resets={ab.resets}
-            hasUi={ABILITY_UIS[ab.name] != null}
-            onUse={() => (selectedId = ab.id)}
-          />
-        {/each}
-        {#if listed.length === 0}
-          <p class="py-2 text-sm text-neutral-600">No abilities.</p>
-        {/if}
-      </div>
-    {/if}
-  </Dialog.Content>
-</Dialog.Root>
+{#snippet drilledTitle()}
+  <span class="flex items-center gap-2">
+    <button
+      class="text-ink-dim hover:text-ink"
+      onclick={() => (selectedId = null)}
+      aria-label="Back to abilities"
+    >
+      ←
+    </button>
+    {prettyAbility(selectedAbility!.name)}
+  </span>
+{/snippet}
+
+<Button variant="ghost" size="sm" onclick={() => (open = true)}>
+  {orgId ? "Org abilities" : "Abilities"}
+</Button>
+
+<Dialog
+  bind:open
+  onOpenChange={(o) => !o && (selectedId = null)}
+  class="max-w-sm"
+  title={selectedId && SelectedUi && selectedAbility
+    ? undefined
+    : orgId
+      ? "Org abilities"
+      : "Abilities"}
+  header={selectedId && SelectedUi && selectedAbility ? drilledTitle : undefined}
+>
+  {#if selectedId && SelectedUi && selectedAbility}
+    <SelectedUi abilityId={selectedId} {orgId} onDone={close} />
+  {:else}
+    <div class="flex flex-col gap-2">
+      {#each listed as ab (ab.id)}
+        <AbilityCard
+          name={ab.name}
+          successUsages={ab.successUsages}
+          failureUsages={ab.failureUsages}
+          resets={ab.resets}
+          hasUi={ABILITY_UIS[ab.name] != null}
+          onUse={() => (selectedId = ab.id)}
+        />
+      {/each}
+      {#if listed.length === 0}
+        <p class="py-2 text-sm text-ink-dim">No abilities.</p>
+      {/if}
+    </div>
+  {/if}
+</Dialog>

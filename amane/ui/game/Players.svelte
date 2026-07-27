@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { GAME_STATE_KEY, playerLabel } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
@@ -118,8 +118,8 @@
     </button>
 
     {#if players_open}
-      {#each other_players as [id, player] (id)}
-        <Player {id} label={player.display_name} />
+      {#each other_players as [id] (id)}
+        <Player {id} label={playerLabel(id, game.players)} />
       {/each}
 
       {#if other_players.length === 0}

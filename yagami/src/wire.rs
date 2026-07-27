@@ -7,6 +7,7 @@
 use lawliet_types::{
     action::{ActionError, ActionRequest, ActionResponse},
     command::CommandPayload,
+    common::ActorKey,
 };
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +21,7 @@ pub enum ControlResponse {
     KeyRevoked,
     CapabilitiesSet,
     ActorScopeSet,
+    ProfileSet,
 }
 
 // a control refused on its own terms -- the caller IS an administrator, but not for this particular
@@ -85,9 +87,47 @@ pub struct Batch {
     pub response: Option<ResponsePair>,
 }
 
+// What the SERVER knows about whoever occupies an actor slot.
+//
+// The engine emits MapPlayer to say a slot exists, and that is the whole of what it knows. Who is
+// playing it is a different fact with a different lifetime: it can be set after the slot exists,
+// changed later, and it survives nothing the engine would call an event. So it rides its own
+// channel rather than a synthetic Command, which would make lawliet declare a variant its engine
+// never emits.
+//
+// Deliberately a profile rather than a name. Presentation is going to grow (avatars, account
+// identity, whether anyone is currently connected); each of those is a field here and a control of
+// its own, not another parallel channel.
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct Profile {
+    // None = the slot exists but nobody has named it yet.
+    pub display_name: Option<String>,
+}
+
+// Profiles REPLACE, per actor, exactly as the key mutators in GameControl do: an entry states the
+// complete profile for that actor, so there is no read-modify-write to get wrong. Actors not
+// mentioned are untouched.
+//
+// A profile may only ever be sent for an actor whose MapPlayer this connection has ALREADY been
+// delivered. Otherwise this channel becomes a second, ungated way to learn that a player exists,
+// and it would announce people to viewers the command stream deliberately kept them from. See
+// ViewportCursor::known_actors, which is the record of what a connection has been told.
+//
+// Carried by the enclosing seq_num like everything else, so it cannot race the commands it
+// describes.
+#[derive(Serialize)]
+pub struct ProfileUpdate {
+    pub profiles: Vec<(ActorKey, Profile)>,
+}
+
+// Boxing the big variant would trade a heap allocation on the COMMON path (every batch) to shrink a
+// value that is serialized and dropped immediately. The size only ever costs us one outbox slot per
+// queued output, which is bounded by OUTBOX_BUF_SIZE.
+#[allow(clippy::large_enum_variant)]
 #[derive(Serialize)]
 pub enum OutputData {
     Batch(Batch),
+    Profiles(ProfileUpdate),
 }
 
 #[derive(Serialize)]
@@ -125,6 +165,18 @@ pub enum GameControl {
     SetActorScope {
         key: Key,
         actors: ActorScope,
+    },
+    // state what the server knows about whoever is playing an actor slot. Separate from creating
+    // the slot, deliberately: the engine's AddPlayer knows nothing about presentation, a slot can
+    // exist before anyone is on it, and a profile can change afterwards without the engine ever
+    // hearing about it.
+    //
+    // Replaces, like the two above -- one control for the whole profile rather than one per field,
+    // because every part of a profile has identical semantics (server-level, replaced wholesale,
+    // and gated on the same MapPlayer). Adding a field to Profile must not add a control.
+    SetProfile {
+        actor: ActorKey,
+        profile: Profile,
     },
 }
 

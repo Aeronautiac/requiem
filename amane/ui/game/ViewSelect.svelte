@@ -1,33 +1,23 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { GAME_STATE_KEY, playerLabel } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import type { GameState } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import * as Select from "$lib/components/ui/select";
+  import Select from "../kit/Select.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
-  // Player views only, sorted by slot index. Base and System are internal views (not
-  // real players), so they're kept out of the picker; Admin is offered separately below.
-  const viewers = $derived(
-    Array.from(game.views.keys())
+  // Admin first, then player views sorted by slot index. System is an internal view (not a real
+  // player) and is what "Admin" selects, so it isn't offered under its own name.
+  const options = $derived([
+    { value: "Admin", label: "Admin" },
+    ...Array.from(game.views.keys())
       .filter((k) => k !== "System")
-      .sort((a, b) => parseInt(a) - parseInt(b)),
-  );
-
-  function label(key: string): string {
-    return game.players.get(key)?.display_name ?? key;
-  }
+      .sort((a, b) => parseInt(a) - parseInt(b))
+      .map((key) => ({ value: key, label: playerLabel(key, game.players) })),
+  ]);
 </script>
 
-<Select.Root type="single" bind:value={ui.viewer}>
-  <Select.Trigger class="h-8 text-sm">{label(ui.viewer)}</Select.Trigger>
-  <Select.Content>
-    <Select.Item value={"Admin"}>{"Admin"}</Select.Item>
-    {#each viewers as viewer (viewer)}
-      <Select.Item value={viewer}>{label(viewer)}</Select.Item>
-    {/each}
-  </Select.Content>
-</Select.Root>
+<Select bind:value={ui.viewer} {options} class="h-8" />

@@ -990,6 +990,11 @@ export type Command =
   | { AddOrgMember: { player_id: ActorKey; org_id: ActorKey } }
   | { RemoveOrgMember: { player_id: ActorKey; org_id: ActorKey } }
   | { AddMessage: { content: string; channel_id: ChannelKey; sender_display: ActorDisplay } }
+  // A player slot exists. No presentation rides here — a display name is a SERVER-level fact about
+  // who is on the slot and arrives on its own channel (see ProfileUpdate); an unnamed slot falls
+  // back to a generated "player-<idx>v<version>" label, like the other unnamed objects.
+  // Addressed to the presence viewport, so entry backfills the whole roster.
+  | { MapPlayer: { player_id: ActorKey } }
   | { MapLounge: { lounge_id: LoungeKey; channel_id: ChannelKey; contact_id: number } }
   | { MapGc: { gc_id: GroupchatKey; channel_id: ChannelKey; contact_id: number } }
   | { MapWorldChannel: { channel_name: WorldChannelName; channel_id: ChannelKey } }
@@ -1094,13 +1099,21 @@ export type GameControl =
   | { CreateKey: { actors: ActorScope; capabilities: Capability[] } }
   | { RevokeKey: { key: string } }
   | { SetCapabilities: { key: string; capabilities: Capability[] } }
-  | { SetActorScope: { key: string; actors: ActorScope } };
+  | { SetActorScope: { key: string; actors: ActorScope } }
+  // State what the server knows about whoever is playing an actor slot. Separate from creating
+  // the slot: the engine's AddPlayer knows nothing about presentation, a slot may exist unnamed,
+  // and a profile can change later without the engine ever hearing about it.
+  //
+  // REPLACES, like the two above — one control for the whole profile rather than one per field,
+  // since every part of a profile has identical semantics. Adding a field adds no control.
+  | { SetProfile: { actor: ActorKey; profile: Profile } };
 
 export type ControlResponse =
   | "Ended"
   | "KeyRevoked"
   | "CapabilitiesSet"
   | "ActorScopeSet"
+  | "ProfileSet"
   | { KeyCreated: { key: string } };
 
 // A control refused on its own terms — the caller IS an administrator, just not over this
@@ -1143,7 +1156,28 @@ export type Batch = {
   response: ResponsePair | null;
 };
 
-export type OutputData = { Batch: Batch };
+// What the SERVER knows about whoever occupies an actor slot — as opposed to MapPlayer, which is
+// the ENGINE saying the slot exists at all. Two facts with different lifetimes: a slot can exist
+// long before anyone is named on it, and the name can change afterwards.
+//
+// Deliberately a profile rather than a bare name: presentation will grow (avatars, account
+// identity, connected-or-not), and each of those becomes a field here rather than a new channel.
+export type Profile = {
+  // null = the slot exists but nobody has named it. Render the actor key.
+  display_name: string | null;
+};
+
+// Profiles REPLACE, per actor. Actors not mentioned are untouched.
+//
+// A profile only ever arrives for an actor whose MapPlayer this connection has ALREADY been sent —
+// the server gates it on that, so this channel can never be how you learn someone exists.
+export type ProfileUpdate = {
+  profiles: [ActorKey, Profile][];
+};
+
+export type OutputData =
+  | { Batch: Batch }
+  | { Profiles: ProfileUpdate };
 
 // Per-connection, strictly increasing by 1 from 1. A gap means desync.
 export type ServerOutput = {

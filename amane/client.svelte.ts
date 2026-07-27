@@ -19,12 +19,13 @@ import type {
   ControlOutcome,
   ExecOutcome,
   GameControl,
+  OutputData,
   ProsecutionPhaseView,
   ServerInput,
   ServerOutput,
 } from "./bindings";
 import { slotKeyToString } from "./bindings";
-import { actorLabel, GameState, phaseViewEqual } from "./game_state.svelte";
+import { actorLabel, GameState, phaseViewEqual, playerLabel } from "./game_state.svelte";
 import { UiState } from "./ui_state.svelte";
 
 export const CLIENT_KEY = Symbol("client");
@@ -47,12 +48,10 @@ function controlError(outcome: ControlOutcome): string | void {
   }
 }
 
-// Something this client sent and is still owed an answer for. `args` is UI-side context the
-// response handler needs (it isn't on the wire), carried here until the reply lands.
+// Something this client sent and is still owed an answer for.
 type Waiter = {
   // What we sent, kept only to check the reply against — see #settle.
   kind: "Action" | "Control";
-  args?: Record<string, unknown>;
   settle: (error: string | void) => void;
 };
 
@@ -89,18 +88,29 @@ export class ClientState {
   // quietly stopped updating, and anything awaiting a reply waited forever. Catching it here
   // settles those waiters and puts the client into an explicit desynced state. Recovery is a
   // reconnect, which replays the log from the start into fresh state.
-  #ingest(batch: ServerOutput) {
+  #ingest(output: ServerOutput) {
     try {
       this.#seq.ingest({
-        seq: batch.seq_num,
-        run: () => this.#apply_batch(batch.data.Batch),
+        seq: output.seq_num,
+        run: () => this.#apply_output(output.data),
       });
     } catch (error) {
-      console.error("failed to apply batch", batch.seq_num, error);
+      console.error("failed to apply output", output.seq_num, error);
       this.abandon(
         "The client lost track of the game state and cannot continue. Please reconnect.",
       );
     }
+  }
+
+  // Two channels, one order. Commands carry the game; profiles carry what the SERVER knows about
+  // who is playing each slot. They share a sequence counter precisely so a profile can never be
+  // applied before the MapPlayer that introduced its slot.
+  #apply_output(data: OutputData) {
+    if ("Profiles" in data) {
+      this.game.apply_profiles(data.Profiles);
+      return;
+    }
+    this.#apply_batch(data.Batch);
   }
 
   // Apply one batch as a single ordered step: commands first, then the reply if this batch
@@ -147,32 +157,29 @@ export class ClientState {
     if (outcome === "Denied") return waiter.settle("You are not permitted to do that.");
     if ("Err" in outcome) return waiter.settle(String(outcome.Err));
 
-    // Commands for this batch are already applied, so the response resolves against them.
-    if ("Action" in input) this.game.handle_response(outcome.Ok, waiter.args);
+    // Nothing is read off a successful response. Every fact it could carry arrives as a command,
+    // which is what makes state reconstructible by any client and after any reconnect — a
+    // response reaches only the connection that asked.
     waiter.settle();
   }
 
   // Fire this client's own action. Resolves to an error string on failure (for UX) or void on
   // success, once the reply has been applied in seq order — never before, so a caller can
   // trust that state reflects its action by the time it hears back.
-  dispatch(
-    request: ActionRequest,
-    args?: Record<string, unknown>,
-  ): Promise<string | void> {
-    return this.#submit({ Action: request }, args);
+  dispatch(request: ActionRequest): Promise<string | void> {
+    return this.#submit({ Action: request });
   }
 
-  // Game administration: teardown and key management. Same reply path as an action.
+  // Game administration: teardown, key management, naming. Same reply path as an action.
   control(control: GameControl): Promise<string | void> {
     return this.#submit({ Control: control });
   }
 
-  #submit(input: ServerInput, args?: Record<string, unknown>): Promise<string | void> {
+  #submit(input: ServerInput): Promise<string | void> {
     return new Promise<string | void>((resolve) => {
       // Queued BEFORE the send so a reply that arrives immediately still finds its waiter.
       this.#waiting.push({
         kind: "Action" in input ? "Action" : "Control",
-        args,
         settle: resolve,
       });
       this.connection.send(input);
@@ -206,7 +213,7 @@ export class ClientState {
   }
 
   #name(key: string): string {
-    return this.game.players.get(key)?.display_name ?? "Unknown";
+    return playerLabel(key, this.game.players);
   }
 
   // Which world events warrant a toast, and their text. Mirrors the in-app Announcement copy
@@ -219,7 +226,8 @@ export class ClientState {
     } else if ("Kidnapping" in cmd) {
       this.notify(recipient, "Kidnapping", `${this.#name(slotKeyToString(cmd.Kidnapping.target_id))} has been kidnapped.`);
     } else if ("KidnapReveal" in cmd) {
-      // Resolve the victim from the still-present kidnapping (apply hasn't cleared it yet).
+      // The command names only the kidnapping, so the victim is a lookup. Order-independent: a
+      // reveal marks the tracked kidnapping rather than deleting it.
       const victim = this.game.kidnappings.get(slotKeyToString(cmd.KidnapReveal.kidnapping_id))?.victim;
       const victimName = victim ? this.#name(victim) : "the victim";
       const kidnapper = cmd.KidnapReveal.kidnapper;
