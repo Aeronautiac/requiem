@@ -88,6 +88,11 @@ impl ActorScope {
 
 // what a key is allowed to do. resolved from a ticket at the moment of use and never copied into the
 // connection -- so narrowing or revoking a key takes effect on its live sockets immediately.
+//
+// Clone because a privilege CHANGE has to carry the previous set to the game task: widening is
+// delivered as the difference between the two, and by the time the task handles it the ledger holds
+// only the new one.
+#[derive(Clone)]
 pub struct Privileges {
     pub actors: ActorScope,
     pub capabilities: BitFlags<Capability>,

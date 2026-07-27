@@ -25,10 +25,10 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    auth::Ticket,
+    auth::{Privileges, Ticket},
     constants::{ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
     control::handle_control,
-    delivery::{ViewportIndex, attach, crashed, dispatch},
+    delivery::{ViewportIndex, attach, crashed, deliver_widening, dispatch},
     generate_seed, now,
     state::{GameId, WrappedServerState, lock_state},
     wire::{ActionOutcome, ExecOutcome, ResponsePair, ServerInput},
@@ -58,7 +58,19 @@ pub struct InFlight {
 // Attach is queued before any input it goes on to send, so it is always replayed before it can act.
 pub enum GameEvent {
     // a websocket finished upgrading and wants its catch-up replay.
-    Attach { ticket: Ticket },
+    Attach {
+        ticket: Ticket,
+    },
+    // this connection's key was widened and is owed the history it could not see before. carries
+    // the PREVIOUS privilege set because the delivery is the difference between the two, and the
+    // ledger already holds the new one by the time this is handled.
+    //
+    // narrowing has no event: it needs no log, so it is applied in place under the control's own
+    // lock (see control::apply_privilege_change).
+    Widen {
+        ticket: Ticket,
+        before: Privileges,
+    },
     Input(InputEnvelope),
 }
 
@@ -275,6 +287,10 @@ pub async fn game(
                     let InputEnvelope { ticket, input } = match event {
                         GameEvent::Attach { ticket } => {
                             attach(&state, game_id, &log, &index, &ticket);
+                            continue;
+                        }
+                        GameEvent::Widen { ticket, before } => {
+                            deliver_widening(&state, game_id, &log, &index, &ticket, &before);
                             continue;
                         }
                         GameEvent::Input(envelope) => envelope,

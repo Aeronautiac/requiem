@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth::{Capability, Key, KeyData, Privileges, Ticket, to_flags},
+    delivery::narrow,
     game::GameEvent,
     state::{GameHandle, GameId, WrappedServerState, lock_state},
     wire::{ControlError, ControlOutcome, ControlResponse, GameControl},
@@ -83,28 +84,54 @@ pub fn revoke_key(game: &mut GameHandle, key: &Key) {
     }
 }
 
-// Re-attach every live connection on a key whose privileges just changed.
+// Bring every live connection on a key into line with privileges that just changed.
 //
 // A connection's viewport cursor is not a cache of the current rules -- it is the ACCUMULATED
-// result of walking the log under the rules that were in force at the time. Change the rules and
-// it is wrong in both directions:
+// result of walking the log under the rules in force at the time. A change makes it wrong, but the
+// two directions are not symmetric and must not be handled the same way.
 //
-//   widened: the cursor holds no access for viewports the new privileges reach, so the connection
-//     stays blind to their history (and, for a fresh Administer, to every System command already
-//     logged).
-//   narrowed: the cursor's watermarks were advanced by content the connection could read but no
-//     longer can. They sit at the log head, so a later legitimate entry into one of those
-//     viewports resumes from there and silently skips everything before it.
+// NARROWING is an exit at the meta level. It removes future access and says nothing about the
+// past, so it is applied in place, here, with no log and no batch. Nothing already delivered is
+// retracted: client state is monotonic and the connection keeps the history it legitimately
+// received. Without this the cursor's `access` would simply never drop the lost actors -- access
+// is built from Enter/Exit commands in the log, and the Exit that would close it is now filtered
+// out by the very change that should have ended it, so the connection would keep reading those
+// viewports forever.
 //
-// Re-attaching rebuilds the cursor from position 0 under the new rules. The replay resends
-// everything, which is exactly what makes it safe: client state is monotonic, so a command
-// received twice is a no-op.
-fn resync_key(game: &GameHandle, key: &Key) {
-    let Some(key_data) = game.keys.get(key) else {
+// WIDENING owes history, which means it needs the log -- and only the game task has that. So it
+// goes out as an event carrying the PREVIOUS privilege set, and the delivery is the difference
+// between old and new. See delivery::widen; it is emphatically not a replay.
+//
+// Both run on every change rather than being predicated on which direction it went: each is a
+// no-op when there was nothing to do, and deciding here would mean re-deriving the comparison the
+// two of them already make.
+fn apply_privilege_change(game: &mut GameHandle, key: &Key, before: Privileges) {
+    // split the borrow by field: cursors are edited through `connections` while `keys` is still
+    // read for the ticket list and the new privilege set.
+    let GameHandle {
+        keys,
+        connections,
+        inbox,
+        ..
+    } = game;
+
+    let Some(key_data) = keys.get(key) else {
         return;
     };
-    for ticket in key_data.tickets.iter().cloned() {
-        let _ = game.inbox.send(GameEvent::Attach { ticket });
+
+    for ticket in &key_data.tickets {
+        if let Some(conn) = connections.get_mut(ticket)
+            && let Some(cursor) = conn.cursor.as_mut()
+        {
+            narrow(cursor, &key_data.privileges);
+        }
+
+        // an unattached connection needs neither: its replay walks the whole log under the new
+        // privileges and arrives at the same place.
+        let _ = inbox.send(GameEvent::Widen {
+            ticket: ticket.clone(),
+            before: before.clone(),
+        });
     }
 }
 
@@ -166,15 +193,16 @@ pub fn manage(
             }
 
             // may_manage already established the key exists.
-            game.keys
+            let key_data = game
+                .keys
                 .get_mut(key)
-                .expect("target key resolved by may_manage")
-                .privileges
-                .capabilities = capabilities;
+                .expect("target key resolved by may_manage");
+            let before = key_data.privileges.clone();
+            key_data.privileges.capabilities = capabilities;
 
             // Granting or stripping Administer changes which viewports this key reads, so its
-            // connections' cursors no longer describe reality. See resync_key.
-            resync_key(game, key);
+            // connections' cursors no longer describe reality. See apply_privilege_change.
+            apply_privilege_change(game, key, before);
 
             Ok(ControlResponse::CapabilitiesSet)
         }
@@ -182,15 +210,17 @@ pub fn manage(
         GameControl::SetActorScope { key, actors } => {
             may_manage(game, caller_key, supervises, key)?;
 
-            game.keys
+            let key_data = game
+                .keys
                 .get_mut(key)
-                .expect("target key resolved by may_manage")
-                .privileges
-                .actors = actors.clone();
+                .expect("target key resolved by may_manage");
+            let before = key_data.privileges.clone();
+            key_data.privileges.actors = actors.clone();
 
             // The cursor was built by walking the log under the OLD scope, so it holds no access
-            // for viewports the newly-added actors are already in. See resync_key.
-            resync_key(game, key);
+            // for viewports the newly-added actors are already in -- and still holds access for
+            // ones the removed actors unlocked. See apply_privilege_change.
+            apply_privilege_change(game, key, before);
 
             Ok(ControlResponse::ActorScopeSet)
         }
