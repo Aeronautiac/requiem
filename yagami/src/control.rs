@@ -10,7 +10,6 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth::{Capability, Key, KeyData, Privileges, Ticket, to_flags},
-    delivery::narrow,
     game::GameEvent,
     state::{GameHandle, GameId, WrappedServerState, lock_state},
     wire::{ControlError, ControlOutcome, ControlResponse, GameControl},
@@ -102,9 +101,10 @@ pub fn revoke_key(game: &mut GameHandle, key: &Key) {
 // goes out as an event carrying the PREVIOUS privilege set, and the delivery is the difference
 // between old and new. See delivery::widen; it is emphatically not a replay.
 //
-// Both run on every change rather than being predicated on which direction it went: each is a
-// no-op when there was nothing to do, and deciding here would mean re-deriving the comparison the
-// two of them already make.
+// Which halves are owed is decided ONCE, up front, rather than left to each half to no-op on: a
+// narrow walks every viewport in every cursor on the key, and a widen makes the game task walk the
+// entire log. Neither is cheap enough to run on a change that did not go that way, and a change
+// almost never goes both ways at once.
 fn apply_privilege_change(game: &mut GameHandle, key: &Key, before: Privileges) {
     // split the borrow by field: cursors are edited through `connections` while `keys` is still
     // read for the ticket list and the new privilege set.
@@ -118,20 +118,43 @@ fn apply_privilege_change(game: &mut GameHandle, key: &Key, before: Privileges) 
     let Some(key_data) = keys.get(key) else {
         return;
     };
+    let after = &key_data.privileges;
+
+    let lost_actors = after.actors.may_have_lost(&before.actors);
+    // gaining Administer opens every viewport and the System stream, so it owes history exactly as
+    // a new actor does. LOSING it owes nothing and needs no fixup either: `advance` re-reads the
+    // capability on every command, so it takes effect on the very next one.
+    let gained_reach = after.actors.may_have_gained(&before.actors)
+        || (after.administers() && !before.administers());
+
+    if !lost_actors && !gained_reach {
+        return;
+    }
 
     for ticket in &key_data.tickets {
-        if let Some(conn) = connections.get_mut(ticket)
-            && let Some(cursor) = conn.cursor.as_mut()
-        {
-            narrow(cursor, &key_data.privileges);
+        let Some(conn) = connections.get_mut(ticket) else {
+            continue; // ticket minted, but its socket has not upgraded yet
+        };
+        if conn.dropped {
+            continue; // already cut; nothing more will be read from this cursor or sent to it
+        }
+        // an unattached connection needs neither half: it has no cursor to correct, and the replay
+        // it is still waiting for walks the whole log under the privileges as they are NOW -- which
+        // this control has already written to the ledger, under this same lock.
+        let Some(cursor) = conn.cursor.as_mut() else {
+            continue;
+        };
+
+        if lost_actors {
+            cursor.narrow(after);
         }
 
-        // an unattached connection needs neither: its replay walks the whole log under the new
-        // privileges and arrives at the same place.
-        let _ = inbox.send(GameEvent::Widen {
-            ticket: ticket.clone(),
-            before: before.clone(),
-        });
+        if gained_reach {
+            let _ = inbox.send(GameEvent::Widen {
+                ticket: ticket.clone(),
+                before: before.clone(),
+            });
+        }
     }
 }
 

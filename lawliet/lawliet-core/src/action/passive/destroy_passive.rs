@@ -3,7 +3,6 @@
 * Fully destroy a passive: remove from the owning actor's cache, then remove from the world.
 */
 
-
 use crate::{
     action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     command::Command,

@@ -3,7 +3,6 @@
 * Use an ability
 */
 
-
 use crate::{
     ability::{AbilityInterface, AbilityStatus},
     action::{

@@ -4,7 +4,6 @@
 * IPP blocks this
 */
 
-
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,

@@ -17,7 +17,6 @@ new_key_type! {
     pub struct ViewportKey;
 }
 
-
 pub type ID = usize; // host-inserted frontend identifiers (e.g. OverrideSource::Manual)
 pub type Version = u8;
 pub type Time = u128; // intended to be used as unix time in milliseconds

@@ -84,6 +84,34 @@ impl ActorScope {
             Self::Only(actors) => actors.contains(actor),
         }
     }
+
+    // Did replacing `before` with this scope take an actor away? Added one?
+    //
+    // These two are what let a privilege change skip the half of the work it does not owe, so they
+    // answer about REACH, not about the variants: `All` and an `Only` naming every actor alive right
+    // now reach exactly the same actors, and swapping one for the other is not a change at all. That
+    // is undecidable from the scopes alone -- it needs the actor list -- so the arm that straddles
+    // the variants answers "maybe" as "yes". A false yes costs one wasted walk; a false no would
+    // cost correctness.
+    pub fn may_have_lost(&self, before: &Self) -> bool {
+        match (before, self) {
+            // reaches every actor there is, so nothing can have dropped out.
+            (_, Self::All) => false,
+            // the new set may or may not name everything the old scope reached.
+            (Self::All, Self::Only(_)) => true,
+            (Self::Only(before), Self::Only(after)) => !before.is_subset(after),
+        }
+    }
+
+    pub fn may_have_gained(&self, before: &Self) -> bool {
+        match (before, self) {
+            // already reached every actor there is, so nothing can be new.
+            (Self::All, _) => false,
+            // the old set may or may not have named everything that exists.
+            (Self::Only(_), Self::All) => true,
+            (Self::Only(before), Self::Only(after)) => !after.is_subset(before),
+        }
+    }
 }
 
 // what a key is allowed to do. resolved from a ticket at the moment of use and never copied into the
@@ -99,6 +127,11 @@ pub struct Privileges {
 }
 
 impl Privileges {
+    // Administer is asked about often enough, and by enough different code, to be worth a name.
+    pub fn administers(&self) -> bool {
+        self.capabilities.contains(Capability::Administer)
+    }
+
     // may a connection holding this set submit an action as this actor?
     pub fn can_act_as(&self, actor: &ActionActor) -> bool {
         match actor {
@@ -133,4 +166,60 @@ pub fn generate_token() -> Token {
         write!(s, "{b:02x}").unwrap();
     }
     s
+}
+
+#[cfg(test)]
+mod auth_tests {
+    use slotmap::KeyData;
+
+    use super::*;
+
+    // These two decide whether a privilege change does any work at all, so a wrong `false` is
+    // silently undelivered history rather than a visible failure. The pessimistic answers are pinned
+    // here deliberately: they are the ones that look like they could be tightened.
+
+    fn actor(n: u64) -> ActorKey {
+        KeyData::from_ffi(n | (1 << 32)).into()
+    }
+
+    fn only(actors: &[u64]) -> ActorScope {
+        ActorScope::Only(actors.iter().copied().map(actor).collect())
+    }
+
+    #[test]
+    fn an_unchanged_scope_neither_loses_nor_gains() {
+        for scope in [ActorScope::All, only(&[1, 2]), only(&[])] {
+            assert!(!scope.may_have_lost(&scope));
+            assert!(!scope.may_have_gained(&scope));
+        }
+    }
+
+    #[test]
+    fn all_never_loses_and_never_gains() {
+        // whatever it replaces, `All` reaches everything, so nothing dropped out...
+        assert!(!ActorScope::All.may_have_lost(&only(&[1, 2])));
+        // ...and whatever replaces it, `All` already reached everything, so nothing is new.
+        assert!(!only(&[1, 2]).may_have_gained(&ActorScope::All));
+    }
+
+    #[test]
+    fn a_swap_between_the_variants_is_answered_pessimistically() {
+        // `Only` may name every actor alive, in which case neither of these is a change in reach at
+        // all -- undecidable without the actor list, so both answer yes.
+        assert!(only(&[1, 2]).may_have_lost(&ActorScope::All));
+        assert!(ActorScope::All.may_have_gained(&only(&[1, 2])));
+    }
+
+    #[test]
+    fn two_enumerated_scopes_are_answered_exactly() {
+        assert!(!only(&[1, 2, 3]).may_have_lost(&only(&[1, 2]))); // grew
+        assert!(only(&[1, 2, 3]).may_have_gained(&only(&[1, 2])));
+
+        assert!(only(&[1]).may_have_lost(&only(&[1, 2]))); // shrank
+        assert!(!only(&[1]).may_have_gained(&only(&[1, 2])));
+
+        // a change can go both ways at once, which is why these are two questions and not one.
+        assert!(only(&[2, 3]).may_have_lost(&only(&[1, 2])));
+        assert!(only(&[2, 3]).may_have_gained(&only(&[1, 2])));
+    }
 }

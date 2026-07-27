@@ -3,13 +3,12 @@
 * Create a group chat
 */
 
-
 use crate::{
-    helpers::cmd_channel,
     action::{Action, ActionInterface, ActionResponse, CreateChannel},
     command::Command,
     common::GroupchatKey,
     groupchat::Groupchat,
+    helpers::cmd_channel,
     world::ContactChannel,
 };
 

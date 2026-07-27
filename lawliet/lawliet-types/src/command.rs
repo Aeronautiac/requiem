@@ -419,7 +419,6 @@ pub enum Command {
     // themselves (Actor(target)) so it lands in their notifications log ("your role is now
     // X"), and to System so admin can inspect any player's current facts per-user. target_id
     // is redundant for the player copy but is what keys the admin copy.
-
     RoleUpdate {
         target_id: ActorKey,
         role: Role,

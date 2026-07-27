@@ -5,10 +5,7 @@
 * Remember that an org is just a variant of an actor
 */
 
-use lawliet_types::{
-    action::CreateChannel,
-    command::Command,
-};
+use lawliet_types::{action::CreateChannel, command::Command};
 
 use crate::{
     action::{

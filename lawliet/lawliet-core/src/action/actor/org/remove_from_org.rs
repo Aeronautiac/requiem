@@ -3,10 +3,7 @@
 * Remove a player from an organization
 */
 
-use lawliet_types::{
-    action::SetMember,
-    command::Command,
-};
+use lawliet_types::{action::SetMember, command::Command};
 
 use crate::{
     action::{Action, ActionError, ActionInterface, ActionResponse, UpdateKidnapChannels},

@@ -7,11 +7,10 @@
 // One channel in, not two, so ordering is free -- a connection's Attach is queued ahead of
 // anything it goes on to send, and is therefore always replayed before it can act.
 
-use std::{collections::HashMap, env::current_exe, process::Stdio, time::Duration};
+use std::{env::current_exe, process::Stdio, time::Duration};
 
 use lawliet_types::{
     action::{Action, ActionActor, ActionRequest, InitializeEngine, Null},
-    command::{CommandPayload, CommandRecipient},
     engine::ExecutionResult,
 };
 use serde::Serialize;
@@ -28,7 +27,7 @@ use crate::{
     auth::{Privileges, Ticket},
     constants::{ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
     control::handle_control,
-    delivery::{ViewportIndex, attach, crashed, deliver_widening, dispatch},
+    delivery::{History, broadcast, deliver_catchup, deliver_crash, deliver_widening},
     generate_seed, now,
     state::{GameId, WrappedServerState, lock_state},
     wire::{ActionOutcome, ExecOutcome, ResponsePair, ServerInput},
@@ -58,19 +57,14 @@ pub struct InFlight {
 // Attach is queued before any input it goes on to send, so it is always replayed before it can act.
 pub enum GameEvent {
     // a websocket finished upgrading and wants its catch-up replay.
-    Attach {
-        ticket: Ticket,
-    },
+    Attach { ticket: Ticket },
     // this connection's key was widened and is owed the history it could not see before. carries
     // the PREVIOUS privilege set because the delivery is the difference between the two, and the
     // ledger already holds the new one by the time this is handled.
     //
     // narrowing has no event: it needs no log, so it is applied in place under the control's own
     // lock (see control::apply_privilege_change).
-    Widen {
-        ticket: Ticket,
-        before: Privileges,
-    },
+    Widen { ticket: Ticket, before: Privileges },
     Input(InputEnvelope),
 }
 
@@ -195,14 +189,12 @@ pub async fn game(
         // every action the engine accepted, in order. the source of truth for rebuilding a fresh
         // child, and what a persistent log would store.
         let mut accepted: Vec<ActionRequest> = vec![];
-        // every command ever emitted, in emission order. "per-recipient logs" are a FILTER over this,
-        // not separate storage -- one log is what keeps cross-recipient order intact for free.
-        let mut log: Vec<CommandPayload> = vec![];
-        // viewport -> its positions in `log`, maintained alongside it. purely an accelerator for
-        // backfill; the log alone is sufficient, this just avoids scanning it.
-        let mut index: ViewportIndex = HashMap::new();
+        // every command ever emitted, in emission order, plus its viewport index. "per-recipient
+        // logs" are a FILTER over this, not separate storage -- one log is what keeps cross-recipient
+        // order intact for free.
+        let mut history = History::default();
         // replay responses still to be swallowed. a rebuilt child re-emits every command it already
-        // emitted; `log` already holds them, so the echoes must not be logged or fanned out again.
+        // emitted; `history` already holds them, so the echoes must not be logged or fanned out again.
         let mut to_discard: usize = 0;
         // watchdog: when the engine owes us a line, when we stop waiting for it. armed and disarmed
         // in one place, at the bottom of the loop.
@@ -235,7 +227,7 @@ pub async fn game(
                     // killed it, so it is NOT added to `accepted` and never replayed. its originator
                     // is told, rather than left waiting on a reply that will never come.
                     if let Some(InFlight { ticket, request, .. }) = in_flight.take() {
-                        crashed(&state, game_id, &log, &index, ticket, request);
+                        deliver_crash(&state, game_id, ticket, request);
                     }
 
                     stdin = Some(new_in);
@@ -286,11 +278,11 @@ pub async fn game(
                 Some(event) = events.recv(), if stdin.is_some() && in_flight.is_none() => {
                     let InputEnvelope { ticket, input } = match event {
                         GameEvent::Attach { ticket } => {
-                            attach(&state, game_id, &log, &index, &ticket);
+                            deliver_catchup(&state, game_id, &history, &ticket);
                             continue;
                         }
                         GameEvent::Widen { ticket, before } => {
-                            deliver_widening(&state, game_id, &log, &index, &ticket, &before);
+                            deliver_widening(&state, game_id, &history, &ticket, &before);
                             continue;
                         }
                         GameEvent::Input(envelope) => envelope,
@@ -317,7 +309,7 @@ pub async fn game(
                                 input: ServerInput::Control(control),
                                 output: ExecOutcome::Control(outcome),
                             };
-                            dispatch(&state, game_id, &log, &index, log.len(), Some((ticket, pair)));
+                            broadcast(&state, game_id, &history, history.head(), Some((ticket, pair)));
                             continue;
                         }
                     };
@@ -336,7 +328,7 @@ pub async fn game(
 
                     if !permitted {
                         let pair = ResponsePair { input: ServerInput::Action(request), output: ExecOutcome::Action(ActionOutcome::Denied) };
-                        dispatch(&state, game_id, &log, &index, log.len(), Some((ticket, pair)));
+                        broadcast(&state, game_id, &history, history.head(), Some((ticket, pair)));
                         continue;
                     }
 
@@ -353,7 +345,7 @@ pub async fn game(
                         stdin = None;
                         let _ = kill_in.try_send(());
                         let pair = ResponsePair { input: ServerInput::Action(request), output: ExecOutcome::Action(ActionOutcome::Crashed) };
-                        dispatch(&state, game_id, &log, &index, log.len(), Some((ticket, pair)));
+                        broadcast(&state, game_id, &history, history.head(), Some((ticket, pair)));
                     } else {
                         in_flight = Some(InFlight { ticket: Some(ticket), logged: true, request });
                     }
@@ -415,13 +407,7 @@ pub async fn game(
                         Err((error, context)) => (ActionOutcome::Err(error), context.commands),
                     };
 
-                    let at = log.len();
-                    for (offset, payload) in commands.iter().enumerate() {
-                        if let CommandRecipient::Viewport(viewport) = &payload.recipient {
-                            index.entry(*viewport).or_default().push(at + offset);
-                        }
-                    }
-                    log.extend(commands);
+                    let at = history.extend(commands);
 
                     // commands go to everyone entitled to them either way; only the reply needs an
                     // originating connection, and a server-issued action has none.
@@ -432,7 +418,7 @@ pub async fn game(
                         };
                         (ticket, pair)
                     });
-                    dispatch(&state, game_id, &log, &index, at, reply);
+                    broadcast(&state, game_id, &history, at, reply);
                 }
 
                 // drive time forward. the engine only advances when an action arrives, so without
@@ -480,7 +466,7 @@ pub async fn game(
                     // reply here rather than leaving it to the fd arm: clearing in_flight now is what
                     // stops the watchdog re-arming and firing a second kill before the child is gone.
                     if let Some(InFlight { ticket, request, .. }) = in_flight.take() {
-                        crashed(&state, game_id, &log, &index, ticket, request);
+                        deliver_crash(&state, game_id, ticket, request);
                     }
 
                     // abandon the pipes: a late line from a child we have given up on must not be

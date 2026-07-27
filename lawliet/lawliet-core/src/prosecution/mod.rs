@@ -54,7 +54,6 @@
 // visible. Deferred commands handle the case where a player receives a visibility grant
 // for an already-archived object — the frontend should label it archived and block interaction.
 
-
 use crate::{ActorKey, ChannelKey, PollKey, actor::ActorDisplay, common::JobID};
 
 pub use lawliet_types::prosecution::{ProsecutionPhaseView, ProsecutionSource, TrialPhaseView};

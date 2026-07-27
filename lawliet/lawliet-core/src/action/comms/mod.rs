@@ -28,11 +28,11 @@ mod comms_tests {
         common::{AbilityKey, ActorKey, BugKey},
         config::{ability::AbilityName, role::Role},
         engine::Engine,
-        viewport::ViewportKind,
         helpers::{get_bug, get_channel, get_gc, get_player},
         lounge::LoungeVariant,
         passive::PassiveType,
         test_helpers::*,
+        viewport::ViewportKind,
     };
 
     // ---- channel ----

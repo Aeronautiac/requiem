@@ -1,284 +1,321 @@
 // Who receives which command, and in what order.
 //
 // This module is the whole of the server-side access control on state. Everything the client does
-// with visibility beyond what leaves here is UX, not security -- a client that ignores its own
-// rules can only misrender what it was already entitled to.
+// with visibility beyond what leaves here is UX, not security -- a client that ignores its own rules
+// can only misrender what it was already entitled to.
 //
-// The core of it is `advance`: one walk of the log that serves both a live batch and a reconnect,
-// which is what guarantees the two streams are identical rather than merely similar.
+// Three types and four entrypoints:
+//
+//   History        the single command log, plus the index over it
+//   Reach          what one walk of that log may see
+//   ViewportCursor how far one connection has got, and every walk that moves it
+//
+//   broadcast          -> every live connection in the game
+//   deliver_catchup    -> one connection, its whole entitled history, on attach
+//   deliver_widening   -> one connection, the history a privilege change just owed it
+//   deliver_crash      -> one connection, the news that the engine died holding its action
+//
+// Every one of those walks goes through `ViewportCursor::advance`. That is deliberate and it is the
+// load-bearing property of the module: a reconnecting client is handed the same commands in the same
+// order as one that was connected throughout, because there is only one routine that can hand out a
+// command at all.
 
 use std::collections::{HashMap, HashSet};
 
 use lawliet_types::{
+    action::ActionRequest,
     command::{Command, CommandPayload, CommandRecipient},
     common::{ActorKey, ViewportKey},
 };
 
-use lawliet_types::action::ActionRequest;
-
 use crate::{
-    auth::{Capability, Privileges, Ticket},
+    auth::{Key, KeyData, Privileges, Ticket},
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
     wire::{
         ActionOutcome, Batch, ExecOutcome, OutputData, ResponsePair, ServerInput, ServerOutput,
     },
 };
 
-// viewport -> the log positions of the commands addressed to it, in order. built as the log grows
-// and never persisted: it rebuilds from the log like everything else here.
+// Every command ever emitted, in emission order, together with the index over it.
 //
-// this exists so backfilling a viewport costs what it emits rather than the length of the log.
-// entry events are frequent -- every actor state change resyncs every bug's membership -- and
-// without it each one would scan the whole log to find the handful of commands it needs.
+// One log is what keeps cross-recipient order intact: a recipient's "own log" is a FILTER over this,
+// never separate storage, so a replay can never hand out a command before the one that created what
+// it refers to.
 //
-// it stores positions, not payloads: there is exactly one copy of every command.
-pub type ViewportIndex = HashMap<ViewportKey, Vec<usize>>;
-
-// What one walk of the log is entitled to see.
-//
-// `Privileges` is the obvious implementation -- "everything this key may read" -- and it is what
-// live fan-out and attach walk with. The reason this is a trait at all is `Gained`: a widen has to
-// walk the same log looking only for what a privilege change ADDED, and expressing that as a
-// second delivery path is how the two quietly drift apart. One walk, two answers to "may I see
-// this", is what keeps them identical by construction.
-pub trait Reach {
-    fn actor(&self, id: &ActorKey) -> bool;
-    fn administers(&self) -> bool;
+// The index is `viewport -> the positions addressed to it`, and it is here rather than beside the log
+// because it is only meaningful against this exact log -- passing the two separately is an invitation
+// to let them get out of step. It stores positions, not payloads: there is exactly one copy of every
+// command. It is purely an accelerator, and nothing is persisted: both rebuild from the action log.
+#[derive(Default)]
+pub struct History {
+    log: Vec<CommandPayload>,
+    index: HashMap<ViewportKey, Vec<usize>>,
 }
 
-impl Reach for Privileges {
+impl History {
+    // Append one execution's commands. Returns the position the new tail starts at, which is where
+    // fan-out resumes from.
+    pub fn extend(&mut self, commands: Vec<CommandPayload>) -> usize {
+        let at = self.log.len();
+        for (offset, payload) in commands.iter().enumerate() {
+            if let CommandRecipient::Viewport(viewport) = &payload.recipient {
+                self.index.entry(*viewport).or_default().push(at + offset);
+            }
+        }
+        self.log.extend(commands);
+        at
+    }
+
+    // One past the last command: where a batch that added nothing both begins and ends.
+    pub fn head(&self) -> usize {
+        self.log.len()
+    }
+
+    // Everything addressed to `viewport` in [from, until), in order -- the gap an actor just gained
+    // access to. The index is what makes this cost what it yields rather than the length of the log,
+    // which matters because entry events are frequent: every actor state change resyncs every bug's
+    // membership.
+    fn viewport_range(
+        &self,
+        viewport: ViewportKey,
+        from: usize,
+        until: usize,
+    ) -> impl Iterator<Item = &CommandPayload> {
+        let positions = self.index.get(&viewport).map(Vec::as_slice).unwrap_or(&[]);
+        let start = positions.partition_point(|&pos| pos < from);
+
+        positions[start..]
+            .iter()
+            .copied()
+            .take_while(move |&pos| pos < until)
+            .map(move |pos| &self.log[pos])
+    }
+}
+
+// What one walk of the log may see.
+//
+// `full` is the ordinary case, and both live fan-out and a catch-up replay walk with it. `gained`
+// exists so a widen can walk the SAME log looking only for what a privilege change added: giving
+// that its own delivery routine is how two streams that must be identical quietly drift apart.
+struct Reach<'a> {
+    granted: &'a Privileges,
+    // subtracted from `granted`, leaving only what the key could not see before. `None` means
+    // subtract nothing.
+    already_reached: Option<&'a Privileges>,
+}
+
+impl<'a> Reach<'a> {
+    fn full(granted: &'a Privileges) -> Self {
+        Self {
+            granted,
+            already_reached: None,
+        }
+    }
+
+    fn gained(before: &'a Privileges, after: &'a Privileges) -> Self {
+        Self {
+            granted: after,
+            already_reached: Some(before),
+        }
+    }
+
     fn actor(&self, id: &ActorKey) -> bool {
-        self.actors.contains(id)
+        self.granted.actors.contains(id)
+            && !self
+                .already_reached
+                .is_some_and(|had| had.actors.contains(id))
     }
+
     fn administers(&self) -> bool {
-        self.capabilities.contains(Capability::Administer)
+        self.granted.administers() && !self.already_reached.is_some_and(Privileges::administers)
     }
 }
 
-// The reach a privilege change added: what a key can see now and could not before.
+// How much of each viewport one connection has been handed, and the walk that hands it more.
 //
-// Only ever widens. A narrowing is not expressed here because it needs no walk at all -- see
-// `narrow`.
-pub struct Gained<'a> {
-    pub before: &'a Privileges,
-    pub after: &'a Privileges,
-}
-
-impl Reach for Gained<'_> {
-    fn actor(&self, id: &ActorKey) -> bool {
-        self.after.actor(id) && !self.before.actor(id)
-    }
-    fn administers(&self) -> bool {
-        self.after.administers() && !self.before.administers()
-    }
-}
-
-// how much of each viewport one connection has been handed.
-//
-// the delivered set for a viewport is always a PREFIX of that viewport's commands, because gaining
-// access always fills the entire gap. that is what lets this be one integer per viewport instead
-// of a record of what was sent.
+// The delivered set for a viewport is always a PREFIX of that viewport's commands, because gaining
+// access always fills the entire gap. That is what lets this be one integer per viewport instead of a
+// record of what was sent.
 #[derive(Default)]
 pub struct ViewportCursor {
-    // which of this connection's actors currently have access. a SET rather than a refcount, for
-    // two reasons: two actors on one connection entering the same viewport must not double-deliver
-    // its history and one leaving must not cut the other off (a refcount gave that much), and a
-    // narrowed key needs to drop exactly the actors it lost, which a bare count cannot answer.
+    // which of this connection's actors currently have access. a SET rather than a refcount, for two
+    // reasons: two actors on one connection entering the same viewport must not double-deliver its
+    // history and one leaving must not cut the other off (a refcount gave that much), and a narrowed
+    // key needs to drop exactly the actors it lost, which a bare count cannot answer.
     access: HashMap<ViewportKey, HashSet<ActorKey>>,
-    // log position, exclusive, up to which this viewport has been delivered. left where it is on
+    // log position, exclusive, up to which each viewport has been delivered. left where it is on
     // exit, so a later re-entry resumes from exactly the gap.
     //
-    // MONOTONIC. Every write below takes a max, so it can only ever mean "delivered up to here" --
-    // never a position walked past without sending. That is what lets a widen pre-seed a probe
-    // cursor with these and trust them to suppress re-delivery.
+    // MONOTONIC. Every write goes through `deliver_to`, which takes a max, so it can only ever mean
+    // "delivered up to here" -- never a position walked past without sending. That is what lets
+    // `widen` seed a probe with these and trust them to suppress re-delivery.
     watermark: HashMap<ViewportKey, usize>,
 }
 
 impl ViewportCursor {
+    fn delivered(&self, viewport: &ViewportKey) -> usize {
+        self.watermark.get(viewport).copied().unwrap_or(0)
+    }
+
     // Advance the delivered-prefix mark, never retreating it.
     fn deliver_to(&mut self, viewport: ViewportKey, position: usize) {
         let mark = self.watermark.entry(viewport).or_insert(0);
         *mark = (*mark).max(position);
     }
 
-    fn delivered(&self, viewport: &ViewportKey) -> usize {
-        self.watermark.get(viewport).copied().unwrap_or(0)
-    }
-}
+    // Walk the history from `from` and produce, in delivery order, everything this connection is
+    // entitled to -- advancing the cursor as it goes. This is the whole of the server-side access
+    // control on state: everything the client does with visibility beyond this is UX, not security.
+    //
+    // Running the same walk for a live batch (from the tail) and for a reconnect (from 0, on a fresh
+    // cursor) is what makes the two streams identical. A reconnecting client is not replaying a
+    // different, filtered view of history -- it is receiving the same bytes in the same order it
+    // would have received them live, with each viewport's backfill spliced in at the point access
+    // was gained.
+    fn advance(&mut self, reach: &Reach, history: &History, from: usize) -> Vec<CommandPayload> {
+        let mut out = Vec::new();
 
-// append everything addressed to `viewport` in [from, until) -- the gap an actor just gained access
-// to. the index makes this proportional to what is actually emitted rather than to the log length.
-pub fn backfill(
-    out: &mut Vec<CommandPayload>,
-    log: &[CommandPayload],
-    index: &ViewportIndex,
-    viewport: ViewportKey,
-    from: usize,
-    until: usize,
-) {
-    let Some(positions) = index.get(&viewport) else {
-        return;
-    };
-    let start = positions.partition_point(|&pos| pos < from);
-    for &pos in &positions[start..] {
-        if pos >= until {
-            break;
-        }
-        out.push(log[pos].clone());
-    }
-}
+        for pos in from..history.log.len() {
+            let payload = &history.log[pos];
 
-// walk the log from `from` and produce, in delivery order, everything this connection is entitled
-// to -- advancing its cursor as it goes. this is the whole of the server-side access control on
-// state: everything the client does with visibility beyond this is UX, not security.
-//
-// running the same walk for a live batch (from the tail) and for a reconnect (from 0, on a fresh
-// cursor) is what makes the two streams identical. a reconnecting client is not replaying a
-// different, filtered view of history -- it is receiving the same bytes in the same order it would
-// have received them live, with each viewport's backfill spliced in at the point access was gained.
-pub fn advance<R: Reach>(
-    cursor: &mut ViewportCursor,
-    reach: &R,
-    log: &[CommandPayload],
-    index: &ViewportIndex,
-    from: usize,
-) -> Vec<CommandPayload> {
-    let mut out = Vec::new();
+            let visible = match &payload.recipient {
+                CommandRecipient::System => reach.administers(),
+                CommandRecipient::Actor(id) => reach.actor(id),
+                // Administer reads every viewport, including ones nobody has ever entered. That is
+                // what the capability means -- it already grants the System stream -- and it is what
+                // lets admin watch a deception unfold: they receive the fiction through the presence
+                // viewport exactly as the players do, and any truth the engine chooses to expose
+                // arrives separately, addressed to System, for them to compose against it.
+                //
+                // No double-delivery results. A key reading a viewport unconditionally advances that
+                // viewport's watermark on every command, so a later EnterViewport finds the gap
+                // already closed and backfills nothing.
+                CommandRecipient::Viewport(viewport) => {
+                    let held = reach.administers()
+                        || self
+                            .access
+                            .get(viewport)
+                            .is_some_and(|holders| !holders.is_empty());
 
-    for pos in from..log.len() {
-        let payload = &log[pos];
+                    // ...and never re-send what this viewport's mark already accounts for. A no-op
+                    // on a live walk, where the mark trails the position by construction. It earns
+                    // its keep in a widen, whose probe starts with the connection's real marks: it
+                    // is what turns "walk the whole log again" into "emit only the gaps".
+                    held && pos >= self.delivered(viewport)
+                }
+            };
 
-        let administers = reach.administers();
-
-        let visible = match &payload.recipient {
-            CommandRecipient::System => administers,
-            CommandRecipient::Actor(id) => reach.actor(id),
-            // Administer reads every viewport, including ones nobody has ever entered. That is
-            // what the capability means -- it already grants the System stream -- and it is what
-            // lets admin watch a deception unfold: they receive the fiction through the presence
-            // viewport exactly as the players do, and any truth the engine chooses to expose
-            // arrives separately, addressed to System, for them to compose against it.
-            //
-            // No double-delivery results. A key reading a viewport unconditionally advances that
-            // viewport's watermark on every command, so a later EnterViewport finds the gap
-            // already closed and backfills nothing.
-            CommandRecipient::Viewport(viewport) => {
-                let held = administers
-                    || cursor
-                        .access
-                        .get(viewport)
-                        .is_some_and(|holders| !holders.is_empty());
-
-                // ...and never re-send what this viewport's mark already accounts for. A no-op on
-                // a live walk, where the mark trails the position by construction. It earns its
-                // keep in a widen, whose probe cursor starts with the connection's real marks: it
-                // is what turns "walk the whole log again" into "emit only the gaps".
-                held && pos >= cursor.delivered(viewport)
+            if visible {
+                out.push(payload.clone());
+                if let CommandRecipient::Viewport(viewport) = &payload.recipient {
+                    self.deliver_to(*viewport, pos + 1);
+                }
             }
+
+            // access changes are addressed to the actor they concern, so they ride the Actor arm
+            // above like any other command. acting on them AFTERWARDS is what puts the Enter ahead
+            // of the history it unlocks, which is the order a live client would have seen.
+            match &payload.cmd {
+                Command::EnterViewport {
+                    viewport, actor, ..
+                } if reach.actor(actor) => {
+                    let holders = self.access.entry(*viewport).or_default();
+                    // only the FIRST holder backfills; a second actor arriving into a viewport this
+                    // connection is already reading has nothing to catch up on.
+                    let first = holders.is_empty();
+                    holders.insert(*actor);
+
+                    if first {
+                        // yields nothing when the mark is already at or past this point, which is
+                        // the widen case: the connection read this viewport through another actor
+                        // and the gap is empty.
+                        let gap = history.viewport_range(*viewport, self.delivered(viewport), pos);
+                        out.extend(gap.cloned());
+                        self.deliver_to(*viewport, pos);
+                    }
+                }
+                Command::ExitViewport { viewport, actor } if reach.actor(actor) => {
+                    if let Some(holders) = self.access.get_mut(viewport) {
+                        holders.remove(actor);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        out
+    }
+
+    // Apply a NARROWED privilege set: drop the access held by actors the key no longer reaches.
+    //
+    // There is deliberately no replay here, and no batch. Narrowing is an exit at the meta level --
+    // it says "no more of this from now on", exactly like an ExitViewport, and it says nothing about
+    // what was already delivered. Delivery cannot be undone and must not be: client state is
+    // monotonic, so the connection keeps the history it legitimately received from a viewport it has
+    // now left.
+    //
+    // The watermarks are left exactly where they are, and that is correct rather than merely
+    // harmless: they record what was delivered, which the narrowing does not change. If the key is
+    // later widened back into one of these viewports, resuming from them delivers precisely the gap.
+    //
+    // Capability narrowing needs no equivalent -- `advance` reads `administers` fresh on every
+    // command, so dropping Administer takes effect on the very next one.
+    pub fn narrow(&mut self, privileges: &Privileges) {
+        for holders in self.access.values_mut() {
+            holders.retain(|actor| privileges.actors.contains(actor));
+        }
+    }
+
+    // Produce the history a WIDENED privilege set is now owed, and fold the new access in.
+    //
+    // This is the only privilege change that owes anything, because it is the only one where the
+    // connection is missing state it is now entitled to. It walks the whole log, but it is not a
+    // replay: the probe carries this cursor's real watermarks, so every viewport already being read
+    // is suppressed and only genuine gaps come back. Nothing already delivered is re-sent, which is
+    // what makes the result safe to apply on top of live client state -- an actual replay would
+    // duplicate every appended message and news event on the client.
+    //
+    // `Reach::gained` is what restricts the walk to the delta. Without it the Actor-addressed
+    // commands for actors the key ALREADY held would all come back too: those have no watermark to
+    // suppress them.
+    fn widen(
+        &mut self,
+        before: &Privileges,
+        after: &Privileges,
+        history: &History,
+    ) -> Vec<CommandPayload> {
+        // access starts empty so the walk builds only what the newly-reached actors unlock; the
+        // watermarks come along so it can tell an unseen gap from history already in hand.
+        let mut probe = ViewportCursor {
+            access: HashMap::new(),
+            watermark: self.watermark.clone(),
         };
 
-        if visible {
-            out.push(payload.clone());
-            if let CommandRecipient::Viewport(viewport) = &payload.recipient {
-                cursor.deliver_to(*viewport, pos + 1);
-            }
+        let commands = probe.advance(&Reach::gained(before, after), history, 0);
+
+        // marks are monotonic, so the probe's are the union already.
+        self.watermark = probe.watermark;
+        for (viewport, holders) in probe.access {
+            self.access.entry(viewport).or_default().extend(holders);
         }
 
-        // access changes are addressed to the actor they concern, so they ride the Actor arm above
-        // like any other command. acting on them AFTERWARDS is what puts the Enter ahead of the
-        // history it unlocks, which is the order a live client would have seen.
-        match &payload.cmd {
-            Command::EnterViewport {
-                viewport, actor, ..
-            } if reach.actor(actor) => {
-                let holders = cursor.access.entry(*viewport).or_default();
-                // only the FIRST holder backfills; a second actor arriving into a viewport this
-                // connection is already reading has nothing to catch up on.
-                let first = holders.is_empty();
-                holders.insert(*actor);
-                if first {
-                    let resume = cursor.delivered(viewport);
-                    // yields nothing when the mark is already at or past this point, which is the
-                    // widen case: the connection read this viewport through another actor and the
-                    // gap is empty.
-                    backfill(&mut out, log, index, *viewport, resume, pos);
-                    cursor.deliver_to(*viewport, pos);
-                }
-            }
-            Command::ExitViewport { viewport, actor } if reach.actor(actor) => {
-                if let Some(holders) = cursor.access.get_mut(viewport) {
-                    holders.remove(actor);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    out
-}
-
-// Apply a NARROWED privilege set to a cursor: drop the access held by actors the key no longer
-// reaches.
-//
-// There is deliberately no replay here, and no batch. Narrowing is an exit at the meta level -- it
-// says "no more of this from now on", exactly like an ExitViewport, and it says nothing about what
-// was already delivered. Delivery cannot be undone and must not be: client state is monotonic, so
-// the connection keeps the history it legitimately received from a viewport it has now left.
-//
-// The watermarks are left exactly where they are, and that is correct rather than merely harmless:
-// they record what was delivered, which the narrowing does not change. If the key is later widened
-// back into one of these viewports, resuming from them delivers precisely the gap.
-//
-// Capability narrowing needs no equivalent -- `advance` reads `administers` from the privilege set
-// on every command, so dropping Administer takes effect on the very next one.
-pub fn narrow(cursor: &mut ViewportCursor, privileges: &Privileges) {
-    for holders in cursor.access.values_mut() {
-        holders.retain(|actor| privileges.actors.contains(actor));
+        commands
     }
 }
 
-// Deliver the history a WIDENED privilege set is now owed, and fold the new access into the cursor.
+// ---- sending -----------------------------------------------------------------------------------
 //
-// This is the only privilege change that owes anything, because it is the only one where the
-// connection is missing state it is now entitled to. It walks the whole log, but it is not a
-// replay: the probe carries the connection's real watermarks, so every viewport it already reads
-// is suppressed and only genuine gaps come back. Nothing already delivered is re-sent, which is
-// what makes this safe to apply on top of live client state -- an actual replay would duplicate
-// every appended message and news event on the client.
-//
-// `Gained` is what restricts the walk to the delta. Without it the Actor-addressed commands for
-// actors the key ALREADY held would all come back too: those have no watermark to suppress them.
-pub fn widen(
-    cursor: &mut ViewportCursor,
-    before: &Privileges,
-    after: &Privileges,
-    log: &[CommandPayload],
-    index: &ViewportIndex,
-) -> Vec<CommandPayload> {
-    // access starts empty so the walk builds only what the newly-reached actors unlock; the
-    // watermarks come along so it can tell an unseen gap from history already in hand.
-    let mut probe = ViewportCursor {
-        access: HashMap::new(),
-        watermark: cursor.watermark.clone(),
-    };
-
-    let commands = advance(&mut probe, &Gained { before, after }, log, index, 0);
-
-    // marks are monotonic, so the probe's are the union already.
-    cursor.watermark = probe.watermark;
-    for (viewport, holders) in probe.access {
-        cursor.access.entry(viewport).or_default().extend(holders);
-    }
-
-    commands
-}
+// Four entrypoints, named on the only axis that distinguishes them: `broadcast` reaches every live
+// connection in the game, and each `deliver_*` reaches exactly the one named by a ticket. All four
+// are the same shape -- take the lock, walk, push a batch -- and none of them decides anything about
+// visibility, which lives entirely in `ViewportCursor::advance`.
 
 // hand one batch to one connection, stamped with that connection's next sequence number.
 //
 // best effort by design: a client whose outbox is full is CUT, not waited on. the alternatives are
 // unbounded memory growth or letting it silently miss mandatory state, and a client missing state is
 // worse than a client that has to reconnect.
-pub fn push_batch(conn: &mut ConnHandle, batch: Batch) {
+fn push_batch(conn: &mut ConnHandle, batch: Batch) {
     conn.seq_num += 1;
     let output = ServerOutput {
         seq_num: conn.seq_num,
@@ -291,20 +328,42 @@ pub fn push_batch(conn: &mut ConnHandle, batch: Batch) {
     }
 }
 
-// fan the result of one execution out to every live connection: recipient-filtered commands for
+// The privilege set a LIVE connection's key grants.
+//
+// Fatal rather than skippable: the ledger and the connection map are written together under one lock,
+// so a live connection that resolves to nothing means our own bookkeeping is inconsistent. There is
+// no privilege set to filter against, and guessing one is how you leak state.
+//
+// Every caller must therefore rule out the two ORDINARY absences first -- a connection that is gone
+// entirely (it died before this was handled, taking its ledger entry with it) and one that is
+// `dropped` (its key was revoked between the upgrade and now, which removes the ledger entry while
+// the ConnHandle waits for its guard to run).
+fn live_privileges<'a>(
+    tickets: &HashMap<Ticket, Key>,
+    keys: &'a HashMap<Key, KeyData>,
+    ticket: &Ticket,
+) -> &'a Privileges {
+    let Some(key_data) = tickets.get(ticket).and_then(|key| keys.get(key)) else {
+        eprintln!("connection {ticket:?} has no ledger entry -- aborting");
+        std::process::abort()
+    };
+
+    &key_data.privileges
+}
+
+// Fan the result of one execution out to EVERY live connection: recipient-filtered commands for
 // everyone who can see any of them, plus the request/response pair for whoever asked.
 //
-// takes the whole `log` and the position the new tail starts at, rather than just the tail: an
+// Takes the whole history and the position the new tail starts at, rather than just the tail: an
 // actor gaining access to a viewport in this batch has to be handed that viewport's history, which
 // is behind `at`.
 //
-// a connection that would see nothing and asked for nothing gets no batch and consumes no sequence
+// A connection that would see nothing and asked for nothing gets no batch and consumes no sequence
 // number: seq counts what a socket was actually sent, so it must not tick for a no-op.
-pub fn dispatch(
+pub fn broadcast(
     state: &WrappedServerState,
     game_id: GameId,
-    log: &[CommandPayload],
-    index: &ViewportIndex,
+    history: &History,
     at: usize,
     reply: Option<(Ticket, ResponsePair)>,
 ) {
@@ -331,18 +390,7 @@ pub fn dispatch(
         if conn.dropped {
             continue;
         }
-
-        // the ledger and the connection map are written together under one lock, so a live
-        // connection that resolves to nothing means our own bookkeeping is inconsistent -- there is
-        // no privilege set to filter against and guessing one is how you leak state.
-        let Some(privileges) = tickets
-            .get(ticket)
-            .and_then(|key| keys.get(key))
-            .map(|key_data| &key_data.privileges)
-        else {
-            eprintln!("connection {ticket:?} has no ledger entry -- aborting");
-            std::process::abort()
-        };
+        let privileges = live_privileges(tickets, keys, ticket);
 
         // only the originating connection gets the response, and only once.
         let response = if Some(ticket) == reply_ticket.as_ref() {
@@ -351,129 +399,37 @@ pub fn dispatch(
             None
         };
 
-        // no cursor means the connection has not been attached yet; its replay will cover this
-        // batch. the response still goes out -- it answers something this socket asked for, and
-        // holding it back would leave the caller waiting on a reply that never comes.
-        let visible = match conn.cursor.as_mut() {
-            Some(cursor) => advance(cursor, privileges, log, index, at),
+        // no cursor means the connection has not attached yet; its catch-up will cover this batch.
+        // the response still goes out -- it answers something this socket asked for, and holding it
+        // back would leave the caller waiting on a reply that never comes.
+        let commands = match conn.cursor.as_mut() {
+            Some(cursor) => cursor.advance(&Reach::full(privileges), history, at),
             None => Vec::new(),
         };
 
-        if visible.is_empty() && response.is_none() {
+        if commands.is_empty() && response.is_none() {
             continue;
         }
 
-        push_batch(
-            conn,
-            Batch {
-                commands: visible,
-                response,
-            },
-        );
+        push_batch(conn, Batch { commands, response });
     }
 }
 
-// tell whoever submitted an action that the engine died holding it. a server-issued action has no
-// originating connection, so there is simply nobody to tell.
-pub fn crashed(
+// The shell every ONE-connection delivery shares: take the lock, find the connection, resolve what
+// its key currently grants, and push whatever `batch` produced. Returning `None` sends nothing and
+// consumes no sequence number.
+fn deliver(
     state: &WrappedServerState,
     game_id: GameId,
-    log: &[CommandPayload],
-    index: &ViewportIndex,
-    ticket: Option<Ticket>,
-    request: ActionRequest,
-) {
-    let Some(ticket) = ticket else {
-        return;
-    };
-
-    let pair = ResponsePair {
-        input: ServerInput::Action(request),
-        output: ExecOutcome::Action(ActionOutcome::Crashed),
-    };
-    // nothing new was logged, so the walk starts at the head and produces no commands.
-    dispatch(state, game_id, log, index, log.len(), Some((ticket, pair)));
-}
-
-// replay everything a freshly attached connection is entitled to, as its first batch, and install
-// the cursor that live fan-out will advance from there.
-//
-// a single global log is what makes this correct in one pass: it is walked in emission order, so
-// there is no way to hand a connection a command that references something an earlier one was
-// supposed to create.
-//
-// sent even when the filtered result is empty -- it is the client's "you are caught up" marker, and
-// without it a client cannot tell being up to date from not being attached yet.
-pub fn attach(
-    state: &WrappedServerState,
-    game_id: GameId,
-    log: &[CommandPayload],
-    index: &ViewportIndex,
     ticket: &Ticket,
-) {
-    let mut server_state = lock_state(state);
-    let Some(game) = server_state.games.get_mut(&game_id) else {
-        return;
-    };
-
-    // both of these absences are ordinary and must be ruled out BEFORE the ledger lookup, because
-    // only a missing ledger entry under a connection that is still LIVE is a broken invariant:
-    //   - gone entirely: the connection died before its attach was handled, taking its entry with it.
-    //   - dropped: its key was revoked between the upgrade and now, which removes the ledger entry
-    //     while the ConnHandle waits for its guard to run.
-    match game.connections.get(ticket) {
-        None => return,
-        Some(conn) if conn.dropped => return,
-        Some(_) => {}
-    }
-
-    let Some(privileges) = game.privileges(ticket) else {
-        eprintln!("connection {ticket:?} has no ledger entry -- aborting");
-        std::process::abort()
-    };
-
-    // a fresh cursor walked over the whole log: attaching is re-living the stream from the start,
-    // not reconstructing a snapshot of it.
-    let mut cursor = ViewportCursor::default();
-    let commands = advance(&mut cursor, privileges, log, index, 0);
-
-    let Some(conn) = game.connections.get_mut(ticket) else {
-        return; // connection died between sending the attach event and it being handled
-    };
-
-    // installed only now that the replay is going out, so a fan-out racing this either skips the
-    // connection (no cursor yet, covered by the replay) or advances the cursor the replay left.
-    conn.cursor = Some(cursor);
-
-    push_batch(
-        conn,
-        Batch {
-            commands,
-            response: None,
-        },
-    );
-}
-
-// hand one connection the history its key was just widened into.
-//
-// the lock-and-fan-out shell around `widen`, exactly as `dispatch` is around `advance`. no batch
-// goes out when the walk produces nothing: a widen that reaches no new history is a no-op, and seq
-// counts what a socket was actually sent.
-pub fn deliver_widening(
-    state: &WrappedServerState,
-    game_id: GameId,
-    log: &[CommandPayload],
-    index: &ViewportIndex,
-    ticket: &Ticket,
-    before: &Privileges,
+    batch: impl FnOnce(&mut ConnHandle, &Privileges) -> Option<Batch>,
 ) {
     let mut server_state = lock_state(state);
     let Some(game) = server_state.games.get_mut(&game_id) else {
         return; // game is gone, and so are its connections
     };
 
-    // split the borrow by field, same as dispatch: the cursor is edited through `connections`
-    // while the ledger is still read to resolve the key's new privilege set.
+    // split the borrow by field: the connection is edited while the ticket/key ledger is still read.
     let GameHandle {
         tickets,
         connections,
@@ -481,7 +437,7 @@ pub fn deliver_widening(
         ..
     } = game;
 
-    // gone, or cut between the control and now. both ordinary; see attach.
+    // the two ordinary absences, ruled out before the ledger lookup. see live_privileges.
     let Some(conn) = connections.get_mut(ticket) else {
         return;
     };
@@ -489,33 +445,96 @@ pub fn deliver_widening(
         return;
     }
 
-    let Some(after) = tickets
-        .get(ticket)
-        .and_then(|key| keys.get(key))
-        .map(|key_data| &key_data.privileges)
-    else {
-        eprintln!("connection {ticket:?} has no ledger entry -- aborting");
-        std::process::abort()
-    };
-
-    // no cursor means the connection has not attached yet, so its replay walks the whole log under
-    // the new privileges and already covers everything this would have sent.
-    let Some(cursor) = conn.cursor.as_mut() else {
+    let privileges = live_privileges(tickets, keys, ticket);
+    let Some(batch) = batch(conn, privileges) else {
         return;
     };
 
-    let commands = widen(cursor, before, after, log, index);
-    if commands.is_empty() {
-        return;
-    }
+    push_batch(conn, batch);
+}
 
-    push_batch(
-        conn,
-        Batch {
+// Tell whoever submitted an action that the engine died holding it. A server-issued action has no
+// originating connection, so there is simply nobody to tell.
+pub fn deliver_crash(
+    state: &WrappedServerState,
+    game_id: GameId,
+    ticket: Option<Ticket>,
+    request: ActionRequest,
+) {
+    let Some(ticket) = ticket else {
+        return;
+    };
+
+    // nothing new was logged, so there are no commands to go with it.
+    deliver(state, game_id, &ticket, |_, _| {
+        Some(Batch {
+            commands: Vec::new(),
+            response: Some(ResponsePair {
+                input: ServerInput::Action(request),
+                output: ExecOutcome::Action(ActionOutcome::Crashed),
+            }),
+        })
+    });
+}
+
+// Replay everything a freshly attached connection is entitled to, as its first batch, and install the
+// cursor that `broadcast` will advance from there.
+//
+// A single global log is what makes this correct in one pass: it is walked in emission order, so
+// there is no way to hand a connection a command that references something an earlier one was
+// supposed to create.
+//
+// Sent even when the filtered result is empty -- it is the client's "you are caught up" marker, and
+// without it a client cannot tell being up to date from not being attached yet.
+pub fn deliver_catchup(
+    state: &WrappedServerState,
+    game_id: GameId,
+    history: &History,
+    ticket: &Ticket,
+) {
+    deliver(state, game_id, ticket, |conn, privileges| {
+        // a fresh cursor walked over the whole log: attaching is re-living the stream from the
+        // start, not reconstructing a snapshot of it.
+        let mut cursor = ViewportCursor::default();
+        let commands = cursor.advance(&Reach::full(privileges), history, 0);
+
+        // installed only now that the replay is going out, so a fan-out racing this either skips the
+        // connection (no cursor yet, covered by the replay) or advances the cursor the replay left.
+        conn.cursor = Some(cursor);
+
+        Some(Batch {
             commands,
             response: None,
-        },
-    );
+        })
+    });
+}
+
+// Hand one connection the history its key was just widened into. Nothing goes out when the walk
+// produces nothing: a widen that reaches no new history is a no-op.
+pub fn deliver_widening(
+    state: &WrappedServerState,
+    game_id: GameId,
+    history: &History,
+    ticket: &Ticket,
+    before: &Privileges,
+) {
+    deliver(state, game_id, ticket, |conn, after| {
+        // an unattached connection is never widened -- `apply_privilege_change` declines to send the
+        // event for one, because the catch-up it is still owed walks the whole log under the new
+        // privileges anyway. a cursor is also only ever installed, never taken away, so a connection
+        // that had one when the event was sent still has it now. this is the same class of
+        // contradiction as a missing ledger entry: our own bookkeeping disagreeing with itself.
+        let Some(cursor) = conn.cursor.as_mut() else {
+            eprintln!("widening a connection that never attached -- aborting");
+            std::process::abort()
+        };
+
+        let commands = cursor.widen(before, after, history);
+        (!commands.is_empty()).then_some(Batch {
+            commands,
+            response: None,
+        })
+    });
 }
 
 #[cfg(test)]
@@ -527,10 +546,10 @@ mod delivery_tests {
     use slotmap::KeyData;
 
     use super::*;
-    use crate::auth::ActorScope;
+    use crate::auth::{ActorScope, Capability};
 
-    // The concurrency in this file lives in dispatch/attach, which are lock-and-fan-out around the
-    // real logic. `advance` and `backfill` are pure functions of (cursor, privileges, log, index),
+    // The concurrency in this file lives in the four sending entrypoints, which are lock-and-push
+    // shells around the real logic. `ViewportCursor` is a pure function of (itself, reach, history),
     // so everything worth asserting is reachable without a runtime, a socket or a game.
 
     fn actor(n: u64) -> ActorKey {
@@ -591,14 +610,11 @@ mod delivery_tests {
         )
     }
 
-    fn index_of(log: &[CommandPayload]) -> ViewportIndex {
-        let mut index = ViewportIndex::new();
-        for (pos, payload) in log.iter().enumerate() {
-            if let CommandRecipient::Viewport(vp) = &payload.recipient {
-                index.entry(*vp).or_default().push(pos);
-            }
-        }
-        index
+    // Built through the real `extend`, so the tests exercise the same indexing the coordinator does.
+    fn history(log: &[CommandPayload]) -> History {
+        let mut history = History::default();
+        history.extend(log.to_vec());
+        history
     }
 
     // The tags of the AnonymousAnnouncements in a delivered stream, in order.
@@ -611,10 +627,9 @@ mod delivery_tests {
             .collect()
     }
 
-    // Replay the whole log onto a fresh cursor, as attach does.
+    // Replay the whole log onto a fresh cursor, as deliver_catchup does.
     fn replay(privileges: &Privileges, log: &[CommandPayload]) -> Vec<CommandPayload> {
-        let mut cursor = ViewportCursor::default();
-        advance(&mut cursor, privileges, log, &index_of(log), 0)
+        ViewportCursor::default().advance(&Reach::full(privileges), &history(log), 0)
     }
 
     #[test]
@@ -780,14 +795,16 @@ mod delivery_tests {
             enter(vp1, a),
             content(vp1, "c4"),
         ];
-        let index = index_of(&log);
         let privileges = privileges(&[a, b], false);
 
-        // Live: one batch per command, each advancing the same cursor.
+        // Live: one batch per command, each advancing the same cursor over a history that grows by
+        // one, exactly as the coordinator feeds it.
         let mut cursor = ViewportCursor::default();
+        let mut growing = History::default();
         let mut live = Vec::new();
-        for at in 0..log.len() {
-            live.extend(advance(&mut cursor, &privileges, &log[..=at], &index, at));
+        for payload in &log {
+            let at = growing.extend(vec![payload.clone()]);
+            live.extend(cursor.advance(&Reach::full(&privileges), &growing, at));
         }
 
         assert_eq!(tags(&live), tags(&replay(&privileges, &log)));
@@ -836,7 +853,7 @@ mod delivery_tests {
     // Walk the whole log onto a cursor and keep the cursor, as a live connection has one.
     fn connect(privileges: &Privileges, log: &[CommandPayload]) -> (ViewportCursor, Vec<String>) {
         let mut cursor = ViewportCursor::default();
-        let out = advance(&mut cursor, privileges, log, &index_of(log), 0);
+        let out = cursor.advance(&Reach::full(privileges), &history(log), 0);
         (cursor, tags(&out))
     }
 
@@ -854,11 +871,11 @@ mod delivery_tests {
         assert_eq!(delivered, ["seen"]);
 
         let stripped = privileges(&[], false);
-        narrow(&mut cursor, &stripped);
+        cursor.narrow(&stripped);
 
         log.push(content(vp, "not-theirs"));
-        let index = index_of(&log);
-        assert!(tags(&advance(&mut cursor, &stripped, &log, &index, 2)).is_empty());
+        let out = cursor.advance(&Reach::full(&stripped), &history(&log), 2);
+        assert!(tags(&out).is_empty());
     }
 
     #[test]
@@ -868,14 +885,11 @@ mod delivery_tests {
         let (mut cursor, _) = connect(&privileges(&[a, b], false), &log);
 
         let only_b = privileges(&[b], false);
-        narrow(&mut cursor, &only_b);
+        cursor.narrow(&only_b);
 
         log.push(content(vp, "still-b"));
-        let index = index_of(&log);
-        assert_eq!(
-            tags(&advance(&mut cursor, &only_b, &log, &index, 3)),
-            ["still-b"]
-        );
+        let out = cursor.advance(&Reach::full(&only_b), &history(&log), 3);
+        assert_eq!(tags(&out), ["still-b"]);
     }
 
     // ---- widening -------------------------------------------------------------------------
@@ -896,7 +910,7 @@ mod delivery_tests {
         assert_eq!(delivered, ["a-stuff"]);
 
         let after = privileges(&[a, b], false);
-        let commands = widen(&mut cursor, &before, &after, &log, &index_of(&log));
+        let commands = cursor.widen(&before, &after, &history(&log));
         assert_eq!(tags(&commands), ["b-history", "b-more"]);
     }
 
@@ -911,7 +925,7 @@ mod delivery_tests {
         assert_eq!(delivered, ["shared"]);
 
         let after = privileges(&[a, b], false);
-        let commands = widen(&mut cursor, &before, &after, &log, &index_of(&log));
+        let commands = cursor.widen(&before, &after, &history(&log));
         assert!(tags(&commands).is_empty());
     }
 
@@ -931,7 +945,7 @@ mod delivery_tests {
         assert!(delivered.is_empty());
 
         let after = privileges(&[], true);
-        let commands = widen(&mut cursor, &before, &after, &log, &index_of(&log));
+        let commands = cursor.widen(&before, &after, &history(&log));
         assert_eq!(tags(&commands), ["nobody-entered", "mirror"]);
     }
 
@@ -944,7 +958,7 @@ mod delivery_tests {
         let held = privileges(&[a], false);
         let (mut cursor, _) = connect(&held, &log);
 
-        assert!(widen(&mut cursor, &held, &held, &log, &index_of(&log)).is_empty());
+        assert!(cursor.widen(&held, &held, &history(&log)).is_empty());
     }
 
     // The widen walks on a throwaway probe, so the access it discovers has to be folded back or
@@ -957,17 +971,14 @@ mod delivery_tests {
         let (mut cursor, _) = connect(&before, &log);
 
         let after = privileges(&[a, b], false);
-        widen(&mut cursor, &before, &after, &log, &index_of(&log));
+        cursor.widen(&before, &after, &history(&log));
 
         // both viewports must now feed this connection on the LIVE path -- the pre-existing
         // access through A included, which the fold must not have clobbered.
         log.push(content(vp1, "from-a"));
         log.push(content(vp2, "from-b"));
-        let index = index_of(&log);
-        assert_eq!(
-            tags(&advance(&mut cursor, &after, &log, &index, 2)),
-            ["from-a", "from-b"]
-        );
+        let out = cursor.advance(&Reach::full(&after), &history(&log), 2);
+        assert_eq!(tags(&out), ["from-a", "from-b"]);
     }
 
     // The round trip, and the reason narrowing must not touch the watermarks: they record what was
@@ -983,18 +994,18 @@ mod delivery_tests {
 
         // scope narrowed away, and the world moves on without them.
         let stripped = privileges(&[], false);
-        narrow(&mut cursor, &stripped);
+        cursor.narrow(&stripped);
         log.push(content(vp, "missed"));
-        let index = index_of(&log);
-        assert!(tags(&advance(&mut cursor, &stripped, &log, &index, 2)).is_empty());
+        let history = history(&log);
+        assert!(tags(&cursor.advance(&Reach::full(&stripped), &history, 2)).is_empty());
 
         // ...and back. "seen" is not re-sent; "missed" is.
-        let commands = widen(&mut cursor, &stripped, &held, &log, &index);
+        let commands = cursor.widen(&stripped, &held, &history);
         assert_eq!(tags(&commands), ["missed"]);
     }
 
     #[test]
-    fn backfill_bounds_are_half_open() {
+    fn viewport_range_bounds_are_half_open() {
         let vp = viewport(1);
         let log = vec![
             content(vp, "0"),
@@ -1002,9 +1013,8 @@ mod delivery_tests {
             content(vp, "2"),
             content(vp, "3"),
         ];
-        let mut out = Vec::new();
-        backfill(&mut out, &log, &index_of(&log), vp, 1, 3);
+        let gap: Vec<_> = history(&log).viewport_range(vp, 1, 3).cloned().collect();
 
-        assert_eq!(tags(&out), ["1", "2"]);
+        assert_eq!(tags(&gap), ["1", "2"]);
     }
 }

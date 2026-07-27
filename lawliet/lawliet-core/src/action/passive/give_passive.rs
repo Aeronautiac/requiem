@@ -3,7 +3,6 @@
 * Transfer ownership of an ability to a specified actor and then reset links
 */
 
-
 use crate::{
     action::{
         ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse, ActionResult,

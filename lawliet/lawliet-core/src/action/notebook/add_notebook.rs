@@ -3,9 +3,7 @@
 * Add a notebook to the world state
 */
 
-
 use crate::{
-    helpers::cmd_channel,
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
         CreateChannel,
@@ -13,6 +11,7 @@ use crate::{
     command::Command,
     common::{NotebookKey, Version},
     engine::Engine,
+    helpers::cmd_channel,
 };
 
 pub use crate::action::{AddNotebook, AddNotebookResponse};

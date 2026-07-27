@@ -60,8 +60,13 @@ impl ActionInterface for ReleaseKidnapping {
         // never have existed. That is no longer expressible: whoever was in that channel has
         // already seen what was said there, so the most the protocol can honestly do is mark it
         // finished.
-        Action::DestroyChannel(DestroyChannel { channel_id })
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+        Action::DestroyChannel(DestroyChannel { channel_id }).handle(
+            eng,
+            ctx,
+            &ActionActor::System,
+            version,
+            mutate,
+        )?;
 
         Action::RemoveState(RemoveState {
             actor_id: victim_id,
