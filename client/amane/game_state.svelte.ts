@@ -292,13 +292,23 @@ export class GameView {
     this.#watermark.set(viewport, Math.max(this.delivered(viewport), position));
   }
 
-  // Is this view's snapshot of a prosecution stale? True once it has lost access to the viewport
-  // the updates came through: nothing further will arrive, so what it holds is the last thing it
-  // heard rather than the current state. This is what the deleted FreezeProsecutionView command
-  // used to say out loud.
-  prosecution_frozen(id: string): boolean {
-    const viewport = this.prosecutions.get(id)?.viewport;
+  // Is state that arrived through this viewport still live?
+  //
+  // A viewport this view no longer holds will deliver nothing further, so everything it did
+  // deliver is the last thing heard rather than the current state. That is the whole meaning of
+  // leaving a viewport, and it is not specific to any one kind of state — a channel, an org, a
+  // bug feed and a prosecution all go stale the same way and for the same reason.
+  //
+  // Nothing is retracted: what was received stays. This only says it has stopped moving, which is
+  // the difference between showing someone what they knew and lying to them about what is.
+  frozen(viewport: string | null | undefined): boolean {
     return viewport != null && !this.viewports.has(viewport);
+  }
+
+  // The prosecution case, which stores its own source viewport on the snapshot. This is what the
+  // deleted FreezeProsecutionView command used to say out loud.
+  prosecution_frozen(id: string): boolean {
+    return this.frozen(this.prosecutions.get(id)?.viewport);
   }
 
 }
@@ -556,6 +566,13 @@ export class GameState {
   // addressed there rather than to the org actor — "everyone in the org" is now expressed as
   // "everyone who can see the org's channel".
   #viewport_to_org = new SvelteMap<string, string>();
+  // channel key -> the viewport its content rides. Every Map* command is addressed to exactly that
+  // viewport, so registering a channel is where this is learned; see #map_channel.
+  //
+  // What it answers is "has this channel gone quiet for me" — a view that no longer holds the
+  // viewport will receive nothing further about the channel, so what it has is a snapshot. See
+  // GameView.frozen.
+  #channel_to_viewport = new SvelteMap<string, string>();
   // The real News channel's key once one exists (set in MapWorldChannel). $state so
   // that views resolving news's backing channel recompute the moment it's assigned —
   // otherwise selecting news before the channel exists never picks up its perms.
@@ -704,6 +721,16 @@ export class GameState {
     return key === undefined ? undefined : this.view_for(key);
   }
 
+  // Register a channel, recording the viewport it arrived on.
+  //
+  // One place, because every Map* does exactly this and the viewport half is easy to forget: a
+  // channel registered without it can never answer whether it has gone quiet.
+  #map_channel(recipient: CommandRecipient, key: string, channel: Channel) {
+    this.channels.set(key, channel);
+    const viewport = recipientToViewport(recipient);
+    if (viewport !== undefined) this.#channel_to_viewport.set(key, viewport);
+  }
+
   // What a command does to state every view shares. Runs exactly once, and is never replayed —
   // so unlike a per-view handler this one may consume what it reads.
   #apply_global({ recipient, cmd, timestamp }: CommandPayload) {
@@ -712,7 +739,7 @@ export class GameState {
       // Lounges are identified by their contact-channel id.
       const name = `lounge-${contact_id}`;
 
-      this.channels.set(slotKeyToString(channel_id), new_channel("Standard", "Lounge", name));
+      this.#map_channel(recipient, slotKeyToString(channel_id), new_channel("Standard", "Lounge", name));
 
       return;
     }
@@ -723,7 +750,7 @@ export class GameState {
       // Same shape as lounges for now (custom gc names arrive with the server).
       const name = `groupchat-${contact_id}`;
 
-      this.channels.set(channel_key, new_channel("Standard", "Groupchat", name));
+      this.#map_channel(recipient, channel_key, new_channel("Standard", "Groupchat", name));
       this.#channel_to_gc.set(channel_key, slotKeyToString(gc_id));
 
       return;
@@ -747,7 +774,7 @@ export class GameState {
       const channel_key = slotKeyToString(channel_id);
       const org_key = slotKeyToString(org_id);
 
-      this.channels.set(channel_key, new_channel("Standard", "Org", orgDisplayName(org_name)));
+      this.#map_channel(recipient, channel_key, new_channel("Standard", "Org", orgDisplayName(org_name)));
       this.#channel_to_org.set(channel_key, org_key);
       this.orgs.set(org_key, new_org(org_name, channel_key));
       // MapOrg is the first thing addressed to the org channel's viewport, so this is where
@@ -776,8 +803,9 @@ export class GameState {
       const channel_key = slotKeyToString(channel_id);
       const notebook_key = slotKeyToString(notebook_id);
 
-      this.channels.set(
-        slotKeyToString(channel_id),
+      this.#map_channel(
+        recipient,
+        channel_key,
         new_channel("Standard", "Notebook", "Death Notebook" + '-' + notebook_id.idx + 'v' + notebook_id.version),
       );
       this.#channel_to_notebook.set(channel_key, notebook_key);
@@ -804,7 +832,7 @@ export class GameState {
         this.news_channel_id = key;
       }
 
-      this.channels.set(key, new_channel("Standard", category, channel_name));
+      this.#map_channel(recipient, key, new_channel("Standard", category, channel_name));
 
       return;
     }
@@ -816,7 +844,7 @@ export class GameState {
       const { channel_id } = cmd.MapPersonalChannel;
       const key = slotKeyToString(channel_id);
       if (!this.channels.has(key)) {
-        this.channels.set(key, new_channel("Standard", "Personal", `personal-${channel_id.idx}v${channel_id.version}`));
+        this.#map_channel(recipient, key, new_channel("Standard", "Personal", `personal-${channel_id.idx}v${channel_id.version}`));
       }
       return;
     }
@@ -955,7 +983,7 @@ export class GameState {
       const channel_key = slotKeyToString(trial_channel);
       this.#channel_to_prosecution.set(channel_key, slotKeyToString(prosecution_id));
       if (!this.channels.has(channel_key)) {
-        this.channels.set(channel_key, new_channel("Standard", "Prosecution", `trial-${prosecution_id.idx}v${prosecution_id.version}`));
+        this.#map_channel(recipient, channel_key, new_channel("Standard", "Prosecution", `trial-${prosecution_id.idx}v${prosecution_id.version}`));
       }
       return;
     }
@@ -1490,6 +1518,12 @@ export class GameState {
   // Whether a notebook is currently on loan (from NotebookBorrowingStatus). Defaults to false.
   is_notebook_borrowed(notebook_key: string): boolean {
     return this.#notebook_borrowed.get(notebook_key) ?? false;
+  }
+
+  // The viewport a channel's content rides, if we have seen it registered. Ask a view whether it
+  // still holds this to know if the channel has gone quiet — see GameView.frozen.
+  channel_viewport(channel_key: string): string | undefined {
+    return this.#channel_to_viewport.get(channel_key);
   }
 
   // The prosecution a channel is the trial channel of, if any. For acting on the prosecution

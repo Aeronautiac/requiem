@@ -68,6 +68,23 @@
       (is_admin || (current_perms?.send ?? false)),
   );
   const can_read = $derived(is_info || is_bug || is_admin || (current_perms?.read ?? false));
+  // This viewer has left the channel's viewport, so nothing further about it will arrive: what is
+  // shown is the last thing they heard, not the current state. Distinct from `archived`, which
+  // means the channel itself is over for everyone — this one is personal, and the channel may well
+  // still be busy without them. Admin reads every viewport, so it is never frozen for them.
+  const frozen = $derived(
+    !is_admin &&
+      !is_info &&
+      backing_channel_id != null &&
+      (game.views
+        .get(ui.viewer)
+        ?.frozen(
+          is_bug
+            ? undefined // bug feeds are gated by visible_bugs, which never shrinks
+            : game.channel_viewport(backing_channel_id),
+        ) ??
+        false),
+  );
   // Notebook-ness isn't a channel kind — it's derived from the channel->notebook mapping.
   // A non-undefined notebook_id both identifies the channel as a notebook and gives the
   // Write affordance its target.
@@ -570,6 +587,15 @@
                 class="rounded-lg bg-neutral-800/50 px-4 py-2.5 text-center text-sm italic text-neutral-500"
               >
                 This channel is archived and read-only.
+              </div>
+            {:else if frozen}
+              <!-- Personal, unlike `archived`: the channel may still be busy, this viewer just
+                   isn't in it any more. Say what they are looking at is old rather than let it
+                   pass for current. -->
+              <div
+                class="rounded-lg bg-neutral-800/50 px-4 py-2.5 text-center text-sm italic text-neutral-500"
+              >
+                You are no longer in this channel. Everything above is what you last saw.
               </div>
             {:else}
               <div

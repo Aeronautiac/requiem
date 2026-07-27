@@ -259,8 +259,13 @@ mod comms_tests {
         );
     }
 
+    // A removal must tell the LEAVER, directed. This asserted the opposite until 2026-07-27, on the
+    // assumption that exiting the viewport said everything a removal needed to. It does not: an
+    // exit means "no more content is coming", which is indistinguishable from a quiet channel. The
+    // frontend keys membership on perms, so with no directed update the leaver keeps a channel it
+    // believes it can still read and send in — which is exactly how this was found, live.
     #[test]
-    fn set_member_remove_does_not_emit_update_channel_view() {
+    fn set_member_remove_tells_the_leaver_their_perms_are_gone() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
@@ -279,11 +284,17 @@ mod comms_tests {
 
         let (_, ctx) = set_member(&mut eng, 0, p1, ch, None).unwrap();
 
-        assert!(
-            !ctx.commands
-                .iter()
-                .any(|p| matches!(&p.cmd, Command::UpdateChannelView { .. }))
-        );
+        // Addressed to the leaver, not to the viewport they just left — anything sent there is by
+        // design something they never receive.
+        assert!(ctx.commands.iter().any(|p| {
+            matches!(
+                (&p.cmd, &p.recipient),
+                (
+                    Command::UpdateChannelView { channel_id, perms, .. },
+                    CommandRecipient::Actor(target),
+                ) if *channel_id == ch && perms.is_empty() && *target == p1
+            )
+        }));
     }
 
     // ---- groupchat ----

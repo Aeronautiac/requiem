@@ -1,21 +1,24 @@
 <script lang="ts">
   import { setContext, untrack } from "svelte";
-  import type { HostContext } from "../lib/protocol";
   import { PLATFORM_KEY, PlatformState } from "../platform.svelte";
   import GameScreen from "./game/GameScreen.svelte";
   import Platform from "./platform/Platform.svelte";
 
-  // The host injects its context rather than amane reaching for one: this is the whole
-  // seam. Note the split is NOT desktop-vs-web — a real Tauri client talks to yagami over
-  // the websocket protocol exactly like a browser does. Direct IPC is armonia's alone,
-  // because armonia is a dev tool hosting an engine in-process with no server in between.
-  const { host }: { host: HostContext } = $props();
+  // The host injects the platform rather than amane building one: this is the whole seam. The
+  // host owns the connection lifecycle end to end, which is what lets its transport report a
+  // dropped socket back into `PlatformState.dropped` — it cannot do that for a PlatformState
+  // constructed out of its reach.
+  //
+  // Note the split is NOT desktop-vs-web. A packaged desktop client talks to yagami over this
+  // same websocket protocol; there is nothing browser-specific below this line.
+  const { platform }: { platform: PlatformState } = $props();
 
-  // untrack: the host is built once by the entry point and never swapped, so reading it here
-  // is deliberate rather than an accidentally-captured initial value.
-  const platform = new PlatformState(untrack(() => host));
-  setContext(PLATFORM_KEY, platform);
-  platform.start();
+  // untrack: the platform is built once by the entry point and never swapped, so reading it here
+  // is deliberate rather than an accidentally-captured initial value. (Its FIELDS are reactive and
+  // the markup below reads them normally; it is the prop itself that is fixed.)
+  const owned = untrack(() => platform);
+  setContext(PLATFORM_KEY, owned);
+  owned.start();
 </script>
 
 <div class="flex flex-col h-screen bg-neutral-950 text-white">

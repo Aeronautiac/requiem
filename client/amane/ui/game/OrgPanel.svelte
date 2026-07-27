@@ -39,6 +39,17 @@
           false)),
   );
 
+  // Whether the viewer is in the org RIGHT NOW, which is a different question from `visible`
+  // above. That one asks "were you ever here" and keeps the panel around as an archive of what you
+  // knew; this asks "are you here", and it is what gates acting. A former member should still see
+  // the org — just not be offered its abilities as though they were still in it.
+  //
+  // UX, not security: the engine rejects the action regardless. This only stops the client
+  // presenting something it has no business offering.
+  const is_member = $derived(
+    ui.viewer === "Admin" || (!!org && org.members.has(ui.viewer)),
+  );
+
   // Org members: the full list, everyone sees it. Resolved to display names.
   const org_members = $derived(
     [...(org?.members ?? [])].map((id) => ({
@@ -108,7 +119,13 @@
 
     {#if open}
       <div class="px-2 pt-1">
-        <AbilityMenu orgId={org_key} />
+        {#if is_member}
+          <AbilityMenu orgId={org_key} />
+        {:else}
+          <p class="text-xs text-neutral-600">
+            You are no longer in this organization. Everything here is what you last saw.
+          </p>
+        {/if}
       </div>
 
       <p class="px-2 pt-2 text-[0.65rem] uppercase tracking-wide text-neutral-600">

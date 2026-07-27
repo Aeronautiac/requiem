@@ -11,6 +11,7 @@ use std::{env::current_exe, process::Stdio, time::Duration};
 
 use lawliet_types::{
     action::{Action, ActionActor, ActionRequest, InitializeEngine, Null},
+    common::Time,
     engine::ExecutionResult,
 };
 use serde::Serialize;
@@ -196,6 +197,20 @@ pub async fn game(
         // replay responses still to be swallowed. a rebuilt child re-emits every command it already
         // emitted; `history` already holds them, so the echoes must not be logged or fanned out again.
         let mut to_discard: usize = 0;
+        // the highest timestamp the engine has actually executed at.
+        //
+        // The engine's progress through its job queue is driven entirely by the timestamps of the
+        // actions it receives -- execute() pops every job at or before the action's stamp. So
+        // `accepted` alone does NOT describe how far the engine got: a null tick and a rejected
+        // action both run the queue and have their commands logged, and neither is replayable.
+        // Rebuilding from `accepted` leaves those jobs sitting in the fresh child's queue, and the
+        // next tick pops them a second time -- re-emitting commands that are already in `history`,
+        // after the discard count is spent, so they are appended and fanned out for real. That is
+        // duplicated deaths and world events, permanently in the log, on every reconnect.
+        //
+        // Replaying one Null at this timestamp is what closes it: it says "the engine had reached
+        // here", which is the fact `accepted` cannot carry.
+        let mut clock: Time = 0;
         // watchdog: when the engine owes us a line, when we stop waiting for it. armed and disarmed
         // in one place, at the bottom of the loop.
         let mut deadline: Option<Instant> = None;
@@ -244,6 +259,28 @@ pub async fn game(
                         }
                         written += 1;
                     }
+
+                    // Bring the fresh child up to the clock the old one had reached. Without this
+                    // every job executed since the last ACCEPTED action is still queued here, and
+                    // the next tick would emit its commands a second time. See `clock`.
+                    //
+                    // Collapsing however many ticks into one is safe: execute() pops jobs
+                    // individually in timestamp order either way, so the same jobs run in the same
+                    // order -- only their batching into contexts differs, and every one of these
+                    // contexts is discarded below.
+                    if clock > 0 && stdin.is_some() {
+                        let line = to_line(&ActionRequest {
+                            actor: ActionActor::System,
+                            timestamp: clock,
+                            payload: Action::Null(Null {}),
+                        });
+                        if stdin.as_mut().unwrap().write_all(line.as_bytes()).await.is_err() {
+                            stdin = None;
+                        } else {
+                            written += 1;
+                        }
+                    }
+
                     to_discard = written;
 
                     // a game is initialized by the server, not by whoever connects first: an
@@ -388,12 +425,19 @@ pub async fn game(
                         continue;
                     };
 
+                    // The engine ran the job queue up to this stamp, whether or not the action
+                    // itself was accepted, so this is what a rebuild has to reach. Recorded for
+                    // BOTH arms below -- a rejected action and a null tick each advance the engine
+                    // and neither goes into `accepted`.
+                    clock = clock.max(request.timestamp);
+
                     let (output, commands) = match result {
                         Ok((response, context)) => {
-                            // a null tick is not logged: it asks the engine to catch up to the clock
-                            // and carries no intent a rebuilt child would need replayed. its COMMANDS
-                            // are logged and fanned out like anything else -- what the catchup
-                            // actually did is real state, and a client reconnecting must still see it.
+                            // a null tick is not logged: it carries no intent of its own, only a
+                            // clock, and `clock` above is how that clock survives a rebuild. its
+                            // COMMANDS are logged and fanned out like anything else -- what the
+                            // catchup actually did is real state, and a client reconnecting must
+                            // still see it.
                             if logged {
                                 accepted.push(request.clone());
                             }
@@ -401,9 +445,8 @@ pub async fn game(
                         }
                         // a rejected action changed nothing of its own, so it is not replayed. it can
                         // still carry catchup commands: the job queue runs on the way in and its
-                        // effects are real regardless of what the requested action did. leaving it
-                        // out of `accepted` does not lose them -- catchup is driven by timestamps, so
-                        // the next accepted action replays the same jobs.
+                        // effects are real regardless of what the requested action did. those jobs
+                        // are not lost on a rebuild either -- `clock` covers them.
                         Err((error, context)) => (ActionOutcome::Err(error), context.commands),
                     };
 

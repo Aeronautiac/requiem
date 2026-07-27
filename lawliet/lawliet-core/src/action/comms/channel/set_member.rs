@@ -3,7 +3,8 @@
 * Map a player ID to a channel member struct within the channel
 */
 
-use lawliet_types::command::CommandRecipient;
+use indexmap::IndexSet;
+use lawliet_types::{channel::ChannelPermissions, command::CommandRecipient};
 
 use crate::{
     action::{ActionInterface, ActionResponse},
@@ -95,6 +96,24 @@ impl ActionInterface for SetMember {
                 );
             }
         } else if let Some(displays) = &removed_displays {
+            // Tell the LEAVER their perms are now nothing. Directed, for the same reason the grant
+            // above is: it is per-viewer, and it is the only thing that reaches them at all now —
+            // the resync above already took their viewport away, so anything addressed there
+            // (including the removal below) is by design something they never see.
+            //
+            // Without this the leaver's client keeps whatever it was last told, which is a channel
+            // it believes it can still read and send in. Losing membership is not something the
+            // client can infer: the absence of further traffic looks exactly like a quiet channel.
+            ctx.push_cmd(
+                Command::UpdateChannelView {
+                    channel_id: self.channel_id,
+                    displays: IndexSet::new(),
+                    perms: ChannelPermissions::empty(),
+                },
+                CommandRecipient::Actor(self.player_id),
+                time,
+            );
+
             // The leaver exited the viewport in the resync above, so this reaches the
             // remaining members only — exactly who needs it.
             for display in displays.iter().filter(|&d| renders_as_member(d)) {

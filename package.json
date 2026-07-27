@@ -3,8 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Workspace root. amane is the client core; hosts consume it.",
+  "description": "Workspace root. amane is the client core; web is the browser host that consumes it.",
   "workspaces": [
-    "amane"
+    "client/amane",
+    "client/web"
   ]
 }
