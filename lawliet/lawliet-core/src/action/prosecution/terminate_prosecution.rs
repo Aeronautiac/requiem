@@ -10,7 +10,8 @@
 * - SetCustody { defendant, custody: false }
 * - remove prosecution from world
 *
-* Commands: CloseProsecution, as a world event.
+* Commands: CloseProsecution, as a world event, carrying `verdict` through unchanged. Only the
+* verdict vote passes a Some; every other way a prosecution ends passes None.
 */
 
 use crate::{
@@ -106,7 +107,7 @@ impl ActionInterface for TerminateProsecution {
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
         // Tell everyone the prosecution ended before dropping it.
-        broadcast_prosecution_close(eng, ctx, self.prosecution_id, mutate);
+        broadcast_prosecution_close(eng, ctx, self.prosecution_id, self.verdict, mutate);
 
         if mutate {
             eng.world.remove_prosecution(self.prosecution_id);

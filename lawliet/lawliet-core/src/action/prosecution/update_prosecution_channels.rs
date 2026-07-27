@@ -6,7 +6,8 @@
 * whose slot is active:
 *   Trial Prosecutor(_) → prosecutor
 *   Trial Defense(_)    → defendant + lawyer (if selected)
-*   Trial Debate        → both sides
+*   Trial Debate        → both sides, unless the debate is held for a host, which closes the floor
+*                         before the confirmation arrives
 *   Voting              → nobody (view only; the trial stays visible alongside the verdict poll)
 *
 * Custody has no trial channel yet, so the trial half is a no-op for it.
@@ -121,6 +122,9 @@ impl ActionInterface for UpdateProsecutionChannels {
                             senders.push(lawyer.actor_id);
                         }
                     }
+                    // A debate held for a host is over in everything but the confirmation, so the
+                    // floor is already closed — nobody is added as a sender.
+                    TrialPhase::Debate { .. } if prosecution.pending_advance => {}
                     TrialPhase::Debate { .. } => {
                         senders.push(prosecution.prosecution.prosecutor);
                         senders.push(prosecution.defense.defendant);

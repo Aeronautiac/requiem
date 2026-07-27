@@ -182,16 +182,31 @@ export type ProsecutionSource =
 // in Presentation the clock is already running on it.
 export type TrialSubphaseView = "Grace" | "Presentation";
 
-// which side holds the floor during the trial phase
+// which side holds the floor during the trial phase. awaiting_host: the debate is over and the
+// floor already closed; only a host's confirmation stands between here and the verdict.
 export type TrialPhaseView =
   | { Prosecutor: TrialSubphaseView }
   | { Defense: TrialSubphaseView }
-  | { Debate: { prosecutor_done: boolean; defense_done: boolean } };
+  | {
+      Debate: {
+        prosecutor_done: boolean;
+        defense_done: boolean;
+        awaiting_host: boolean;
+      };
+    };
 
 // client-facing snapshot of where a prosecution is in its lifecycle. The ready/done flags sit
 // inside the phase that owns them, so a phase without them cannot be described as having them.
+// awaiting_host follows the same rule: only the two phases a non-autonomous prosecution can be
+// held at carry it, and it is never set on an autonomous one.
 export type ProsecutionPhaseView =
-  | { Custody: { prosecutor_ready: boolean; defense_ready: boolean } }
+  | {
+      Custody: {
+        prosecutor_ready: boolean;
+        defense_ready: boolean;
+        awaiting_host: boolean;
+      };
+    }
   | { Trial: TrialPhaseView }
   | "Voting";
 
@@ -724,6 +739,9 @@ export type StartProsecution = {
 
 export type TerminateProsecution = {
   prosecution_id: ProsecutionKey;
+  // carried straight through to CloseProsecution. only the verdict vote passes a boolean; a host
+  // ending a prosecution passes null.
+  verdict: boolean | null;
 };
 
 // -- update --
@@ -1052,7 +1070,10 @@ export type Command =
   // The private channel a defendant shares with their chosen lawyer, addressed to its own viewport
   // so only those two learn it exists.
   | { MapLawyerChannel: { channel_id: ChannelKey; prosecution_id: ProsecutionKey } }
-  | { CloseProsecution: { prosecution_id: ProsecutionKey } };
+  // the prosecution ended. verdict is true for guilty, false for acquitted, and null when it never
+  // reached one — terminated by a host, or an invariant broke. an acquittal has no other trace, so
+  // this is the only thing that says it happened.
+  | { CloseProsecution: { prosecution_id: ProsecutionKey; verdict: boolean | null } };
 
 // what kind of object a viewport belongs to. display only — do not branch on it.
 export type ViewportKind = "Channel" | "Bug" | "Poll" | "Passive" | "Presence";

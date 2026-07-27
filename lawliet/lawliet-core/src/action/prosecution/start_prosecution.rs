@@ -89,6 +89,7 @@ impl ActionInterface for StartProsecution {
                     timeout_job_id: 0,
                 },
                 autonomous: self.autonomous,
+                pending_advance: false,
             });
 
             let job_id = eng.jobs.push(ActionRequest {

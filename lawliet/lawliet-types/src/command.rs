@@ -544,5 +544,12 @@ pub enum Command {
     // return.
     CloseProsecution {
         prosecution_id: ProsecutionKey,
+        // Some(true) guilty, Some(false) acquitted. None when the prosecution ended without ever
+        // reaching a verdict — terminated by a host, or an invariant broke (a participant lost
+        // presence, the source ability was destroyed).
+        //
+        // An acquittal has no other trace: nobody dies, so this is the only thing that says it
+        // happened.
+        verdict: Option<bool>,
     },
 }

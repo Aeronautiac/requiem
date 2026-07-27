@@ -288,7 +288,7 @@ export class ClientState {
         .get(this.#selected_view())
         ?.prosecutions.get(slotKeyToString(cmd.CloseProsecution.prosecution_id));
       if (prev) {
-        this.notify(recipient, "Prosecution Ended", this.#prosecution_text(prev.prosecutor_display, prev.defendant_display, prev.phase, true));
+        this.notify(recipient, "Prosecution Ended", this.#prosecution_text(prev.prosecutor_display, prev.defendant_display, prev.phase, true, cmd.CloseProsecution.verdict));
       }
     }
   }
@@ -299,6 +299,7 @@ export class ClientState {
     defendant_display: ActorDisplay,
     phase: ProsecutionPhaseView,
     ended: boolean,
+    verdict: boolean | null = null,
   ): string {
     const players = this.game.players;
     return phaseAnnouncement(
@@ -306,6 +307,7 @@ export class ClientState {
       actorLabel(prosecutor_display, players),
       actorLabel(defendant_display, players),
       ended,
+      verdict,
     );
   }
 }

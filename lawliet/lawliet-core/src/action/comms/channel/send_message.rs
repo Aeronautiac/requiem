@@ -1,12 +1,18 @@
 /*
 * Authoritative and Player Action
 * Send a message to a channel
+*
+* A player message also ends a trial's grace subphase when the sender is the side holding the
+* floor — the one place a message drives something other than itself.
 */
 
 use lawliet_types::{actor::Modifier, command::CommandRecipient};
 
 use crate::{
-    action::{ActionError, ActionInterface, ActionResponse},
+    action::{
+        Action, ActionError, ActionInterface, ActionResponse, AdvanceProsecution,
+        prosecution::grace_ended_by,
+    },
     channel::ChannelPermission,
     command::Command,
     common::BugKey,
@@ -22,10 +28,13 @@ impl ActionInterface for SendMessage {
         eng: &mut crate::engine::Engine,
         ctx: &mut crate::action::ActionContext,
         actor: &ActionActor,
-        _version: crate::common::Version,
-        _mutate: bool,
+        version: crate::common::Version,
+        mutate: bool,
     ) -> crate::action::ActionResult {
         actor.player_or_authoritative()?;
+
+        // Set only for a player message that starts a trial slot; see below.
+        let mut grace_ended = None;
 
         if actor.is_player() {
             let id = player_id(actor).expect("expected valid player id");
@@ -77,6 +86,8 @@ impl ActionInterface for SendMessage {
                     }
                 }
             }
+
+            grace_ended = grace_ended_by(eng, self.channel_id, id);
         }
 
         // Addressed to the channel, which is precisely everyone holding View on it — and, on
@@ -91,6 +102,18 @@ impl ActionInterface for SendMessage {
             },
             self.channel_id,
         );
+
+        // After the message, so the thing that started the slot is on the wire before the slot
+        // reports itself as started.
+        if let Some(prosecution_id) = grace_ended {
+            Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }).handle(
+                eng,
+                ctx,
+                &ActionActor::System,
+                version,
+                mutate,
+            )?;
+        }
 
         Ok(ActionResponse::SendMessage(SendMessageResponse {}))
     }

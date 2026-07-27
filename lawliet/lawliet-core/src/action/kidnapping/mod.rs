@@ -1,25 +1,54 @@
 pub mod create_kidnapping;
 pub mod cull_kidnappings;
-pub mod kidnap;
 pub mod release_kidnapping;
 pub mod update_kidnap_channels;
 
 #[cfg(test)]
 mod tests {
+    use lawliet_types::command::{Command, CommandRecipient};
+
     use crate::{
         action::{
-            Action, ActionActor, ActionError, ActionRequest,
+            Action, ActionActor, ActionContext, ActionError, ActionRequest,
             ability::create_and_give_ability::CreateAndGiveAbility,
+            kidnapping::create_kidnapping::CreateKidnapping,
             kidnapping::release_kidnapping::ReleaseKidnapping,
         },
         actor::{ActorDisplay, state::State},
         channel::{ChannelPermission, ChannelPermissions},
+        common::{ActorKey, KidnappingKey, Time},
         config::{ability::AbilityName, actor::organization::OrganizationName, role::Role},
         engine::Engine,
         helpers::{get_actor, get_channel, get_kidnapping},
         kidnapping::{KidnappingSource, KidnappingType},
         test_helpers::*,
     };
+
+    // The shared helper always kidnaps indefinitely; these cases need the duration and the
+    // commands it produced.
+    fn kidnap_for(
+        eng: &mut Engine,
+        time: Time,
+        victim_id: ActorKey,
+        duration: Option<Time>,
+    ) -> (KidnappingKey, ActionContext) {
+        let (data, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateKidnapping(CreateKidnapping {
+                    victim_id,
+                    kidnapping_type: KidnappingType::Anonymous,
+                    source: KidnappingSource::None,
+                    duration,
+                }),
+            })
+            .unwrap();
+        let crate::action::ActionResponse::CreateKidnapping(response) = data else {
+            unreachable!()
+        };
+        (response.id, ctx)
+    }
 
     // Basic creation: victim gets Kidnapped state and Send | View on the channel.
     #[test]
@@ -415,5 +444,79 @@ mod tests {
             result,
             Err((ActionError::ActorHasStrengthenedPresence, _))
         ));
+    }
+
+    #[test]
+    fn kidnapping_announces_it_to_everyone_present_with_its_duration() {
+        let mut eng = Engine::new();
+        init_engine(&mut eng);
+        let victim = add_player(&mut eng, 0, Role::Civilian, "victim");
+        let presence = eng.world.presence_viewport;
+
+        let (_, ctx) = kidnap_for(&mut eng, 1, victim, Some(5_000));
+
+        assert_eq!(
+            ctx.commands.iter().find_map(|p| match &p.cmd {
+                Command::Kidnapping { duration, .. } => Some((*duration, p.recipient.clone())),
+                _ => None,
+            }),
+            Some((Some(5_000), CommandRecipient::Viewport(presence)))
+        );
+    }
+
+    // Kidnapped carries NoPresence, which takes the victim out of the viewport the announcement
+    // is addressed to — announcing afterwards tells everyone except the person it happened to.
+    #[test]
+    fn the_victim_is_told_before_they_lose_presence() {
+        let mut eng = Engine::new();
+        init_engine(&mut eng);
+        let victim = add_player(&mut eng, 0, Role::Civilian, "victim");
+
+        let (_, ctx) = kidnap_for(&mut eng, 1, victim, None);
+
+        let announced = ctx
+            .commands
+            .iter()
+            .position(|p| matches!(&p.cmd, Command::Kidnapping { .. }))
+            .expect("announced");
+        let exited = ctx
+            .commands
+            .iter()
+            .position(|p| matches!(&p.cmd, Command::ExitViewport { actor, .. } if *actor == victim))
+            .expect("lost presence");
+
+        assert!(
+            announced < exited,
+            "announced at {announced}, but the victim had already left at {exited}"
+        );
+    }
+
+    #[test]
+    fn a_duration_schedules_the_release() {
+        let mut eng = Engine::new();
+        init_engine(&mut eng);
+        let victim = add_player(&mut eng, 0, Role::Civilian, "victim");
+
+        let (id, _) = kidnap_for(&mut eng, 1, victim, Some(5_000));
+        assert!(get_kidnapping(&eng, id).is_ok());
+
+        // past the release
+        null_action(&mut eng, 7_000);
+
+        assert!(get_kidnapping(&eng, id).is_err());
+        assert!(!get_actor(&eng, victim).unwrap().has_state(State::Kidnapped));
+    }
+
+    #[test]
+    fn no_duration_never_releases_on_its_own() {
+        let mut eng = Engine::new();
+        init_engine(&mut eng);
+        let victim = add_player(&mut eng, 0, Role::Civilian, "victim");
+
+        let (id, _) = kidnap_for(&mut eng, 1, victim, None);
+        null_action(&mut eng, 100_000);
+
+        assert!(get_kidnapping(&eng, id).is_ok());
+        assert!(get_actor(&eng, victim).unwrap().has_state(State::Kidnapped));
     }
 }

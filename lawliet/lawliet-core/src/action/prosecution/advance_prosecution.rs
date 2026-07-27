@@ -8,7 +8,11 @@
 * - first message sent by the active side during a Grace subphase (system, from SendMessage)
 * - presentation/debate timeout job (system)
 * - both done flags set in Debate (system, after SignalDone)
-* - host manually advancing a non-autonomous prosecution (admin)
+* - a host, at any moment, from any phase (admin)
+*
+* On a non-autonomous prosecution the system triggers do not advance the two major boundaries
+* (Custody -> Trial, Debate -> Voting); they set pending_advance and return, leaving the
+* prosecution where it is until an admin call arrives. An admin call is never held.
 *
 * All players with presence are added to the trial channel with view permissions (granted via
 * deferred commands). Send permissions are restricted to the active side per subphase and are
@@ -99,6 +103,18 @@ fn seed_member(
     .handle(eng, ctx, &ActionActor::System, version, mutate)
 }
 
+// Record that a major boundary was reached and the prosecution is waiting on a host.
+//
+// Any outstanding timer is left alone. It fires into this same hold and does nothing, the same way
+// a debate timer that fires after both sides signalled done lands on a phase it no longer matches.
+fn hold_for_host(eng: &mut Engine, mutate: bool, prosecution_id: ProsecutionKey) {
+    if mutate {
+        get_prosecution_mut(eng, prosecution_id)
+            .expect("prosecution was already validated")
+            .pending_advance = true;
+    }
+}
+
 // Channel perms and the client-facing broadcast are handled centrally by UpdateProsecutions in
 // the trailing Update step, so this only advances the phase and reschedules the timer.
 fn handle_trial_phase(
@@ -138,8 +154,21 @@ impl ActionInterface for AdvanceProsecution {
         actor.admin_or_system()?;
 
         let prosecution = get_prosecution(eng, self.prosecution_id)?;
+
+        // A non-autonomous prosecution stops at the two major boundaries. Only automatic triggers
+        // are held — a host calling this IS the confirmation, and advances from wherever the
+        // prosecution currently sits regardless of whether anything asked it to.
+        let held = !prosecution.autonomous && actor.is_system();
+
         match &prosecution.phase {
             ProsecutionPhase::Custody { timeout_job_id, .. } => {
+                if held {
+                    hold_for_host(eng, mutate, self.prosecution_id);
+                    return Ok(ActionResponse::AdvanceProsecution(
+                        AdvanceProsecutionResponse {},
+                    ));
+                }
+
                 let job_id = *timeout_job_id;
                 let prosecutor_id = prosecution.prosecution.prosecutor;
                 let prosecutor_display = prosecution.prosecution.prosecutor_display;
@@ -169,6 +198,7 @@ impl ActionInterface for AdvanceProsecution {
                         channel_id,
                         timeout_job_id: job_id,
                     };
+                    prosecution.pending_advance = false;
 
                     // Seed the key participants with their displays and empty perms. The trailing
                     // UpdateProsecutions step grants view/send perms across all present players.
@@ -255,6 +285,16 @@ impl ActionInterface for AdvanceProsecution {
                         ),
                     },
                     TrialPhase::Debate { .. } => {
+                        if held {
+                            // The floor closes on the hold rather than on the advance:
+                            // UpdateProsecutionChannels reads pending_advance, and the trailing
+                            // Update step revokes send for both sides before the host ever answers.
+                            hold_for_host(eng, mutate, self.prosecution_id);
+                            return Ok(ActionResponse::AdvanceProsecution(
+                                AdvanceProsecutionResponse {},
+                            ));
+                        }
+
                         let response = Action::CreatePoll(CreatePoll {
                             accept_payload: Box::new(Some(Action::ProsecutionVoteRes(
                                 ProsecutionVoteRes {
@@ -317,6 +357,7 @@ impl ActionInterface for AdvanceProsecution {
                                 poll_id: id,
                                 channel_id,
                             };
+                            prosecution.pending_advance = false;
                         }
                     }
                 }

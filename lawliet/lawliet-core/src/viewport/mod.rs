@@ -204,22 +204,17 @@ mod presence_tests {
     }
 
     #[test]
-    fn the_dying_player_exits_before_their_death_is_announced() {
+    fn the_dying_player_is_told_before_they_lose_presence() {
         let mut eng = Engine::new();
         let victim = add_player(&mut eng, 0, Role::Civilian, "victim");
 
         let (_, ctx) = announced_kill(&mut eng, victim);
 
-        // Death adds State::Dead (hence NoPresence) before announcing, so the victim is already
-        // out of the viewport when the announcement is addressed to it. The old deferred queue
-        // reached the same outcome by queueing a copy that stayed blocked forever.
+        // State::Dead carries NoPresence, which takes the victim out of the very viewport the
+        // announcement is addressed to. Announcing afterwards would tell everyone except the
+        // person it happened to.
         assert!(!has_presence(&eng, victim));
-        let exit_pos = ctx
-            .commands
-            .iter()
-            .position(|p| matches!(&p.cmd, Command::ExitViewport { actor, .. } if *actor == victim))
-            .expect("victim should exit the presence viewport");
-        let death_pos = ctx
+        let announced = ctx
             .commands
             .iter()
             .position(|p| {
@@ -227,6 +222,15 @@ mod presence_tests {
                     && matches!(&p.cmd, Command::Death { .. })
             })
             .expect("death should be announced to the presence viewport");
-        assert!(exit_pos < death_pos);
+        let exited = ctx
+            .commands
+            .iter()
+            .position(|p| matches!(&p.cmd, Command::ExitViewport { actor, .. } if *actor == victim))
+            .expect("victim should exit the presence viewport");
+
+        assert!(
+            announced < exited,
+            "announced at {announced}, but the victim had already left at {exited}"
+        );
     }
 }

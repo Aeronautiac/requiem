@@ -27,6 +27,9 @@ pub enum TrialPhaseView {
     Debate {
         prosecutor_done: bool,
         defense_done: bool,
+        // The debate is over and the floor is already closed; only a host's confirmation stands
+        // between here and the verdict. Never set on an autonomous prosecution.
+        awaiting_host: bool,
     },
 }
 
@@ -35,12 +38,16 @@ pub enum TrialPhaseView {
 // itself rides the poll protocol, not this one).
 //
 // The ready/done flags live inside the phase that owns them rather than beside it, so a phase
-// which has no such flags cannot be described as having them.
+// which has no such flags cannot be described as having them. awaiting_host follows the same rule:
+// only the two phases a non-autonomous prosecution can be held at carry it.
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum ProsecutionPhaseView {
     Custody {
         prosecutor_ready: bool,
         defense_ready: bool,
+        // Custody is over and only a host's confirmation stands between here and the trial. Never
+        // set on an autonomous prosecution.
+        awaiting_host: bool,
     },
     Trial(TrialPhaseView),
     Voting,

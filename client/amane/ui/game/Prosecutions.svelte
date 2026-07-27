@@ -1,14 +1,23 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { actorLabel, GAME_STATE_KEY, phaseLabel } from "../../game_state.svelte.ts";
+  import {
+    actorLabel,
+    awaitingHost,
+    GAME_STATE_KEY,
+    phaseLabel,
+  } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
+  import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
+  import { now } from "../../time.svelte.ts";
   import type { GameState, ProsecutionData } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import type { ActorDisplay, ProsecutionPhaseView } from "../../bindings";
-  import { slotKeyToString } from "../../bindings";
+  import type { Action, ActionRequest, ActorDisplay, ProsecutionPhaseView } from "../../bindings";
+  import { slotKeyFromString, slotKeyToString } from "../../bindings";
+  import { viewerToActor } from "../../types";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
+  const client = getContext<ClientState>(CLIENT_KEY);
 
   let open = $state(true);
 
@@ -53,6 +62,22 @@
   function open_channel(data: ProsecutionData) {
     if (data.trial_channel) ui.select_channel(data.trial_channel);
   }
+
+  // Host controls. Advancing works from any phase and at any moment — it IS the decision, not a
+  // confirmation of one the engine already made. A non-autonomous prosecution parked at a boundary
+  // (awaiting_host) will not move without this.
+  function run(payload: Action) {
+    const request: ActionRequest = {
+      actor: viewerToActor(ui.viewer),
+      timestamp: now(),
+      payload,
+    };
+    void client.dispatch(request);
+  }
+  const advance = (id: string) =>
+    run({ AdvanceProsecution: { prosecution_id: slotKeyFromString(id) } });
+  const terminate = (id: string) =>
+    run({ TerminateProsecution: { prosecution_id: slotKeyFromString(id), verdict: null } });
 </script>
 
 <div class="flex flex-col gap-1 border-b border-neutral-800 p-2">
@@ -109,14 +134,33 @@
             </span>
           {/each}
 
-          {#if data.trial_channel}
-            <button
-              class="self-start rounded px-1.5 py-0.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
-              onclick={() => open_channel(data)}
-            >
-              open trial
-            </button>
-          {/if}
+          <div class="flex flex-wrap items-center gap-1">
+            {#if data.trial_channel}
+              <button
+                class="rounded px-1.5 py-0.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                onclick={() => open_channel(data)}
+              >
+                open trial
+              </button>
+            {/if}
+
+            {#if ui.viewer === "Admin"}
+              <button
+                class="rounded px-1.5 py-0.5 text-xs {awaitingHost(data.phase)
+                  ? 'bg-amber-900/60 text-amber-300 hover:bg-amber-900'
+                  : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}"
+                onclick={() => advance(id)}
+              >
+                {awaitingHost(data.phase) ? "approve" : "advance"}
+              </button>
+              <button
+                class="rounded px-1.5 py-0.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-red-400"
+                onclick={() => terminate(id)}
+              >
+                terminate
+              </button>
+            {/if}
+          </div>
         </div>
       {/each}
     {/if}

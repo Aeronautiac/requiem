@@ -6,11 +6,17 @@
 * - Defendant: same; currently always raw (no anonymous defendant mechanic)
 * - Lawyer (optional): defendant may select one during custody. No selection before custody
 *   ends means no lawyer.
-* - Autonomous flag: if false, a host must manually approve every phase transition.
+* - Autonomous flag: if false, a host must confirm the two major phase boundaries — Custody ->
+*   Trial and Debate -> Voting. Movement WITHIN the trial (grace -> presentation, one side's slot
+*   to the other's) is never held: those are the trial running, not the trial ending, and a host
+*   confirming each of them would mean approving every time someone starts talking.
+*
+*   A held boundary sets pending_advance and cancels the timer that would have fired again. The
+*   prosecution then waits indefinitely for an admin AdvanceProsecution. Players see the wait
+*   (awaiting_host on the phase snapshot) so a stalled trial reads as deliberate rather than broken.
 *
 * Custody period:
-*   Ends when both sides signal ready OR the timeout fires. In non-autonomous mode,
-*   host approval is also required before advancing.
+*   Ends when both sides signal ready OR the timeout fires. Non-autonomous: held here.
 *
 * Trial period:
 *   Each side gets a presentation slot. The active side starts in a grace subphase with its
@@ -18,10 +24,8 @@
 *   replaces the timer with the presentation duration. If the grace timer fires instead,
 *   the advance still happens. After both presentations, a debate period begins. If one side
 *   signals done the timer is shortened; if both signal done the debate ends immediately.
-*   When the debate timer expires, speaking privileges are revoked for both sides regardless
-*   of host input. Host approval is still required to advance to the voting phase if
-*   non-autonomous. Advancing out of the trial phase entirely also requires host approval
-*   if non-autonomous.
+*   Non-autonomous: held at the end of the debate — but the floor closes either way, since a held
+*   debate is over in everything but the confirmation.
 *
 * Voting period:
 *   An anonymous poll is added to the trial channel. Guilty majority → defendant executed;
@@ -144,9 +148,6 @@ pub enum ProsecutionPhase {
     },
 }
 
-// TODO:
-// add non-autonomous behaviour
-
 #[derive(Debug)]
 pub struct Prosecution {
     pub source: ProsecutionSource,
@@ -154,6 +155,14 @@ pub struct Prosecution {
     pub defense: ProsecutionDefense,
     pub phase: ProsecutionPhase,
     pub autonomous: bool,
+    // The condition for leaving this phase has been met, but the prosecution is non-autonomous and
+    // is holding at the boundary until a host confirms. Only the two major boundaries set it —
+    // Custody -> Trial and Debate -> Voting. Subphase movement inside the trial never waits.
+    //
+    // Set here rather than as a phase of its own because the prosecution has not moved: it is still
+    // in custody, or still in the debate. What changed is that nothing further will happen on its
+    // own. Held debates also close the floor, which UpdateProsecutionChannels reads off this.
+    pub pending_advance: bool,
 }
 
 impl Prosecution {
@@ -169,6 +178,7 @@ impl Prosecution {
                 ProsecutionPhaseView::Custody {
                     prosecutor_ready: *prosecutor_ready,
                     defense_ready: *defense_ready,
+                    awaiting_host: self.pending_advance,
                 },
                 None,
             ),
@@ -184,6 +194,7 @@ impl Prosecution {
                     } => TrialPhaseView::Debate {
                         prosecutor_done: *prosecutor_done,
                         defense_done: *defense_done,
+                        awaiting_host: self.pending_advance,
                     },
                 };
                 (ProsecutionPhaseView::Trial(trial), Some(*channel_id))

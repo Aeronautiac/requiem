@@ -790,6 +790,16 @@ pub fn start_prosecution(
     prosecutor_id: ActorKey,
     defendant_id: ActorKey,
 ) -> ProsecutionKey {
+    start_prosecution_with(eng, time, prosecutor_id, defendant_id, true)
+}
+
+pub fn start_prosecution_with(
+    eng: &mut Engine,
+    time: Time,
+    prosecutor_id: ActorKey,
+    defendant_id: ActorKey,
+    autonomous: bool,
+) -> ProsecutionKey {
     let data = eng
         .execute(ActionRequest {
             actor: ActionActor::System,
@@ -800,7 +810,7 @@ pub fn start_prosecution(
                 prosecutor_display: ActorDisplay::Raw(prosecutor_id),
                 defendant_id,
                 defendant_display: ActorDisplay::Raw(defendant_id),
-                autonomous: true,
+                autonomous,
             }),
         })
         .unwrap()
@@ -843,6 +853,8 @@ pub fn select_lawyer(
     })
 }
 
+// An automatic advance, as a timer or a completed pair of signals would produce it. A
+// non-autonomous prosecution holds against this.
 pub fn advance_prosecution(eng: &mut Engine, time: Time, prosecution_id: ProsecutionKey) {
     eng.execute(ActionRequest {
         actor: ActionActor::System,
@@ -850,6 +862,19 @@ pub fn advance_prosecution(eng: &mut Engine, time: Time, prosecution_id: Prosecu
         payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }),
     })
     .unwrap();
+}
+
+// A host confirming a transition. Never held.
+pub fn host_advance_prosecution(
+    eng: &mut Engine,
+    time: Time,
+    prosecution_id: ProsecutionKey,
+) -> ExecutionResult {
+    eng.execute(ActionRequest {
+        actor: ActionActor::Admin,
+        timestamp: time,
+        payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }),
+    })
 }
 
 pub fn terminate_prosecution(
@@ -860,7 +885,10 @@ pub fn terminate_prosecution(
     eng.execute(ActionRequest {
         actor: ActionActor::System,
         timestamp: time,
-        payload: Action::TerminateProsecution(TerminateProsecution { prosecution_id }),
+        payload: Action::TerminateProsecution(TerminateProsecution {
+            prosecution_id,
+            verdict: None,
+        }),
     })
 }
 

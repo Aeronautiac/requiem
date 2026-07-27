@@ -51,12 +51,16 @@ export type WorldEvent = {
   // A prosecution started, advanced a phase, or ended — derived on the frontend by diffing the
   // per-view prosecution snapshot (start/advance) or from CloseProsecution (ended). phase is the
   // phase being entered; on `ended` it's the last phase seen.
+  //
+  // verdict is only ever set on `ended`, and only when the vote reached one: true guilty, false
+  // acquitted, null for a prosecution that ended some other way.
   ProsecutionEvent: {
     prosecution_id: string,
     prosecutor_display: ActorDisplay,
     defendant_display: ActorDisplay,
     phase: ProsecutionPhaseView,
     ended: boolean,
+    verdict: boolean | null,
   }
 }
 
@@ -401,8 +405,17 @@ export function trialFloor(phase: ProsecutionPhaseView): "Prosecutor" | "Defense
   return "Debate";
 }
 
+// Whether a non-autonomous prosecution has met the condition to leave this phase and is waiting on
+// a host. Only the two phases that can be held carry the flag.
+export function awaitingHost(phase: ProsecutionPhaseView): boolean {
+  if (phase === "Voting") return false;
+  if ("Custody" in phase) return phase.Custody.awaiting_host;
+  return "Debate" in phase.Trial && phase.Trial.Debate.awaiting_host;
+}
+
 // A short label for the Prosecutions panel.
 export function phaseLabel(phase: ProsecutionPhaseView): string {
+  if (awaitingHost(phase)) return "Awaiting the host";
   if (phase === "Voting") return "Verdict vote";
   if ("Custody" in phase) return "In custody";
   if ("Debate" in phase.Trial) return "Trial · debate";
@@ -413,13 +426,20 @@ export function phaseLabel(phase: ProsecutionPhaseView): string {
 
 // The sentence announcing a prosecution reaching this phase, for news feeds and toasts.
 // Both of those render the same event, so they share the wording rather than drifting apart.
+//
+// verdict is only meaningful when ended; null there means the prosecution ended without one.
 export function phaseAnnouncement(
   phase: ProsecutionPhaseView,
   prosecutor: string,
   defendant: string,
   ended: boolean,
+  verdict: boolean | null = null,
 ): string {
-  if (ended) return `The prosecution of ${defendant} has ended.`;
+  if (ended) {
+    if (verdict === true) return `${defendant} has been found guilty.`;
+    if (verdict === false) return `${defendant} has been acquitted.`;
+    return `The prosecution of ${defendant} has ended.`;
+  }
   if (phase === "Voting") return `The verdict vote for ${defendant} has begun.`;
   if ("Custody" in phase) return `${prosecutor} is prosecuting ${defendant}.`;
   if ("Debate" in phase.Trial) return `The trial of ${defendant} has entered debate.`;
@@ -1323,7 +1343,7 @@ export class GameState {
       if (!prev || !phaseViewEqual(prev.phase, phase)) {
         view.events.push({
           timestamp,
-          data: { ProsecutionEvent: { prosecution_id: key, prosecutor_display, defendant_display, phase, ended: false } },
+          data: { ProsecutionEvent: { prosecution_id: key, prosecutor_display, defendant_display, phase, ended: false, verdict: null } },
         });
       }
       return;
@@ -1338,7 +1358,7 @@ export class GameState {
       if (!prev) return;
       view.events.push({
         timestamp,
-        data: { ProsecutionEvent: { prosecution_id: key, prosecutor_display: prev.prosecutor_display, defendant_display: prev.defendant_display, phase: prev.phase, ended: true } },
+        data: { ProsecutionEvent: { prosecution_id: key, prosecutor_display: prev.prosecutor_display, defendant_display: prev.defendant_display, phase: prev.phase, ended: true, verdict: cmd.CloseProsecution.verdict } },
       });
       view.prosecutions.delete(key);
       return;

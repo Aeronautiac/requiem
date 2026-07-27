@@ -4,14 +4,15 @@
 *
 * Custody phase:
 *   Sets the caller's ready flag (prosecutor_ready or defense_ready).
-*   If both flags are now set, calls AdvanceProsecution (host approval still required
-*   if non-autonomous).
+*   If both flags are now set, calls AdvanceProsecution.
 *
 * Trial Debate subphase:
 *   Sets the caller's done flag (prosecutor_done or defense_done).
 *   One flag set → timer shortened (reschedule timeout job to a shorter duration).
-*   Both flags set → calls AdvanceProsecution immediately (host approval still required
-*   if non-autonomous).
+*   Both flags set → calls AdvanceProsecution immediately.
+*
+* On a non-autonomous prosecution that AdvanceProsecution holds instead of advancing, which is
+* what pending_advance below then rejects further signals against.
 *
 * Fails if the prosecution is not in one of the above phases/subphases, or if the caller
 * is not a participant in this prosecution.
@@ -51,6 +52,12 @@ impl ActionInterface for SignalReady {
 
         if !is_prosecutor && !is_defendant {
             return Err(ActionError::NotInProsecution);
+        }
+
+        // The phase is already over and waiting on a host; there is nothing left to signal, and in
+        // a debate the timer this would try to shorten has already fired.
+        if prosecution.pending_advance {
+            return Err(ActionError::IncompatiblePhase);
         }
 
         // The flags as they stand BEFORE this call, plus what the phase holds that writing it back

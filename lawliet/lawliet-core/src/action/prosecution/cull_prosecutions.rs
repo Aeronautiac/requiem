@@ -97,13 +97,12 @@ impl ActionInterface for CullProsecutions {
                 .collect();
 
         for prosecution_id in to_terminate {
-            Action::TerminateProsecution(TerminateProsecution { prosecution_id }).handle(
-                eng,
-                ctx,
-                &ActionActor::System,
-                version,
-                mutate,
-            )?;
+            // A broken invariant is not a verdict — the trial never finished.
+            Action::TerminateProsecution(TerminateProsecution {
+                prosecution_id,
+                verdict: None,
+            })
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         Ok(ActionResponse::CullProsecutions(

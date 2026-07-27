@@ -1072,6 +1072,9 @@ pub struct TerminateProsecutionResponse {}
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TerminateProsecution {
     pub prosecution_id: ProsecutionKey,
+    // Carried straight through to CloseProsecution. Some only when the vote reached a verdict;
+    // every other way a prosecution ends passes None.
+    pub verdict: Option<bool>,
 }
 
 // ////////////////////////////////////////////////

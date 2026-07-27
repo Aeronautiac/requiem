@@ -235,12 +235,14 @@
     defendant_display: ActorDisplay;
     phase: ProsecutionPhaseView;
     ended: boolean;
+    verdict: boolean | null;
   }): string {
     return phaseAnnouncement(
       pe.phase,
       display_string(pe.prosecutor_display),
       display_string(pe.defendant_display),
       pe.ended,
+      pe.verdict,
     );
   }
 

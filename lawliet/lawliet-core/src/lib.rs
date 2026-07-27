@@ -64,12 +64,15 @@
 *
 * --- prosecution ---
 * three-phase state machine: Custody -> Trial -> Voting.
-* Custody: both sides signal ready or a timeout fires; non-autonomous requires host approval.
+* Custody: both sides signal ready or a timeout fires.
 * Trial: two-sided subphases (Grace -> Presentation) then Debate. Grace starts immediately; the
-* first message from either side triggers Presentation; Debate ends when both signal done or timeout.
-* Voting: anonymous poll; guilty majority executes the defendant.
+* first message from the side holding the floor triggers Presentation; Debate ends when both signal
+* done or timeout.
+* Voting: anonymous poll; guilty majority executes the defendant. CloseProsecution carries the
+* verdict, which for an acquittal is the only trace it left.
 * ProsecutionDefense holds the defendant and an optional Lawyer with a private channel.
-* the autonomous flag bypasses host approval for all phase transitions.
+* the autonomous flag, when false, holds the two MAJOR boundaries (Custody -> Trial, Debate ->
+* Voting) until an admin AdvanceProsecution arrives; subphase movement inside the trial never waits.
 * NoPresence on the prosecutor or defendant terminates prosecution immediately.
 * a custody bug is auto-created to wiretap the defendant for the duration.
 *
