@@ -18,6 +18,12 @@ use crate::{
             },
         },
         kidnapping::{create_kidnapping::CreateKidnapping, release_kidnapping::ReleaseKidnapping},
+        prosecution::{
+            advance_prosecution::AdvanceProsecution, select_lawyer::SelectLawyer,
+            signal_ready::SignalReady, start_prosecution::StartProsecution,
+            terminate_prosecution::TerminateProsecution,
+            update_prosecution_channels::UpdateProsecutionChannels,
+        },
         world::set_world_channel_override::SetWorldChannelOverride,
     },
     actor::{
@@ -26,8 +32,10 @@ use crate::{
         state::State,
     },
     channel::ChannelMember,
+    common::ProsecutionKey,
     config::world::WorldChannelName,
     lounge::LoungeVariant,
+    prosecution::ProsecutionSource,
 };
 
 use crate::{
@@ -763,6 +771,99 @@ pub fn release_kidnapping(eng: &mut Engine, time: Time, kidnapping_id: Kidnappin
             kidnapping_id,
             forced: false,
         }),
+    })
+    .unwrap();
+}
+
+// ---- prosecutions ----
+
+// Start a prosecution with no source ability and both sides shown as themselves. Autonomous, so
+// phases advance without a host approving each one.
+pub fn start_prosecution(
+    eng: &mut Engine,
+    time: Time,
+    prosecutor_id: ActorKey,
+    defendant_id: ActorKey,
+) -> ProsecutionKey {
+    let data = eng
+        .execute(ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::StartProsecution(StartProsecution {
+                source: ProsecutionSource::None,
+                prosecutor_id,
+                prosecutor_display: ActorDisplay::Raw(prosecutor_id),
+                defendant_id,
+                defendant_display: ActorDisplay::Raw(defendant_id),
+                autonomous: true,
+            }),
+        })
+        .unwrap()
+        .0;
+    let ActionResponse::StartProsecution(response) = data else {
+        unreachable!()
+    };
+    response.id
+}
+
+// Signal as a PLAYER -- the action is player-only, and which side signalled is taken from the
+// caller rather than an argument.
+pub fn signal_ready(
+    eng: &mut Engine,
+    time: Time,
+    caller: ActorKey,
+    prosecution_id: ProsecutionKey,
+) -> ExecutionResult {
+    eng.execute(ActionRequest {
+        actor: ActionActor::Player(caller),
+        timestamp: time,
+        payload: Action::SignalReady(SignalReady { prosecution_id }),
+    })
+}
+
+pub fn select_lawyer(
+    eng: &mut Engine,
+    time: Time,
+    defendant: ActorKey,
+    prosecution_id: ProsecutionKey,
+    lawyer_id: ActorKey,
+) -> ExecutionResult {
+    eng.execute(ActionRequest {
+        actor: ActionActor::Player(defendant),
+        timestamp: time,
+        payload: Action::SelectLawyer(SelectLawyer {
+            prosecution_id,
+            lawyer_id,
+        }),
+    })
+}
+
+pub fn advance_prosecution(eng: &mut Engine, time: Time, prosecution_id: ProsecutionKey) {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }),
+    })
+    .unwrap();
+}
+
+pub fn terminate_prosecution(
+    eng: &mut Engine,
+    time: Time,
+    prosecution_id: ProsecutionKey,
+) -> ExecutionResult {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::TerminateProsecution(TerminateProsecution { prosecution_id }),
+    })
+}
+
+pub fn update_prosecution_channels(eng: &mut Engine, time: Time, prosecution_id: ProsecutionKey) {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::UpdateProsecutionChannels(UpdateProsecutionChannels { prosecution_id }),
     })
     .unwrap();
 }

@@ -76,23 +76,20 @@ impl ActionInterface for CreateLounge {
                 contactor_id,
                 role_display,
             } => {
-                match role_display {
-                    AnonymousLoungeRoleDisplay::Dynamic => {
-                        // TODO:
-                        // need to add a new mechanism for updating the role displayed here
-                        // for now, unimplemented!(). this will rarely happen (only when someone's
-                        // role changes AFTER they have already anonymous contacted someone). so it
-                        // is probably fine to leave the behaviour alone for now. abilities should
-                        // use static roles.
-                        unimplemented!()
-                    }
-                    AnonymousLoungeRoleDisplay::Static(role) => {
-                        participants.push(Participant {
-                            id: *contactor_id,
-                            displays: indexset![ActorDisplay::Role(*role),],
-                        });
-                    }
-                }
+                // Both variants resolve to a role display; they differ only in where the role comes
+                // from. Dynamic reads the contactor's role as it stands now.
+                let role = match role_display {
+                    // TODO:
+                    // there is no mechanism for UPDATING the display once set, so a role change
+                    // after the lounge exists leaves this showing the old one. Rare enough to leave
+                    // alone — abilities should prefer static roles.
+                    AnonymousLoungeRoleDisplay::Dynamic => get_player(eng, *contactor_id)?.role,
+                    AnonymousLoungeRoleDisplay::Static(role) => *role,
+                };
+                participants.push(Participant {
+                    id: *contactor_id,
+                    displays: indexset![ActorDisplay::Role(role)],
+                });
                 participants.push(Participant {
                     id: *contacted_id,
                     displays: indexset![ActorDisplay::Raw(*contacted_id),],

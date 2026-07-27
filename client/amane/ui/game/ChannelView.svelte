@@ -1,7 +1,13 @@
 <script lang="ts">
   import { getContext } from "svelte";
   import Input from "../kit/Input.svelte";
-  import { actorLabel, GAME_STATE_KEY, displayKey, playerLabel } from "../../game_state.svelte.ts";
+  import {
+    actorLabel,
+    GAME_STATE_KEY,
+    displayKey,
+    phaseAnnouncement,
+    playerLabel,
+  } from "../../game_state.svelte.ts";
   import { CLIENT_KEY, type ClientState } from "../../client.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
@@ -230,17 +236,12 @@
     phase: ProsecutionPhaseView;
     ended: boolean;
   }): string {
-    const prosecutor = display_string(pe.prosecutor_display);
-    const defendant = display_string(pe.defendant_display);
-    if (pe.ended) return `The prosecution of ${defendant} has ended.`;
-    const p = pe.phase;
-    if (p === "Custody") return `${prosecutor} is prosecuting ${defendant}.`;
-    if (p === "Voting") return `The verdict vote for ${defendant} has begun.`;
-    if (p.Trial === "Prosecutor")
-      return `The trial of ${defendant} has begun — the prosecution presents.`;
-    if (p.Trial === "Defense")
-      return `In the trial of ${defendant}, the defense presents.`;
-    return `The trial of ${defendant} has entered debate.`;
+    return phaseAnnouncement(
+      pe.phase,
+      display_string(pe.prosecutor_display),
+      display_string(pe.defendant_display),
+      pe.ended,
+    );
   }
 
   async function send_message() {

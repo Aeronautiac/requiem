@@ -56,12 +56,16 @@
 
 use crate::{ActorKey, ChannelKey, PollKey, actor::ActorDisplay, common::JobID};
 
-pub use lawliet_types::prosecution::{ProsecutionPhaseView, ProsecutionSource, TrialPhaseView};
+pub use lawliet_types::prosecution::{
+    ProsecutionPhaseView, ProsecutionSource, TrialPhaseView, TrialSubphaseView,
+};
 
 #[derive(Debug)]
 pub struct Lawyer {
     pub actor_id: ActorKey,
-    pub channel_id: ChannelKey,
+    // None once the private channel has been closed, which happens when voting begins. Who defended
+    // the accused outlives the line they used to talk on.
+    pub channel_id: Option<ChannelKey>,
 }
 
 #[derive(Debug)]
@@ -85,6 +89,15 @@ pub struct ProsecutionDefense {
 pub enum TrialSubphase {
     Grace,
     Presentation,
+}
+
+impl TrialSubphase {
+    pub fn view(&self) -> TrialSubphaseView {
+        match self {
+            Self::Grace => TrialSubphaseView::Grace,
+            Self::Presentation => TrialSubphaseView::Presentation,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -148,14 +161,30 @@ impl Prosecution {
     // custody, before the channel exists).
     pub fn phase_view(&self) -> (ProsecutionPhaseView, Option<ChannelKey>) {
         match &self.phase {
-            ProsecutionPhase::Custody { .. } => (ProsecutionPhaseView::Custody, None),
+            ProsecutionPhase::Custody {
+                prosecutor_ready,
+                defense_ready,
+                ..
+            } => (
+                ProsecutionPhaseView::Custody {
+                    prosecutor_ready: *prosecutor_ready,
+                    defense_ready: *defense_ready,
+                },
+                None,
+            ),
             ProsecutionPhase::Trial {
                 phase, channel_id, ..
             } => {
                 let trial = match phase {
-                    TrialPhase::Prosecutor(_) => TrialPhaseView::Prosecutor,
-                    TrialPhase::Defense(_) => TrialPhaseView::Defense,
-                    TrialPhase::Debate { .. } => TrialPhaseView::Debate,
+                    TrialPhase::Prosecutor(sub) => TrialPhaseView::Prosecutor(sub.view()),
+                    TrialPhase::Defense(sub) => TrialPhaseView::Defense(sub.view()),
+                    TrialPhase::Debate {
+                        prosecutor_done,
+                        defense_done,
+                    } => TrialPhaseView::Debate {
+                        prosecutor_done: *prosecutor_done,
+                        defense_done: *defense_done,
+                    },
                 };
                 (ProsecutionPhaseView::Trial(trial), Some(*channel_id))
             }

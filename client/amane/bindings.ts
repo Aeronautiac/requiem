@@ -178,12 +178,20 @@ export type ProsecutionSource =
   | "None"
   | { Ability: AbilityKey };
 
-// which side holds the floor during the trial phase
-export type TrialPhaseView = "Prosecutor" | "Defense" | "Debate";
+// whether the side holding the floor has started. In Grace their first message starts their slot;
+// in Presentation the clock is already running on it.
+export type TrialSubphaseView = "Grace" | "Presentation";
 
-// client-facing snapshot of where a prosecution is in its lifecycle
+// which side holds the floor during the trial phase
+export type TrialPhaseView =
+  | { Prosecutor: TrialSubphaseView }
+  | { Defense: TrialSubphaseView }
+  | { Debate: { prosecutor_done: boolean; defense_done: boolean } };
+
+// client-facing snapshot of where a prosecution is in its lifecycle. The ready/done flags sit
+// inside the phase that owns them, so a phase without them cannot be described as having them.
 export type ProsecutionPhaseView =
-  | "Custody"
+  | { Custody: { prosecutor_ready: boolean; defense_ready: boolean } }
   | { Trial: TrialPhaseView }
   | "Voting";
 
@@ -1035,7 +1043,10 @@ export type Command =
   // is preserved by that viewport — an absent player exits it and re-entry replays every update
   // they missed, in order. trial_channel tags a channel as a prosecution channel so it renders
   // differently; the channel/poll contents ride their own viewports.
-  | { UpdateProsecution: { prosecution_id: ProsecutionKey; prosecutor_display: ActorDisplay; defendant_display: ActorDisplay; phase: ProsecutionPhaseView; trial_channel: ChannelKey | null } }
+  | { UpdateProsecution: { prosecution_id: ProsecutionKey; prosecutor_display: ActorDisplay; defendant_display: ActorDisplay; phase: ProsecutionPhaseView; trial_channel: ChannelKey | null; lawyer_display: ActorDisplay | null } }
+  // The private channel a defendant shares with their chosen lawyer, addressed to its own viewport
+  // so only those two learn it exists.
+  | { MapLawyerChannel: { channel_id: ChannelKey; prosecution_id: ProsecutionKey } }
   | { CloseProsecution: { prosecution_id: ProsecutionKey } };
 
 // what kind of object a viewport belongs to. display only — do not branch on it.

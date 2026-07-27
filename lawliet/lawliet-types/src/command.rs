@@ -509,6 +509,20 @@ pub enum Command {
         defendant_display: ActorDisplay,
         phase: ProsecutionPhaseView,
         trial_channel: Option<ChannelKey>,
+        // The defendant's chosen lawyer, once they have one. Public: a trial's defense counsel is
+        // not a hidden fact, and it is the same kind of thing as the two displays above.
+        //
+        // NOT accompanied by the lawyer's private channel, which is addressed to its own viewport
+        // and reaches only the two of them -- see MapLawyerChannel.
+        lawyer_display: Option<ActorDisplay>,
+    },
+
+    // The private channel a defendant and their chosen lawyer share, addressed to its own viewport
+    // so only those two ever learn it exists. Carries the prosecution so the frontend can tie it to
+    // the trial rather than render an unexplained channel.
+    MapLawyerChannel {
+        channel_id: ChannelKey,
+        prosecution_id: ProsecutionKey,
     },
 
     // The prosecution ended (verdict reached, terminated, etc.). Addressed the same way as

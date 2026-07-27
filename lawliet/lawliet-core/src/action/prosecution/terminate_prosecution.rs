@@ -10,7 +10,7 @@
 * - SetCustody { defendant, custody: false }
 * - remove prosecution from world
 *
-* TODO: commands
+* Commands: CloseProsecution, as a world event.
 */
 
 use crate::{
@@ -42,7 +42,11 @@ impl ActionInterface for TerminateProsecution {
 
         let prosecution = get_prosecution(eng, self.prosecution_id)?;
         let defendant_id = prosecution.defense.defendant;
-        let lawyer_channel = prosecution.defense.lawyer.as_ref().map(|l| l.channel_id);
+        let lawyer_channel = prosecution
+            .defense
+            .lawyer
+            .as_ref()
+            .and_then(|l| l.channel_id);
 
         let timeout_job_id = match &prosecution.phase {
             ProsecutionPhase::Custody { timeout_job_id, .. }

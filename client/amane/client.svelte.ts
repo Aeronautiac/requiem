@@ -25,7 +25,13 @@ import type {
   ServerOutput,
 } from "./bindings";
 import { slotKeyToString } from "./bindings";
-import { actorLabel, GameState, phaseViewEqual, playerLabel } from "./game_state.svelte";
+import {
+  actorLabel,
+  GameState,
+  phaseAnnouncement,
+  phaseViewEqual,
+  playerLabel,
+} from "./game_state.svelte";
 import { UiState } from "./ui_state.svelte";
 
 export const CLIENT_KEY = Symbol("client");
@@ -275,13 +281,11 @@ export class ClientState {
     ended: boolean,
   ): string {
     const players = this.game.players;
-    const defendant = actorLabel(defendant_display, players);
-    if (ended) return `The prosecution of ${defendant} has ended.`;
-    const prosecutor = actorLabel(prosecutor_display, players);
-    if (phase === "Custody") return `${prosecutor} is prosecuting ${defendant}.`;
-    if (phase === "Voting") return `The verdict vote for ${defendant} has begun.`;
-    if (phase.Trial === "Prosecutor") return `The trial of ${defendant} has begun — the prosecution presents.`;
-    if (phase.Trial === "Defense") return `In the trial of ${defendant}, the defense presents.`;
-    return `The trial of ${defendant} has entered debate.`;
+    return phaseAnnouncement(
+      phase,
+      actorLabel(prosecutor_display, players),
+      actorLabel(defendant_display, players),
+      ended,
+    );
   }
 }

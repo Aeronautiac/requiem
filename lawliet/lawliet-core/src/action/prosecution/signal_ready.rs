@@ -16,7 +16,8 @@
 * Fails if the prosecution is not in one of the above phases/subphases, or if the caller
 * is not a participant in this prosecution.
 *
-* TODO: commands
+* Emits no commands of its own. The signal is visible through the ready/done flags the phase
+* snapshot carries, which UpdateProsecutions broadcasts on the sweep.
 */
 
 use crate::{
@@ -52,90 +53,112 @@ impl ActionInterface for SignalReady {
             return Err(ActionError::NotInProsecution);
         }
 
-        let mut prosecutor_signalled = false;
-        let mut defense_signalled = false;
-        let mut advance_debate = false;
+        // The flags as they stand BEFORE this call, plus what the phase holds that writing it back
+        // needs. Carried out of the match so nothing below re-derives the phase.
+        //
+        // Debate is matched as a nested pattern so a trial in any other subphase falls through to
+        // `_` and errors — it is not a signallable phase.
+        let prosecutor_signalled;
+        let defense_signalled;
+        let timeout_job;
+        // Some only in a debate, carrying the trial's channel — also the only phase where
+        // signalling shortens a clock.
+        let debate_channel;
+
         match &prosecution.phase {
             ProsecutionPhase::Custody {
                 prosecutor_ready,
                 defense_ready,
-                timeout_job_id: _,
+                timeout_job_id,
             } => {
-                defense_signalled = *defense_ready;
                 prosecutor_signalled = *prosecutor_ready;
+                defense_signalled = *defense_ready;
+                timeout_job = *timeout_job_id;
+                debate_channel = None;
             }
             ProsecutionPhase::Trial {
-                phase,
-                channel_id: _,
-                timeout_job_id: _,
+                phase:
+                    TrialPhase::Debate {
+                        prosecutor_done,
+                        defense_done,
+                    },
+                channel_id,
+                timeout_job_id,
             } => {
-                if let TrialPhase::Debate {
-                    prosecutor_done,
-                    defense_done,
-                } = phase
-                {
-                    defense_signalled = *defense_done;
-                    prosecutor_signalled = *prosecutor_done;
-                    advance_debate = true;
-                }
+                prosecutor_signalled = *prosecutor_done;
+                defense_signalled = *defense_done;
+                timeout_job = *timeout_job_id;
+                debate_channel = Some(*channel_id);
             }
             _ => return Err(ActionError::IncompatiblePhase),
         }
+
         if (is_prosecutor && prosecutor_signalled) || (is_defendant && defense_signalled) {
             return Err(ActionError::AlreadySignalled);
         }
+
+        // The OTHER side had already signalled, so this call completes the pair.
         let resolve =
             (is_prosecutor && defense_signalled) || (is_defendant && prosecutor_signalled);
 
-        let shortened_debate_time = eng.config.defaults.debate_shortened_timeout;
-        if mutate && advance_debate {
-            let ProsecutionPhase::Trial {
-                timeout_job_id,
-                phase: _,
-                channel_id,
-            } = &prosecution.phase
-            else {
-                unimplemented!()
+        // ...and this call's own signal, folded in so the write below records it in either phase.
+        let prosecutor_signalled = prosecutor_signalled || is_prosecutor;
+        let defense_signalled = defense_signalled || is_defendant;
+
+        if mutate {
+            // One side finishing cuts the clock for the other, but only ever downwards — replacing
+            // a deadline that is already inside the shortened window would push it back out.
+            //
+            // Skipped when this call resolves the debate, since the prosecution advances below and
+            // a fresh timer would be scheduled only to be discarded.
+            let shortened = eng.config.defaults.debate_shortened_timeout;
+            let rescheduled = if debate_channel.is_some() && !resolve {
+                let curr_job = eng
+                    .jobs
+                    .view(timeout_job)
+                    .expect("expected valid job id to be held within trial phase");
+                let remaining = curr_job.request.timestamp - eng.time;
+
+                (remaining > shortened).then(|| {
+                    eng.jobs.cancel_id(timeout_job);
+                    eng.jobs.push(ActionRequest {
+                        actor: ActionActor::System,
+                        timestamp: eng.time + shortened,
+                        payload: Action::AdvanceProsecution(AdvanceProsecution {
+                            prosecution_id: self.prosecution_id,
+                        }),
+                    })
+                })
+            } else {
+                None
             };
-            let channel_id = *channel_id;
 
-            // only replace the current timeout if the remaining time is longer than the shortened time
-            let curr_job = eng
-                .jobs
-                .view(*timeout_job_id)
-                .expect("expected valid job id to be held within trial phase");
-            let remaining_time = curr_job.request.timestamp - eng.time;
-            let cancel_job = remaining_time < shortened_debate_time;
+            let timeout_job_id = rescheduled.unwrap_or(timeout_job);
+            let prosecution = get_prosecution_mut(eng, self.prosecution_id)
+                .expect("prosecution should have already been validated");
 
-            if cancel_job {
-                eng.jobs.cancel_id(*timeout_job_id);
-
-                let new_job_id = eng.jobs.push(ActionRequest {
-                    actor: ActionActor::System,
-                    timestamp: eng.time + shortened_debate_time,
-                    payload: Action::AdvanceProsecution(AdvanceProsecution {
-                        prosecution_id: self.prosecution_id,
-                    }),
-                });
-
-                let prosecution = get_prosecution_mut(eng, self.prosecution_id)
-                    .expect("prosecution should have already been validated");
-                prosecution.phase = ProsecutionPhase::Trial {
+            prosecution.phase = match debate_channel {
+                Some(channel_id) => ProsecutionPhase::Trial {
                     phase: TrialPhase::Debate {
-                        defense_done: defense_signalled,
                         prosecutor_done: prosecutor_signalled,
+                        defense_done: defense_signalled,
                     },
-                    timeout_job_id: new_job_id,
+                    timeout_job_id,
                     channel_id,
-                }
-            }
+                },
+                None => ProsecutionPhase::Custody {
+                    prosecutor_ready: prosecutor_signalled,
+                    defense_ready: defense_signalled,
+                    timeout_job_id,
+                },
+            };
         }
 
         if resolve {
             Action::AdvanceProsecution(AdvanceProsecution {
                 prosecution_id: self.prosecution_id,
             })
-            .handle(eng, ctx, actor, version, mutate)?;
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         Ok(ActionResponse::SignalReady(SignalReadyResponse {}))

@@ -196,6 +196,8 @@ export type PollView = {
 export type ProsecutionData = {
   prosecutor_display: ActorDisplay,
   defendant_display: ActorDisplay,
+  // Set once the defendant picks one. Public — a trial's defence counsel is not a hidden fact.
+  lawyer_display: ActorDisplay | null,
   phase: ProsecutionPhaseView,
   trial_channel: string | null,
   // The viewport this snapshot arrived through, or null for the admin mirror. The engine no
@@ -360,9 +362,63 @@ class History {
 
 // Whether two prosecution phase-views are the same. Subphases collapse into the view already
 // (Grace/Presentation both read as e.g. Trial:Prosecutor), so this is what "the phase changed".
+// Whether two snapshots are the same PHASE, ignoring the ready/done flags inside it. Mirrors
+// ProsecutionPhaseView::same_phase in the engine.
+//
+// Signalling ready changes the snapshot without changing the phase, so comparing whole values
+// would announce the prosecution again on every signal. The subphase IS compared — grace →
+// presentation is a real transition.
 export function phaseViewEqual(a: ProsecutionPhaseView, b: ProsecutionPhaseView): boolean {
-  if (typeof a === "string" || typeof b === "string") return a === b;
-  return a.Trial === b.Trial;
+  if (a === "Voting" || b === "Voting") return a === b;
+  if ("Custody" in a || "Custody" in b) return "Custody" in a && "Custody" in b;
+
+  const [x, y] = [a.Trial, b.Trial];
+  if ("Debate" in x || "Debate" in y) return "Debate" in x && "Debate" in y;
+  if ("Prosecutor" in x && "Prosecutor" in y) return x.Prosecutor === y.Prosecutor;
+  if ("Defense" in x && "Defense" in y) return x.Defense === y.Defense;
+  return false;
+}
+
+// The side holding the floor, or null outside the trial. For rendering "whose turn" without
+// destructuring the nested union at every call site.
+export function trialFloor(phase: ProsecutionPhaseView): "Prosecutor" | "Defense" | "Debate" | null {
+  if (phase === "Voting" || "Custody" in phase) return null;
+  if ("Prosecutor" in phase.Trial) return "Prosecutor";
+  if ("Defense" in phase.Trial) return "Defense";
+  return "Debate";
+}
+
+// A short label for the Prosecutions panel.
+export function phaseLabel(phase: ProsecutionPhaseView): string {
+  if (phase === "Voting") return "Verdict vote";
+  if ("Custody" in phase) return "In custody";
+  if ("Debate" in phase.Trial) return "Trial · debate";
+  const grace = ("Prosecutor" in phase.Trial ? phase.Trial.Prosecutor : phase.Trial.Defense) === "Grace";
+  const side = "Prosecutor" in phase.Trial ? "prosecution" : "defense";
+  return grace ? `Trial · ${side} to begin` : `Trial · ${side} speaking`;
+}
+
+// The sentence announcing a prosecution reaching this phase, for news feeds and toasts.
+// Both of those render the same event, so they share the wording rather than drifting apart.
+export function phaseAnnouncement(
+  phase: ProsecutionPhaseView,
+  prosecutor: string,
+  defendant: string,
+  ended: boolean,
+): string {
+  if (ended) return `The prosecution of ${defendant} has ended.`;
+  if (phase === "Voting") return `The verdict vote for ${defendant} has begun.`;
+  if ("Custody" in phase) return `${prosecutor} is prosecuting ${defendant}.`;
+  if ("Debate" in phase.Trial) return `The trial of ${defendant} has entered debate.`;
+
+  if ("Prosecutor" in phase.Trial) {
+    return phase.Trial.Prosecutor === "Grace"
+      ? `The trial of ${defendant} has begun — the prosecution has the floor.`
+      : `In the trial of ${defendant}, the prosecution presents.`;
+  }
+  return phase.Trial.Defense === "Grace"
+    ? `In the trial of ${defendant}, the defense has the floor.`
+    : `In the trial of ${defendant}, the defense presents.`;
 }
 
 // Stable map key for an ActorDisplay (the tagged union isn't usable as a key directly).
@@ -971,6 +1027,20 @@ export class GameState {
       return;
     }
 
+    // The defendant's private line to their lawyer. Rides its own viewport, so only those two
+    // receive it; the "Prosecution" category groups it with the trial it belongs to.
+    if ("MapLawyerChannel" in cmd) {
+      const { channel_id, prosecution_id } = cmd.MapLawyerChannel;
+      const key = slotKeyToString(channel_id);
+      this.#channel_to_prosecution.set(key, slotKeyToString(prosecution_id));
+      this.#map_channel(
+        recipient,
+        key,
+        new_channel("Standard", "Prosecution", `lawyer-${prosecution_id.idx}v${prosecution_id.version}`),
+      );
+      return;
+    }
+
     // Tag the trial channel: "Prosecution" category for rendering, plus a channel->prosecution
     // mapping for acting on it from inside. The snapshot itself is per-view; see #apply_to_view.
     //
@@ -1196,12 +1266,13 @@ export class GameState {
     // than global so each view diffs the stream IT receives — which is what makes an absent
     // player's backfill reproduce the ordered news timeline when they return.
     if ("UpdateProsecution" in cmd) {
-      const { prosecution_id, prosecutor_display, defendant_display, phase, trial_channel } = cmd.UpdateProsecution;
+      const { prosecution_id, prosecutor_display, defendant_display, lawyer_display, phase, trial_channel } = cmd.UpdateProsecution;
       const key = slotKeyToString(prosecution_id);
       const prev = view.prosecutions.get(key);
       view.prosecutions.set(key, {
         prosecutor_display,
         defendant_display,
+        lawyer_display,
         phase,
         trial_channel: trial_channel ? slotKeyToString(trial_channel) : null,
         viewport: viewport ?? null,

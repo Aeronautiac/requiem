@@ -12,18 +12,26 @@
 * - create a private channel between defendant and lawyer
 * - set defense.lawyer
 *
-* TODO: commands
+* Commands: MapLawyerChannel to the new channel's viewport, then SetMember for each side (which
+* emits their perms and the roster). The lawyer's identity reaches everyone else on the next
+* prosecution snapshot, not from here.
 */
+
+use indexmap::indexset;
+use lawliet_types::{
+    channel::{ChannelMember, ChannelPermission},
+    command::Command,
+};
 
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
-        ActionResult, CreateChannel,
+        ActionResult, CreateChannel, SetMember,
     },
-    actor::modifier::Modifier,
+    actor::{ActorDisplay, modifier::Modifier},
     common::Version,
     engine::Engine,
-    helpers::{get_actor, get_prosecution_mut, player_id, require_player},
+    helpers::{cmd_channel, get_actor, get_prosecution_mut, player_id, require_player},
     prosecution::{Lawyer, ProsecutionPhase},
 };
 
@@ -74,14 +82,44 @@ impl ActionInterface for SelectLawyer {
         let ActionResponse::CreateChannel(channel_data) = channel_response else {
             unreachable!()
         };
+        let channel_id = channel_data.id;
 
+        // The channel only exists on the mutate pass, so everything that reaches for it lives here.
         if mutate {
+            // Before SetMember, which syncs the viewport and then addresses the roster to it: a Map
+            // emitted afterwards would arrive behind history the newcomers already hold. The
+            // frontend also indexes `channels` directly on AddMessage, so an unmapped channel is
+            // fatal there.
+            cmd_channel(
+                eng,
+                ctx,
+                Command::MapLawyerChannel {
+                    channel_id,
+                    prosecution_id: self.prosecution_id,
+                },
+                channel_id,
+            );
+
+            // Both sides, shown to each other as themselves — there is no anonymity between a
+            // defendant and their own counsel.
+            for player_id in [caller, self.lawyer_id] {
+                Action::SetMember(SetMember {
+                    player_id,
+                    channel_id,
+                    settings: Some(ChannelMember {
+                        perms: ChannelPermission::View | ChannelPermission::Send,
+                        displays: indexset![ActorDisplay::Raw(player_id)],
+                    }),
+                })
+                .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+            }
+
             get_prosecution_mut(eng, self.prosecution_id)
                 .expect("already validated")
                 .defense
                 .lawyer = Some(Lawyer {
                 actor_id: self.lawyer_id,
-                channel_id: channel_data.id,
+                channel_id: Some(channel_id),
             });
         }
 

@@ -47,7 +47,8 @@
 *     create poll in trial channel
 *     phase = Voting { poll_id }
 *
-* TODO: commands
+* Emits no commands of its own. The phase snapshot is broadcast by UpdateProsecutions on the
+* sweep, and channel perms by the SetMembers that UpdateProsecutionChannels issues.
 */
 
 use indexmap::indexset;
@@ -56,7 +57,7 @@ use crate::{
     ActorKey, ChannelKey, Time,
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionRequest, ActionResponse,
-        ActionResult, CreateChannel, CreatePoll, ProsecutionVoteRes, SetMember,
+        ActionResult, CreateChannel, CreatePoll, DestroyChannel, ProsecutionVoteRes, SetMember,
     },
     actor::ActorDisplay,
     channel::{ChannelMember, ChannelPermissions},
@@ -288,9 +289,30 @@ impl ActionInterface for AdvanceProsecution {
                         };
                         let id = create_poll_response.id;
 
+                        // The defence's private line runs until the verdict does.
+                        let lawyer_channel = get_prosecution(eng, self.prosecution_id)
+                            .expect("prosecution was already validated")
+                            .defense
+                            .lawyer
+                            .as_ref()
+                            .and_then(|lawyer| lawyer.channel_id);
+
                         if mutate {
+                            if let Some(channel_id) = lawyer_channel {
+                                Action::DestroyChannel(DestroyChannel { channel_id }).handle(
+                                    eng,
+                                    ctx,
+                                    &ActionActor::System,
+                                    version,
+                                    mutate,
+                                )?;
+                            }
+
                             let prosecution = get_prosecution_mut(eng, self.prosecution_id)
                                 .expect("prosecution was already validated");
+                            if let Some(lawyer) = &mut prosecution.defense.lawyer {
+                                lawyer.channel_id = None;
+                            }
                             prosecution.phase = ProsecutionPhase::Voting {
                                 poll_id: id,
                                 channel_id,

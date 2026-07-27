@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { actorLabel, GAME_STATE_KEY } from "../../game_state.svelte.ts";
+  import { actorLabel, GAME_STATE_KEY, phaseLabel } from "../../game_state.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import type { GameState, ProsecutionData } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
@@ -26,12 +26,27 @@
     return actorLabel(display, game.players);
   }
 
-  function phase_text(phase: ProsecutionPhaseView): string {
-    if (phase === "Custody") return "In custody";
-    if (phase === "Voting") return "Verdict vote";
-    if (phase.Trial === "Prosecutor") return "Trial · prosecution speaking";
-    if (phase.Trial === "Defense") return "Trial · defense speaking";
-    return "Trial · debate";
+  const phase_text = phaseLabel;
+
+  // The per-side signal state, for the phases that have one. Custody asks for "ready", debate for
+  // "done"; presentation subphases have no signal at all.
+  function signals(
+    phase: ProsecutionPhaseView,
+  ): { side: string; done: boolean; verb: string }[] {
+    if (phase === "Voting") return [];
+    if ("Custody" in phase) {
+      return [
+        { side: "prosecution", done: phase.Custody.prosecutor_ready, verb: "ready" },
+        { side: "defense", done: phase.Custody.defense_ready, verb: "ready" },
+      ];
+    }
+    if ("Debate" in phase.Trial) {
+      return [
+        { side: "prosecution", done: phase.Trial.Debate.prosecutor_done, verb: "done" },
+        { side: "defense", done: phase.Trial.Debate.defense_done, verb: "done" },
+      ];
+    }
+    return [];
   }
 
   // Open the trial channel in the main pane, if this prosecution has one yet.
@@ -77,6 +92,22 @@
           </div>
 
           <span class="text-[0.7rem] text-neutral-500">{phase_text(data.phase)}</span>
+
+          {#if data.lawyer_display}
+            <span class="text-[0.7rem] text-neutral-500">
+              defended by {display_string(data.lawyer_display)}
+            </span>
+          {/if}
+
+          <!-- Whether each side has signalled. This is the only feedback SignalReady has: without
+               it a player cannot tell whether they are waiting on the other side or on the clock. -->
+          {#each signals(data.phase) as signal (signal.side)}
+            <span class="text-[0.7rem] {signal.done ? 'text-emerald-500' : 'text-neutral-600'}">
+              {signal.done ? "✓" : "○"}
+              {signal.side}
+              {signal.done ? signal.verb : `not ${signal.verb}`}
+            </span>
+          {/each}
 
           {#if data.trial_channel}
             <button

@@ -9,7 +9,12 @@
 *   Trial Debate        → both sides
 *   Voting              → nobody (view only; the trial stays visible alongside the verdict poll)
 *
-* Custody has no trial channel yet, so this action is a no-op for it.
+* Custody has no trial channel yet, so the trial half is a no-op for it.
+*
+* The lawyer's private channel is re-derived here too, and gates on CONTACT rather than presence:
+* it is person-to-person, and custody deliberately leaves contact intact so the accused can still
+* reach counsel. It exists from selection until voting begins, when AdvanceProsecution destroys it
+* (as does TerminateProsecution).
 *
 * Displays: the key participants (prosecutor, defendant, lawyer) are seeded onto the channel
 * with their proper displays and empty perms when the trial channel is first created. Here we
@@ -20,7 +25,9 @@
 * actor state changes (presence gained/lost). Non-present players that were already members are
 * downgraded to empty perms rather than removed, matching the kidnap channel pattern.
 *
-* TODO: commands & optimizations
+* Commands come from the SetMembers this issues; it emits none directly.
+*
+* TODO: optimizations — this re-derives the whole roster on every call.
 */
 
 use indexmap::indexset;
@@ -56,6 +63,40 @@ impl ActionInterface for UpdateProsecutionChannels {
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
+
+        let lawyer_line = {
+            let prosecution = get_prosecution(eng, self.prosecution_id)?;
+            let defendant = prosecution.defense.defendant;
+            prosecution
+                .defense
+                .lawyer
+                .as_ref()
+                .and_then(|lawyer| Some((lawyer.channel_id?, defendant, lawyer.actor_id)))
+        };
+
+        // The lawyer's private line is person-to-person, so it gates on contact where the trial
+        // channel below gates on presence. Custody deliberately leaves contact intact — the accused
+        // can still reach counsel — while death, incarceration and kidnapping all set NoContact.
+        if let Some((channel_id, defendant, lawyer_id)) = lawyer_line {
+            for player_id in [defendant, lawyer_id] {
+                let blocked = get_actor(eng, player_id)?.has_modifier(Modifier::NoContact);
+                let perms = if blocked {
+                    ChannelPermissions::EMPTY
+                } else {
+                    ChannelPermission::Send | ChannelPermission::View
+                };
+
+                Action::SetMember(SetMember {
+                    player_id,
+                    channel_id,
+                    settings: Some(ChannelMember {
+                        perms,
+                        displays: indexset![ActorDisplay::Raw(player_id)],
+                    }),
+                })
+                .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+            }
+        }
 
         let prosecution = get_prosecution(eng, self.prosecution_id)?;
 
