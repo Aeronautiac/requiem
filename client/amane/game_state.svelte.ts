@@ -31,6 +31,19 @@ export type WorldEvent = {
     kidnapper: string | null, // null = the kidnapper stayed anonymous
   }
 } | {
+  Incarceration: {
+    incarceration_id: string,
+    victim_id: string,
+    duration: number | null, // null = held until released
+  }
+} | {
+  // The prisoner is out. Who ordered the incarceration is never disclosed, so unlike KidnapReveal
+  // there is nothing to leak here — only the victim, resolved from the tracked incarceration.
+  IncarcerationReleased: {
+    incarceration_id: string,
+    victim: string | null,
+  }
+} | {
   AnonymousAnnouncement: {
     content: string,
   }
@@ -564,6 +577,14 @@ export type TrackedKidnapping = {
   revealed: boolean;
 };
 
+// The same shape for an incarceration, and kept for the same reason: the release command carries
+// only the id, so the victim is a lookup here.
+export type TrackedIncarceration = {
+  victim: string;
+  duration: number | null; // null = held until released
+  released: boolean;
+};
+
 // Synthetic key of the single, per-viewer read-only Notifications info channel. It is the one
 // place directed-at-you personal events land: reveal results (true names, notebook holdings)
 // and bug alerts ("you've been bugged"). NOT News (world events), and NOT a "personal channel"
@@ -655,6 +676,9 @@ export class GameState {
   // event references the id to resolve the victim, and this is the hook for a future live-countdown
   // timer. Held globally like bugs. See TrackedKidnapping for why entries outlive their reveal.
   kidnappings = new SvelteMap<string, TrackedKidnapping>();
+  // incarceration id -> tracked incarceration. Same role as `kidnappings`: the release command
+  // carries only the id, so the victim is resolved here.
+  incarcerations = new SvelteMap<string, TrackedIncarceration>();
 
   constructor() {
     // System (admin) is not a player: it bypasses channel perms (see is_admin), so its
@@ -1072,6 +1096,25 @@ export class GameState {
       return;
     }
 
+    if ("Incarceration" in cmd) {
+      const { incarceration_id, victim_id, duration } = cmd.Incarceration;
+      this.incarcerations.set(slotKeyToString(incarceration_id), {
+        victim: slotKeyToString(victim_id),
+        duration,
+        released: false,
+      });
+      return;
+    }
+
+    if ("IncarcerationReleased" in cmd) {
+      const key = slotKeyToString(cmd.IncarcerationReleased.incarceration_id);
+      const incarceration = this.incarcerations.get(key);
+      if (incarceration) {
+        this.incarcerations.set(key, { ...incarceration, released: true });
+      }
+      return;
+    }
+
     if ("KidnapReveal" in cmd) {
       const key = slotKeyToString(cmd.KidnapReveal.kidnapping_id);
       const kidnapping = this.kidnappings.get(key);
@@ -1338,6 +1381,35 @@ export class GameState {
             kidnapping_id: slotKeyToString(kidnapping_id),
             target_id: slotKeyToString(target_id),
             duration,
+          }
+        },
+      });
+      return;
+    }
+
+    if ("Incarceration" in cmd) {
+      const { incarceration_id, victim_id, duration } = cmd.Incarceration;
+      view.events.push({
+        timestamp,
+        data: {
+          Incarceration: {
+            incarceration_id: slotKeyToString(incarceration_id),
+            victim_id: slotKeyToString(victim_id),
+            duration,
+          }
+        },
+      });
+      return;
+    }
+
+    if ("IncarcerationReleased" in cmd) {
+      const incarceration_id = slotKeyToString(cmd.IncarcerationReleased.incarceration_id);
+      view.events.push({
+        timestamp,
+        data: {
+          IncarcerationReleased: {
+            incarceration_id,
+            victim: this.incarcerations.get(incarceration_id)?.victim ?? null,
           }
         },
       });

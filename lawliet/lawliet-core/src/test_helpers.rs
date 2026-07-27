@@ -17,6 +17,9 @@ use crate::{
                 remove_from_lounge::RemoveFromLounge,
             },
         },
+        incarceration::{
+            create_incarceration::CreateIncarceration, release_incarceration::ReleaseIncarceration,
+        },
         kidnapping::{create_kidnapping::CreateKidnapping, release_kidnapping::ReleaseKidnapping},
         prosecution::{
             advance_prosecution::AdvanceProsecution, select_lawyer::SelectLawyer,
@@ -32,8 +35,9 @@ use crate::{
         state::State,
     },
     channel::ChannelMember,
-    common::ProsecutionKey,
+    common::{IncarcerationKey, ProsecutionKey},
     config::world::WorldChannelName,
+    incarceration::IncarcerationSource,
     lounge::LoungeVariant,
     prosecution::ProsecutionSource,
 };
@@ -752,6 +756,7 @@ pub fn create_kidnapping(
                 victim_id,
                 kidnapping_type,
                 source,
+                duration: None,
             }),
         })
         .unwrap()
@@ -866,4 +871,44 @@ pub fn update_prosecution_channels(eng: &mut Engine, time: Time, prosecution_id:
         payload: Action::UpdateProsecutionChannels(UpdateProsecutionChannels { prosecution_id }),
     })
     .unwrap();
+}
+
+// ---- incarcerations ----
+
+pub fn incarcerate(
+    eng: &mut Engine,
+    time: Time,
+    victim_id: ActorKey,
+    duration: Option<Time>,
+) -> (IncarcerationKey, ActionContext) {
+    let (data, ctx) = eng
+        .execute(ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::CreateIncarceration(CreateIncarceration {
+                victim_id,
+                source: IncarcerationSource::None,
+                duration,
+            }),
+        })
+        .unwrap();
+    let ActionResponse::CreateIncarceration(response) = data else {
+        unreachable!()
+    };
+    (response.id, ctx)
+}
+
+pub fn release_incarceration(
+    eng: &mut Engine,
+    time: Time,
+    incarceration_id: IncarcerationKey,
+) -> ExecutionResult {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::ReleaseIncarceration(ReleaseIncarceration {
+            incarceration_id,
+            forced: false,
+        }),
+    })
 }

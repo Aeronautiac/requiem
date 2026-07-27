@@ -357,6 +357,7 @@ mod tests {
                     victim_id: victim,
                     kidnapping_type: KidnappingType::Anonymous,
                     source: KidnappingSource::None,
+                    duration: None,
                 },
             ),
         });
@@ -384,6 +385,7 @@ mod tests {
                     victim_id: victim,
                     kidnapping_type: KidnappingType::Anonymous,
                     source: KidnappingSource::None,
+                    duration: None,
                 },
             ),
         });
@@ -405,6 +407,7 @@ mod tests {
                     victim_id: victim,
                     kidnapping_type: KidnappingType::Anonymous,
                     source: KidnappingSource::None,
+                    duration: None,
                 },
             ),
         });

@@ -5,7 +5,7 @@
 
 use lawliet_types::{
     ability::{AbilityName, CivilianArrest},
-    action::{Action, ActionActor, CreatePoll, TimedIncarceration},
+    action::{Action, ActionActor, CreateIncarceration, CreatePoll},
     incarceration::IncarcerationSource,
     poll::{PollPolicy, PollSubject, PollVisibility, VoterPolicy},
 };
@@ -40,10 +40,10 @@ impl AbilityInterface for CivilianArrest {
             subject: PollSubject::CivilianArrest(self.target),
             update_policy: PollPolicy::Majority,
             timeout_policy: PollPolicy::AlwaysInconclusive,
-            accept_payload: Box::new(Some(Action::TimedIncarceration(TimedIncarceration {
+            accept_payload: Box::new(Some(Action::CreateIncarceration(CreateIncarceration {
                 victim_id: self.target,
                 source: IncarcerationSource::Ability(ability),
-                duration: eng.config.defaults.civ_arrest_time,
+                duration: Some(eng.config.defaults.civ_arrest_time),
             }))),
             reject_payload: Box::new(None),
             duration: Some(eng.config.defaults.civ_arrest_vote_time),

@@ -7,9 +7,13 @@
 * On execution:
 * - remove incarceration record (before RemoveState so UpdateIncarcerationChannels sees it gone)
 * - RemoveState(victim, State::Incarcerated)
+* - announce the release as a world event
 *
-* TODO: commands
+* The announcement carries only the id. Who ordered the incarceration is never disclosed, so there
+* is nothing here corresponding to KidnapReveal.
 */
+
+use lawliet_types::command::Command;
 
 use crate::{
     action::{
@@ -19,7 +23,7 @@ use crate::{
     actor::state::State,
     common::Version,
     engine::Engine,
-    helpers::{actor_owns_ability, get_incarceration},
+    helpers::{actor_owns_ability, cmd_world_event, get_incarceration},
     incarceration::IncarcerationSource,
 };
 
@@ -52,6 +56,16 @@ impl ActionInterface for ReleaseIncarceration {
             state: State::Incarcerated,
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+
+        // After RemoveState, which is what returns their presence — announced to the viewport they
+        // have just rejoined, so the released player sees their own release.
+        cmd_world_event(
+            eng,
+            ctx,
+            Command::IncarcerationReleased {
+                incarceration_id: self.incarceration_id,
+            },
+        );
 
         Ok(ActionResponse::ReleaseIncarceration(
             ReleaseIncarcerationResponse {},

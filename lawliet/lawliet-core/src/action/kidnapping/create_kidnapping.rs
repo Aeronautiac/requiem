@@ -15,16 +15,19 @@
 * TODO: commands
 */
 
+use lawliet_types::command::Command;
+
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
-        ActionResult, AddState, CreateChannel, UpdateKidnapChannels,
+        ActionResult, AddState, CreateChannel, ReleaseKidnapping, ScheduleJob,
+        UpdateKidnapChannels,
     },
     actor::modifier::Modifier,
     actor::state::State,
     common::{KidnappingKey, Version},
     engine::Engine,
-    helpers::{get_ability, get_actor, require_player},
+    helpers::{cmd_world_event, get_ability, get_actor, require_player},
     kidnapping::{Kidnapping, KidnappingSource},
 };
 
@@ -67,12 +70,6 @@ impl ActionInterface for CreateKidnapping {
         };
         let channel_id = ch_data.id;
 
-        Action::AddState(AddState {
-            actor_id: self.victim_id,
-            state: State::Kidnapped,
-        })
-        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
-
         let id = if mutate {
             eng.world.add_kidnapping(Kidnapping {
                 victim: self.victim_id,
@@ -83,6 +80,36 @@ impl ActionInterface for CreateKidnapping {
         } else {
             KidnappingKey::default()
         };
+
+        // Announced BEFORE the state change. Kidnapped carries NoPresence, which takes the victim
+        // out of the very viewport this is addressed to — announcing afterwards tells everyone
+        // except the person it happened to.
+        cmd_world_event(
+            eng,
+            ctx,
+            Command::Kidnapping {
+                kidnapping_id: id,
+                target_id: self.victim_id,
+                duration: self.duration,
+            },
+        );
+
+        Action::AddState(AddState {
+            actor_id: self.victim_id,
+            state: State::Kidnapped,
+        })
+        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+
+        if let Some(duration) = self.duration {
+            Action::ScheduleJob(ScheduleJob {
+                payload: Box::new(Action::ReleaseKidnapping(ReleaseKidnapping {
+                    kidnapping_id: id,
+                    forced: false,
+                })),
+                timestamp: eng.time + duration,
+            })
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+        }
 
         Action::UpdateKidnapChannels(UpdateKidnapChannels {}).handle(
             eng,

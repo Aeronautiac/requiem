@@ -42,12 +42,6 @@ impl ActionInterface for Kill {
         let true_name = target_data.true_name.clone();
         let role = target_data.role;
 
-        Action::AddState(AddState {
-            actor_id: self.target_id,
-            state: State::Dead,
-        })
-        .handle(eng, ctx, actor, version, mutate)?;
-
         let mut notebook_transferred = false;
         let mut ability_transferred = false;
         let mut next_actions: SmallVec<[Action; 8]> = smallvec![];
@@ -182,6 +176,12 @@ impl ActionInterface for Kill {
                 },
             );
         }
+
+        Action::AddState(AddState {
+            actor_id: self.target_id,
+            state: State::Dead,
+        })
+        .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::Kill(KillResponse {}))
     }

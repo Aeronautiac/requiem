@@ -25,6 +25,7 @@ import type {
   ServerOutput,
 } from "./bindings";
 import { slotKeyToString } from "./bindings";
+import { formatDuration } from "./lib/utils";
 import {
   actorLabel,
   GameState,
@@ -243,6 +244,25 @@ export class ClientState {
         kidnapper
           ? `Authorities have recovered ${victimName}, and ${this.#name(slotKeyToString(kidnapper))} was revealed as the kidnapper.`
           : `Authorities have recovered ${victimName}, but the kidnapper stayed anonymous.`,
+      );
+    } else if ("Incarceration" in cmd) {
+      const victim = this.#name(slotKeyToString(cmd.Incarceration.victim_id));
+      this.notify(
+        recipient,
+        "Imprisonment",
+        cmd.Incarceration.duration
+          ? `${victim} has been imprisoned for ${formatDuration(cmd.Incarceration.duration)}.`
+          : `${victim} has been imprisoned.`,
+      );
+    } else if ("IncarcerationReleased" in cmd) {
+      // Resolved from the tracked incarceration, the same way KidnapReveal resolves its victim.
+      const victim = this.game.incarcerations.get(
+        slotKeyToString(cmd.IncarcerationReleased.incarceration_id),
+      )?.victim;
+      this.notify(
+        recipient,
+        "Release",
+        `${victim ? this.#name(victim) : "A prisoner"} has been released.`,
       );
     } else if ("PseudocideRevival" in cmd) {
       this.notify(recipient, "Revival", `${this.#name(slotKeyToString(cmd.PseudocideRevival.target_id))} is alive.`);

@@ -495,6 +495,22 @@
               description="Kidnapping"
               content={`${player_name(k.target_id)} has been kidnapped.`}
             />
+          {:else if "Incarceration" in event.data}
+            {@const inc = event.data.Incarceration}
+            <Announcement
+              color="#64748b"
+              description="Imprisonment"
+              content={inc.duration
+                ? `${player_name(inc.victim_id)} has been imprisoned for ${formatDuration(inc.duration)}.`
+                : `${player_name(inc.victim_id)} has been imprisoned.`}
+            />
+          {:else if "IncarcerationReleased" in event.data}
+            {@const rel = event.data.IncarcerationReleased}
+            <Announcement
+              color="#64748b"
+              description="Release"
+              content={`${rel.victim ? player_name(rel.victim) : "A prisoner"} has been released.`}
+            />
           {:else if "ProsecutionEvent" in event.data}
             {@const pe = event.data.ProsecutionEvent}
             <Announcement

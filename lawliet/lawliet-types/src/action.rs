@@ -688,6 +688,9 @@ pub struct CreateIncarcerationResponse {
 pub struct CreateIncarceration {
     pub victim_id: ActorKey,
     pub source: IncarcerationSource,
+    // None = held indefinitely, until someone releases them. Some schedules the release, which is
+    // why this can be stated here rather than needing a wrapper action to bundle the two.
+    pub duration: Option<Time>,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -705,19 +708,6 @@ pub struct ReleaseIncarcerationResponse {}
 pub struct ReleaseIncarceration {
     pub incarceration_id: IncarcerationKey,
     pub forced: bool,
-}
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct TimedIncarcerationResponse {}
-
-// Incarcerate a player and schedule their automatic release after `duration`. Unifies
-// CreateIncarceration + a ScheduleJob(ReleaseIncarceration) into one action so it can be
-// used as a single poll payload (e.g. the civilian arrest vote's accept action).
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct TimedIncarceration {
-    pub victim_id: ActorKey,
-    pub source: IncarcerationSource,
-    pub duration: Time,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -742,20 +732,7 @@ pub struct CreateKidnapping {
     pub victim_id: ActorKey,
     pub kidnapping_type: KidnappingType,
     pub source: KidnappingSource,
-}
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct KidnapResponse {}
-
-// High-level orchestrator over the low-level kidnapping primitives: creates the kidnapping
-// (object + channel + state), announces it, and — when `duration` is Some — schedules the
-// automatic release. Mirrors TimedIncarceration; the abilities go through this rather than
-// hand-rolling CreateKidnapping + ScheduleJob. `duration` None is an indefinite kidnapping.
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct Kidnap {
-    pub victim_id: ActorKey,
-    pub kidnapping_type: KidnappingType,
-    pub source: KidnappingSource,
+    // None = held indefinitely, until someone releases them. Some schedules the release.
     pub duration: Option<Time>,
 }
 
@@ -1301,14 +1278,12 @@ pub enum Action {
     UpdateBugVisibilities(UpdateBugVisibilities),
     ProsecutionVoteRes(ProsecutionVoteRes),
     CreateKidnapping(CreateKidnapping),
-    Kidnap(Kidnap),
     ReleaseKidnapping(ReleaseKidnapping),
     CullKidnappings(CullKidnappings),
     UpdateKidnapChannels(UpdateKidnapChannels),
     UpdatePrisonChannel(UpdatePrisonChannel),
     CreateIncarceration(CreateIncarceration),
     ReleaseIncarceration(ReleaseIncarceration),
-    TimedIncarceration(TimedIncarceration),
     CullIncarcerations(CullIncarcerations),
     CreatePersonalChannel(CreatePersonalChannel),
 }
@@ -1412,14 +1387,12 @@ pub enum ActionResponse {
     UpdateBugVisibilities(UpdateBugVisibilitiesResponse),
     ProsecutionVoteRes(ProsecutionVoteResResponse),
     CreateKidnapping(CreateKidnappingResponse),
-    Kidnap(KidnapResponse),
     ReleaseKidnapping(ReleaseKidnappingResponse),
     CullKidnappings(CullKidnappingsResponse),
     UpdateKidnapChannels(UpdateKidnapChannelsResponse),
     UpdatePrisonChannel(UpdatePrisonChannelResponse),
     CreateIncarceration(CreateIncarcerationResponse),
     ReleaseIncarceration(ReleaseIncarcerationResponse),
-    TimedIncarceration(TimedIncarcerationResponse),
     CullIncarcerations(CullIncarceratationsResponse),
 }
 

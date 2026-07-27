@@ -539,6 +539,8 @@ export type ScheduleJob = {
 export type CreateIncarceration = {
   victim_id: ActorKey;
   source: IncarcerationSource;
+  // null = held until someone releases them; a value schedules the release.
+  duration: number | null;
 };
 
 export type CullIncarcerations = {
@@ -988,6 +990,9 @@ export type Command =
   | { Death: { target_id: ActorKey, true_name: string; death_message: string; role: Role; notebook_transferred: boolean; ability_transferred: boolean } }
   | { Kidnapping: { kidnapping_id: KidnappingKey; target_id: ActorKey; duration: number | null } }
   | { KidnapReveal: { kidnapping_id: KidnappingKey; kidnapper: ActorKey | null } }
+  // Mirrors Kidnapping, minus any reveal — an incarceration's source is never disclosed.
+  | { Incarceration: { incarceration_id: IncarcerationKey; victim_id: ActorKey; duration: number | null } }
+  | { IncarcerationReleased: { incarceration_id: IncarcerationKey } }
   | { PseudocideRevival: { target_id: ActorKey } }
   | { AnonymousAnnouncement: { content: string } }
   | { MapOrg: { org_id: ActorKey; channel_id: ChannelKey; org_name: OrganizationName } }

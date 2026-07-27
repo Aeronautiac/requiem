@@ -8,8 +8,8 @@ use crate::{
     channel::ChannelPermissions,
     common::{
         AbilityKey, ActorKey, AttemptCount, BugKey, ChannelKey, ChargeCount, GroupchatKey, ID,
-        IterationCount, KidnappingKey, LoungeKey, NotebookKey, PassiveKey, PollKey, PollWeight,
-        ProsecutionKey, Time, ViewportKey,
+        IncarcerationKey, IterationCount, KidnappingKey, LoungeKey, NotebookKey, PassiveKey,
+        PollKey, PollWeight, ProsecutionKey, Time, ViewportKey,
     },
     organization::OrganizationName,
     passive::PassiveType,
@@ -108,6 +108,20 @@ pub enum Command {
         kidnapping_id: KidnappingKey,
         target_id: ActorKey,
         duration: Option<Time>,
+    },
+
+    // announce an incarceration. Mirrors Kidnapping, minus any reveal: an incarceration's source is
+    // never disclosed, so who ordered it is not carried here and never follows.
+    Incarceration {
+        incarceration_id: IncarcerationKey,
+        victim_id: ActorKey,
+        duration: Option<Time>,
+    },
+
+    // the prisoner is out. Carries only the id -- the victim is resolved client-side from the
+    // Incarceration that introduced it, exactly as KidnapReveal resolves its own.
+    IncarcerationReleased {
+        incarceration_id: IncarcerationKey,
     },
 
     // announce a kidnap reveal for a prior Kidnapping (referenced by id): either leaks the kidnapper

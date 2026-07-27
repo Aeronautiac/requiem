@@ -1,6 +1,6 @@
 use lawliet_types::{
     ability::{AbilityName, PublicKidnap},
-    action::{Action, ActionActor, ActionError, Kidnap},
+    action::{Action, ActionActor, ActionError, CreateKidnapping},
     actor::ActorDisplay,
     kidnapping::{KidnappingSource, KidnappingType},
 };
@@ -53,7 +53,7 @@ impl AbilityInterface for PublicKidnap {
             }
         };
 
-        Action::Kidnap(Kidnap {
+        Action::CreateKidnapping(CreateKidnapping {
             victim_id: self.target,
             kidnapping_type: KidnappingType::Public(ActorDisplay::Raw(performer)),
             source: KidnappingSource::Ability(ability),

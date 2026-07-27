@@ -1,6 +1,6 @@
 use lawliet_types::{
     ability::{AbilityName, AnonymousKidnap},
-    action::{Action, ActionActor, Kidnap},
+    action::{Action, ActionActor, CreateKidnapping},
     kidnapping::{KidnappingSource, KidnappingType},
 };
 
@@ -22,7 +22,7 @@ impl AbilityInterface for AnonymousKidnap {
     ) -> super::AbilityResult {
         get_player(eng, self.target)?;
 
-        Action::Kidnap(Kidnap {
+        Action::CreateKidnapping(CreateKidnapping {
             victim_id: self.target,
             kidnapping_type: KidnappingType::Anonymous,
             source: KidnappingSource::Ability(ability),
