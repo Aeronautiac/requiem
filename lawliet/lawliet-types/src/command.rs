@@ -12,7 +12,7 @@ use crate::{
         PollKey, PollWeight, ProsecutionKey, Time, ViewportKey,
     },
     organization::OrganizationName,
-    passive::PassiveType,
+    passive::{ContactLog, PassiveType},
     poll::{PollOutcome, PollSubject, PollVisibility},
     prosecution::ProsecutionPhaseView,
     role::Role,
@@ -315,6 +315,17 @@ pub enum Command {
         displays: IndexSet<ActorDisplay>,
     },
 
+    // Somebody reached for Kira through this lounge. Addressed to the lounge's channel, and emitted
+    // whether or not anyone was found — there is no quiet way to feel for Kira. `user` is raw and
+    // always present: the point of the ability is that making the attempt costs you your anonymity
+    // in that lounge. `success` says whether a Kira was actually on the other end, so the client
+    // words it as a connection made or as nobody being there.
+    KiraConnectionAttempt {
+        channel_id: ChannelKey,
+        user: ActorKey,
+        success: bool,
+    },
+
     ////////////////////////////////////////////////
     // NOTEBOOKS //
     ////////////////////////////////////////////////
@@ -379,13 +390,17 @@ pub enum Command {
     // For this reason, there will be an owner id in the ability view command. If it is the client's
     // id, it doesn't really matter. If it is the org's id, it does.
 
-    // similarly to channels, when someone gets access to a contact log passive, they should be able
-    // to see EVERYTHING previously logged by that specific passive.
-    // for this, use passive ids.
-    // contact logs include group chat additions and such as well
+    // One line in a contact log, addressed to the passive's own viewport — so gaining the passive
+    // backfills everything it ever logged, exactly as gaining a channel does.
+    //
+    // passive_id names which log this belongs to: an actor can reach more than one contact-log
+    // passive, and the two are separate records even where they overlap.
+    //
+    // Only the contactor's Modifier::LogNullification suppresses it. Being contacted by someone off
+    // the record does not take your own contacts off it.
     AddContactLog {
-        // log: ContactLog,
         passive_id: PassiveKey,
+        log: ContactLog,
     },
 
     // update the view of an ability to reflect its current state. usages are split by

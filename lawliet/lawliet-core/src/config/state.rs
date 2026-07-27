@@ -34,6 +34,7 @@ pub fn default_state_modifiers() -> StateModifierMap {
         State::Ipp,
         Modifier::StrengthenedPresence | Modifier::WriteImmunity,
     );
+    map.insert(State::UnderTheRadar, Modifier::LogNullification.into());
 
     map
 }

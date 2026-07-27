@@ -1,6 +1,6 @@
 use crate::{common::ViewportKey, ownership::OwnershipStruct};
 
-pub use lawliet_types::passive::{ContactLogType, PassiveType};
+pub use lawliet_types::passive::{ContactEvent, ContactLog, ContactLogType, PassiveType};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Passive {

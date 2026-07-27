@@ -5,7 +5,7 @@ use lawliet_types::common::{ActorKey, ChannelKey};
 
 use crate::{
     channel::ChannelPermissions,
-    common::{BugKey, GroupchatKey, LoungeKey},
+    common::{BugKey, GroupchatKey, LoungeKey, ViewportKey},
     config::{role::Role, world::WorldChannelName},
 };
 
@@ -34,6 +34,13 @@ pub struct Player {
     pub groupchats: IndexSet<GroupchatKey>,
     pub bugs: IndexSet<BugKey>, // the bugs targetting this player
     pub orgs: IndexSet<ActorKey>,
+    // Names this player as the sender of everything logged from them. Nobody is ever granted
+    // access — it is an identity, not an audience — so the engine allocates it and then only ever
+    // addresses to it. yagami keys its message store by it, which is what lets an autopsy name the
+    // real sender of something said under a borrowed display.
+    //
+    // Written by AddPlayer, since viewport lifetime belongs to actions rather than World.
+    pub log_viewport: ViewportKey,
     pub world_channel_overrides:
         IndexMap<WorldChannelName, IndexMap<OverrideSource, SourcedWorldChannelOverride>>,
 }
@@ -51,6 +58,7 @@ impl Player {
             groupchats: indexset![],
             bugs: indexset![],
             orgs: indexset![],
+            log_viewport: ViewportKey::default(),
             world_channel_overrides: IndexMap::new(),
         }
     }

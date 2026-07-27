@@ -5,7 +5,8 @@
 
 use crate::{
     action::{
-        ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse, ActionResult,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, UpdatePassiveVisibilities,
     },
     command::Command,
     helpers::{get_actor, get_actor_mut, get_passive, get_passive_mut, owner_view_recipient},
@@ -19,7 +20,7 @@ impl ActionInterface for GivePassive {
         eng: &mut crate::engine::Engine,
         ctx: &mut ActionContext,
         actor: &ActionActor,
-        _version: crate::common::Version,
+        version: crate::common::Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
@@ -68,6 +69,11 @@ impl ActionInterface for GivePassive {
                 eng.time,
             );
         }
+
+        // Ownership moved, so who effectively possesses this passive — and therefore who reads its
+        // log — moved with it.
+        Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
+            .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::GivePassive(GivePassiveResponse {}))
     }

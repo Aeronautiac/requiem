@@ -60,6 +60,11 @@ impl ChargePool {
 
     /// these are parameters because they may change throughout the game
     pub fn on_iteration(&mut self) {
+        // Zero means the pool is not counting down — it is full, or has never been used. Only a use
+        // arms the countdown (see use_charges), so there is nothing here to decrement.
+        if self.iterations_to_reset == 0 {
+            return;
+        }
         self.iterations_to_reset -= 1;
         if self.iterations_to_reset == 0 {
             self.charges = self.base_charges;

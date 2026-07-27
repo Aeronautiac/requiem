@@ -6,7 +6,8 @@
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        UpdateBugVisibilities, UpdateContactChannels, UpdateKidnapChannels, UpdatePrisonChannel,
+        UpdateBugVisibilities, UpdateContactChannels, UpdateKidnapChannels,
+        UpdatePassiveVisibilities, UpdatePrisonChannel,
         UpdateWorldChannelPerms,
     },
     common::Version,
@@ -59,6 +60,10 @@ impl ActionInterface for AddState {
         sync_presence(eng, ctx, mutate);
 
         Action::UpdateBugVisibilities(UpdateBugVisibilities {})
+            .handle(eng, ctx, actor, version, mutate)?;
+
+        // DisablePassiveLinks rides on a state, so who reaches which passive log can change here.
+        Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
             .handle(eng, ctx, actor, version, mutate)?;
 
         Action::UpdateKidnapChannels(UpdateKidnapChannels {})

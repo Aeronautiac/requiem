@@ -3,10 +3,12 @@
 * Fully destroy a passive: remove from the owning actor's cache, then remove from the world.
 */
 
+use indexmap::IndexSet;
+
 use crate::{
     action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     command::Command,
-    helpers::{get_actor, get_actor_mut, get_passive, owner_view_recipient},
+    helpers::{get_actor, get_actor_mut, get_passive, owner_view_recipient, sync_viewport},
 };
 
 pub use crate::action::{DestroyPassive, DestroyPassiveResponse};
@@ -30,6 +32,10 @@ impl ActionInterface for DestroyPassive {
             get_actor(eng, owner_id)?;
         }
 
+        // Empty the log's viewport before freeing it, so everyone reading it is told they no longer
+        // are rather than simply stopping.
+        sync_viewport(eng, ctx, viewport, IndexSet::new(), mutate);
+
         if mutate {
             if let Some(owner_id) = owner {
                 get_actor_mut(eng, owner_id)
@@ -45,8 +51,6 @@ impl ActionInterface for DestroyPassive {
                 );
             }
             eng.world.remove_passive(self.passive_id);
-            // Freed here even though nothing has ever been addressed to it, so the lifetime is
-            // already correct when contact logs arrive. It is empty, so there is nobody to exit.
             eng.world.remove_viewport(viewport);
         }
 

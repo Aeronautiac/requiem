@@ -122,7 +122,7 @@ mod comms_tests {
         )
         .unwrap();
 
-        let viewport = eng.world.get_channel(ch).unwrap().viewport;
+        let viewport = eng.world.get_channel(ch).unwrap().membership_viewport;
         let (_, ctx) = set_member(&mut eng, 0, p1, ch, None).unwrap();
 
         // Losing membership is an exit, not a retraction: p1 keeps everything the channel
@@ -315,7 +315,7 @@ mod comms_tests {
             unreachable!()
         };
         let channel_id = get_gc(&eng, data.id).unwrap().channel_id;
-        let viewport = eng.world.get_channel(channel_id).unwrap().viewport;
+        let viewport = eng.world.get_channel(channel_id).unwrap().membership_viewport;
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Viewport(viewport)
@@ -492,7 +492,11 @@ mod comms_tests {
             unreachable!()
         };
 
-        let viewport = eng.world.get_channel(data.channel_id).unwrap().viewport;
+        let viewport = eng
+            .world
+            .get_channel(data.channel_id)
+            .unwrap()
+            .membership_viewport;
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Viewport(viewport)

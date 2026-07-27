@@ -4,7 +4,10 @@
 */
 
 use crate::{
-    action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
+    action::{
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        UpdatePassiveVisibilities,
+    },
     actor::{ActorLink, ActorLinkType, ActorType},
     common::ActorKey,
     helpers::{get_actor_mut, get_role_config},
@@ -22,9 +25,9 @@ impl ActionInterface for CreateActorLinks {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        _ctx: &mut ActionContext,
+        ctx: &mut ActionContext,
         actor: &ActionActor,
-        _version: crate::common::Version,
+        version: crate::common::Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
@@ -67,6 +70,10 @@ impl ActionInterface for CreateActorLinks {
                 });
             }
         }
+
+        // A new Passive link means reach into somebody else's logs.
+        Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
+            .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::CreateActorLinks(
             CreateActorLinksResponse {},

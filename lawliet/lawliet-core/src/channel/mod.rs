@@ -27,19 +27,32 @@ pub use lawliet_types::channel::{ChannelMember, ChannelPermission, ChannelPermis
 pub struct Channel {
     pub loggable: bool, // whether or not abilities like autopsy can use messages sent here
     pub members: IndexMap<ActorKey, ChannelMember>, // the people in the channel and their permissions
-    // Who this channel's content is addressed to. `members` above stays the authority on who is
-    // in the channel and with what permissions; the viewport is a projection of it, holding
-    // exactly the members with View. Never ask the viewport whether someone can see the
-    // channel — ask the channel.
-    pub viewport: ViewportKey,
+    // Who this channel's content is delivered to. `members` above stays the authority on who is
+    // in the channel and with what permissions; this is a projection of it, holding exactly the
+    // members with View. Never ask the viewport whether someone can see the channel — ask the
+    // channel.
+    pub membership_viewport: ViewportKey,
+    // What this channel is on the RECORD as having carried. The same messages, minus anything a
+    // sender under Modifier::LogNullification said, and with nobody ever granted access — a
+    // tap-in reads it, live delivery does not.
+    //
+    // Separate from membership because the two answer different questions and must be allowed to
+    // disagree: the room genuinely heard an unlogged message, and monotonic state cannot take that
+    // back, so suppression can only ever mean "keep it out of the record".
+    pub log_viewport: ViewportKey,
 }
 
 impl Channel {
-    pub fn new(loggable: bool, viewport: ViewportKey) -> Self {
+    pub fn new(
+        loggable: bool,
+        membership_viewport: ViewportKey,
+        log_viewport: ViewportKey,
+    ) -> Self {
         Channel {
             loggable,
             members: IndexMap::new(),
-            viewport,
+            membership_viewport,
+            log_viewport,
         }
     }
 

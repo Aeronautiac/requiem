@@ -28,6 +28,7 @@ pub enum State {
     Ipp = 1 << 2,
     Kidnapped = 1 << 3,
     Custody = 1 << 4,
+    UnderTheRadar = 1 << 5,
 }
 
 pub type States = BitFlags<State>;

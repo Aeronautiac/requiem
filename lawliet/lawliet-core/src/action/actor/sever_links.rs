@@ -3,7 +3,10 @@
 * Sever every link to an actor ID
 */
 
-use crate::action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult};
+use crate::action::{
+    Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+    UpdatePassiveVisibilities,
+};
 
 pub use crate::action::{SeverLinks, SeverLinksResponse};
 
@@ -11,21 +14,25 @@ impl ActionInterface for SeverLinks {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        _ctx: &mut ActionContext,
+        ctx: &mut ActionContext,
         actor: &ActionActor,
-        _version: crate::common::Version,
-        _mutate: bool,
+        version: crate::common::Version,
+        mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
 
-        for (_, actor) in eng.world.actors.iter_mut() {
-            let links = actor.actor_links.clone();
+        for (_, target) in eng.world.actors.iter_mut() {
+            let links = target.actor_links.clone();
             for link in links {
                 if link.link_dest == self.actor_id {
-                    actor.sever_link(link);
+                    target.sever_link(link);
                 }
             }
         }
+
+        // A severed Passive link takes back whatever reach it granted.
+        Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
+            .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::SeverLinks(SeverLinksResponse {}))
     }

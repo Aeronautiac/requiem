@@ -83,7 +83,15 @@ export type ActorDisplay =
   | "System";
 
 // Individual State flag variant — used in AddState / RemoveState
-export type State = "Dead" | "Incarcerated" | "Ipp" | "Kidnapped" | "Custody";
+export type State =
+  | "Dead"
+  | "Incarcerated"
+  | "Ipp"
+  | "Kidnapped"
+  | "Custody"
+  // carries LogNullification: nothing the player says reaches the record or any bug watching them,
+  // and the contacts they make go unlogged. lasts until the next iteration.
+  | "UnderTheRadar";
 // BitFlags<State> — used in commands
 export type States = number;
 export const StateFlag = {
@@ -131,7 +139,28 @@ export const LeadershipTransferPolicyFlag = {
 
 export type PoolLinkType = "Restrictive" | "Permissive";
 
+// which slice of the contact graph a log passive receives, split on the parity of the contact
+// channel's id. a contact belongs to one half for its whole life, so Even and Odd each see complete
+// relationships rather than fragments of every one.
 export type ContactLogType = "Full" | "Even" | "Odd";
+
+// what happened to the contact graph, naming which KIND of channel it was — the contact id alone
+// doesn't say. a lounge has no closing counterpart: it's a one-to-one line, and that it was opened
+// is the fact worth having.
+export type ContactEvent = "LoungeOpened" | "GroupchatAdded" | "GroupchatRemoved";
+
+// one line in a contact log: who reached whom, over which contact channel. no message content — a
+// contact log is the shape of the graph, not what was said across it.
+//
+// both ends are DISPLAYS, not keys, because a log records what the contact looked like. an
+// anonymous lounge reads as "some Watari contacted <player>", a fabricated one as a contact that
+// never happened.
+export type ContactLog = {
+  contact_id: number;
+  contactor: ActorDisplay;
+  contacted: ActorDisplay;
+  event: ContactEvent;
+};
 
 export type PassiveType =
   | "Wanted"
@@ -255,6 +284,19 @@ export type AbilityBehaviour =
   | { TrueNameReveal: { target: ActorKey } }
   | { NotebookReveal: { target: ActorKey } }
   | { CivilianArrest: { target: ActorKey } }
+  // a civilian arrest with no vote: jailed immediately. the incarceration never discloses its
+  // source, so the world sees a jailing and not who ordered it.
+  | { UnlawfulArrest: { target: ActorKey } }
+  // self-targeted, no fields — you can only take yourself off the record. lasts the iteration.
+  | { UnderTheRadar: Record<string, never> }
+  // org ability. spends an OG member for the true name of some OTHER player, revealed to the org.
+  | { ShinigamiSacrifice: { sacrifice: ActorKey; name_target: ActorKey } }
+  // reach for Kira through a Basic lounge. the attempt always shows up in that lounge naming you,
+  // success or not; only a living Kira on the other end lifts your notebook block.
+  | { KiraConnection: { lounge: LoungeKey } }
+  // the private investigator's single reroll for the game. true_name is replaced by the server
+  // before the engine sees it, like the timestamp — whatever the client sends here is not kept.
+  | { TrueNameReroll: { target: ActorKey; true_name: string } }
   | { PublicKidnap: { target: ActorKey; performer: ActorKey | null } }
   | { AnonymousKidnap: { target: ActorKey } }
   | { Bug: { target: ActorKey } };
@@ -462,6 +504,8 @@ export type DestroyBug = {
 };
 
 export type UpdateBugVisibilities = Record<string, never>;
+
+export type UpdatePassiveVisibilities = Record<string, never>;
 
 // -- channel --
 
@@ -873,6 +917,7 @@ export type Action =
   | { InitializeEngine: InitializeEngine }
   | { SetRandomSeed: SetRandomSeed }
   | { UpdateBugVisibilities: UpdateBugVisibilities }
+  | { UpdatePassiveVisibilities: UpdatePassiveVisibilities }
   | { ProsecutionVoteRes: ProsecutionVoteRes }
   | { CreateKidnapping: CreateKidnapping }
   | { ReleaseKidnapping: ReleaseKidnapping }
@@ -969,7 +1014,10 @@ export type ActionError =
   | "IncarcerationNotFound"
   | "ActorHasStrengthenedPresence"
   | "PersonalChannelLimitReached"
-  | "PerformerRequiresOrg";
+  | "PerformerRequiresOrg"
+  // ShinigamiSacrifice: only a founding member can be spent, and never for their own name.
+  | "NotAnOgMember"
+  | "CannotSacrificeForOwnName";
 
 // Only variants that carry meaningful data are included.
 export type ActionResponse =
@@ -1044,10 +1092,17 @@ export type Command =
   | { ShowChannelMember: { channel_id: ChannelKey; display: ActorDisplay; channel_perms: ChannelPermissions } }
   | { RemoveChannelMember: { channel_id: ChannelKey; display: ActorDisplay } }
   | { UpdateChannelView: { channel_id: ChannelKey; perms: ChannelPermissions; displays: ActorDisplay[] } }
+  // somebody reached for Kira through this lounge. addressed to the lounge's channel and emitted
+  // whether or not anyone was found — there's no quiet way to feel for Kira. `user` is raw and
+  // always present: making the attempt costs you your anonymity in that lounge.
+  | { KiraConnectionAttempt: { channel_id: ChannelKey; user: ActorKey; success: boolean } }
   | { MapNotebook: { notebook_id: NotebookKey; channel_id: ChannelKey } }
   | { NotebookWrite: { notebook_id: NotebookKey; user_id: ActorKey; message: string | null; true_name: string; delay: number; successes_remaining: number; attempts_remaining: number; success: boolean; target_saved: boolean } }
   | { NotebookBorrowingStatus: { notebook_id: NotebookKey; borrowed: boolean } }
-  | { AddContactLog: { passive_id: PassiveKey } }
+  // one line in a contact log, addressed to the passive's own viewport — so gaining the passive
+  // backfills everything it ever logged, exactly as gaining a channel does. passive_id names which
+  // log it belongs to; an actor can reach more than one, and they're separate records.
+  | { AddContactLog: { passive_id: PassiveKey; log: ContactLog } }
   | { UpdateAbilityView: { ability_name: AbilityName; success_usages_remaining: number; failure_usages_remaining: number; iterations_to_reset: number; ability_id: AbilityKey; owner_id: ActorKey } }
   | { RemoveAbility: { ability_id: AbilityKey } }
   | { UpdatePassiveView: { passive_type: PassiveType; passive_id: PassiveKey; owner_id: ActorKey } }
@@ -1076,7 +1131,15 @@ export type Command =
   | { CloseProsecution: { prosecution_id: ProsecutionKey; verdict: boolean | null } };
 
 // what kind of object a viewport belongs to. display only — do not branch on it.
-export type ViewportKind = "Channel" | "Bug" | "Poll" | "Passive" | "Presence";
+// Log viewports are never granted to anyone — they exist so the server's message store is keyed by
+// who really spoke and by where it was said. A client never enters one.
+export type ViewportKind =
+  | "Channel"
+  | "Bug"
+  | "Poll"
+  | "Passive"
+  | "Presence"
+  | "Log";
 
 // every command is addressed. there is no "no recipient" case: what looks undirected is addressed
 // to some object's viewport, and the object decides who may read it.

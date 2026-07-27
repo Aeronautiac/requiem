@@ -7,11 +7,13 @@
 // One channel in, not two, so ordering is free -- a connection's Attach is queued ahead of
 // anything it goes on to send, and is therefore always replayed before it can act.
 
-use std::{env::current_exe, process::Stdio, time::Duration};
+use std::{collections::HashMap, env::current_exe, process::Stdio, time::Duration};
 
 use lawliet_types::{
+    ability::AbilityBehaviour,
     action::{Action, ActionActor, ActionRequest, InitializeEngine, Null},
-    common::Time,
+    command::Command,
+    common::{ActorKey, Time},
     engine::ExecutionResult,
 };
 use serde::Serialize;
@@ -29,7 +31,9 @@ use crate::{
     constants::{ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
     control::handle_control,
     delivery::{History, broadcast, deliver_catchup, deliver_crash, deliver_widening},
-    generate_seed, now,
+    generate_seed,
+    names::NamePool,
+    now,
     state::{GameId, WrappedServerState, lock_state},
     wire::{ActionOutcome, ExecOutcome, ResponsePair, ServerInput},
 };
@@ -219,6 +223,13 @@ pub async fn game(
         // would make every crash silently fork the game's randomness.
         let seed = generate_seed();
 
+        // Every player's current true name, mirrored from what the engine announced. The engine
+        // stays the authority; this exists only so a reroll can be handed a name nobody holds,
+        // which is a question the coordinator cannot ask the engine directly -- it lives in
+        // another process.
+        let names = NamePool::new();
+        let mut true_names: HashMap<ActorKey, String> = HashMap::new();
+
         // Delay rather than the default Burst: if the coordinator was busy through several tick
         // periods, firing all of them back-to-back is pure waste. a tick catches the engine up to
         // NOW, so one late tick does everything the missed ones would have.
@@ -327,7 +338,7 @@ pub async fn game(
 
                     // controls are handled HERE and never forwarded: they act ON the timeline, not in
                     // the fiction, and the engine has no concept of them.
-                    let request = match input {
+                    let mut request = match input {
                         ServerInput::Action(request) => request,
                         ServerInput::Control(control) => {
                             // controls carry no actor, so authority is a matter of capabilities and
@@ -367,6 +378,22 @@ pub async fn game(
                         let pair = ResponsePair { input: ServerInput::Action(request), output: ExecOutcome::Action(ActionOutcome::Denied) };
                         broadcast(&state, game_id, &history, history.head(), Some((ticket, pair)));
                         continue;
+                    }
+
+                    // The server names people, not their clients: a true name a player picked for
+                    // itself would be worth nothing to anybody. Same treatment as the timestamp,
+                    // but done here rather than at the socket because only the coordinator knows
+                    // which names are already in play.
+                    //
+                    // An exhausted reservoir leaves whatever arrived, and the engine refuses it as
+                    // a duplicate -- a wrong name is worse than a failed action.
+                    if let Action::UseAbility(use_ability) = &mut request.payload
+                        && let AbilityBehaviour::TrueNameReroll(reroll) =
+                            &mut use_ability.ability_args
+                        && let Some(name) =
+                            names.draw(|name| true_names.values().any(|held| held == name))
+                    {
+                        reroll.true_name = name;
                     }
 
                     let line = to_line(&request);
@@ -449,6 +476,19 @@ pub async fn game(
                         // are not lost on a rebuild either -- `clock` covers them.
                         Err((error, context)) => (ActionOutcome::Err(error), context.commands),
                     };
+
+                    // Read before the commands are handed to the log, which takes them by value.
+                    // TrueNameUpdate is emitted on every SetTrueName, including a player's first,
+                    // so this mirror is complete without any special case for creation.
+                    for payload in &commands {
+                        if let Command::TrueNameUpdate {
+                            target_id,
+                            true_name,
+                        } = &payload.cmd
+                        {
+                            true_names.insert(*target_id, true_name.clone());
+                        }
+                    }
 
                     let at = history.extend(commands);
 

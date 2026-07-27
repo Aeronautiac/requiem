@@ -289,6 +289,14 @@ pub fn default_role_config() -> RoleConfigMap {
                     },
                     transferrable: false,
                 },
+                // One charge that never resets: a single reroll for the whole game.
+                RoleAbility {
+                    identifier: AbilityIdentifier {
+                        name: AbilityName::TrueNameReroll,
+                        variant: 0,
+                    },
+                    transferrable: false,
+                },
             ],
             passives: vec![],
             notebooks: vec![],

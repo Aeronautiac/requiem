@@ -56,7 +56,7 @@ impl ActionInterface for SetMember {
         // The member list is the authority; the viewport is a projection of it. Resync before
         // emitting anything, so a newcomer already has access when the roster below lands and a
         // leaver has already stopped receiving.
-        let viewport = channel.viewport;
+        let viewport = channel.membership_viewport;
         let viewers = channel.viewers();
         sync_viewport(eng, ctx, viewport, viewers, mutate);
 

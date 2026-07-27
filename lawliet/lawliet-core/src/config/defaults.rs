@@ -15,6 +15,7 @@ pub struct DefaultConfig {
     pub death_message: String,
     pub life_link_death_message: String,
     pub execution_death_message: String,
+    pub sacrifice_death_message: String,
     pub pseudocide_duration: Time,                   // milliseconds
     pub universal_abilities: Vec<AbilityIdentifier>, // the abilities that everyone gets regardless
     // of role
@@ -30,6 +31,7 @@ pub struct DefaultConfig {
     pub kidnap_time: Time,
     pub civ_arrest_time: Time, // how long a civilian arrest incarcerates the target
     pub civ_arrest_vote_time: Time, // how long a civilian arrest poll stays open
+    pub unlawful_arrest_time: Time, // how long an unlawful arrest incarcerates the target
     pub autopsy_window: Time,
     pub autopsy_redaction: bool,
     pub prosecution_autonomous: bool, // whether the plain Prosecute ability files autonomous trials
@@ -50,6 +52,8 @@ pub fn default_defaults() -> DefaultConfig {
         death_message: "They died from a sudden heart attack.".into(),
         life_link_death_message: "They died because of a life link.".into(),
         execution_death_message: "They were found guilty and subsequently executed.".into(),
+        sacrifice_death_message: "They were sacrificed to a shinigami in exchange for a true name."
+            .into(),
         pseudocide_duration: hrs(24),
         notebook_successes_per_day: 1,
         notebook_failures_per_day: 3,
@@ -63,6 +67,7 @@ pub fn default_defaults() -> DefaultConfig {
         kidnap_time: hrs(24),
         civ_arrest_time: hrs(24),
         civ_arrest_vote_time: hrs(6),
+        unlawful_arrest_time: hrs(24),
         autopsy_window: hrs(6),
         autopsy_redaction: false,
         prosecution_autonomous: true,

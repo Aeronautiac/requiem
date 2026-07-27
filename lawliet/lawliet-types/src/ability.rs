@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{common::ActorKey, role::Role};
+use crate::{
+    common::{ActorKey, LoungeKey},
+    role::Role,
+};
 
 #[derive(Hash, Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Serialize, Deserialize)]
 pub enum AbilityName {
@@ -62,6 +65,11 @@ pub enum AbilityBehaviour {
     TrueNameReveal(TrueNameReveal),
     NotebookReveal(NotebookReveal),
     CivilianArrest(CivilianArrest),
+    UnlawfulArrest(UnlawfulArrest),
+    UnderTheRadar(UnderTheRadar),
+    ShinigamiSacrifice(ShinigamiSacrifice),
+    KiraConnection(KiraConnection),
+    TrueNameReroll(TrueNameReroll),
 }
 
 // Open a public arrest vote against a player: any present player may vote, majority
@@ -70,6 +78,53 @@ pub enum AbilityBehaviour {
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
 pub struct CivilianArrest {
     pub target: ActorKey,
+}
+
+// A civilian arrest with no vote: the target is incarcerated immediately, for a duration of its
+// own. Like any incarceration the source is never disclosed — the world sees a jailing, not who
+// ordered it.
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct UnlawfulArrest {
+    pub target: ActorKey,
+}
+
+// Self-targeted. Nothing the user says is logged for the rest of the iteration: no entry lands in
+// their log viewport and no bug watching them relays anything. Carries no fields — you can only
+// take yourself off the record.
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct UnderTheRadar {}
+
+// Give the target a new true name, retiring whatever anyone had learned about the old one.
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct TrueNameReroll {
+    pub target: ActorKey,
+    // The server replaces this before the engine sees it, exactly as it does timestamps — a client
+    // does not get to name itself. Not yet wired: yagami has no name reservoir to draw from, so
+    // today whatever arrives is used.
+    //
+    // Carried INLINE rather than fetched: an engine that replays its log needs every action to be
+    // self-contained, and asking a client for a name mid-action would leave a window between the
+    // ask and the answer that no replay could reproduce.
+    pub true_name: String,
+}
+
+// Org ability. The org spends one of its own for a name: the sacrifice dies, and the true name of
+// some OTHER player is revealed to the org.
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct ShinigamiSacrifice {
+    // Must be an OG member of the acting org, and alive. They die for this.
+    pub sacrifice: ActorKey,
+    // Whose true name the org is buying. Never the sacrifice — you cannot spend someone to learn
+    // their own name.
+    pub name_target: ActorKey,
+}
+
+// Try to reach Kira through a lounge. The attempt always shows up in the lounge, naming the user
+// outright and saying whether it found anyone — there is no way to feel for Kira quietly. What
+// turns on a Kira actually being there is only whether the user's notebook block comes off.
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct KiraConnection {
+    pub lounge: LoungeKey,
 }
 
 // Org ability. Delegate a prosecution: invite `invitee` into the acting org and start a

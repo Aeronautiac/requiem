@@ -2,6 +2,12 @@
 * Authoritative and Player Action
 * Send a message to a channel
 *
+* A message on a loggable channel is addressed to the channel's membership viewport, to the two log
+* viewports that make up the record (the sender's and the channel's), and to every enabled bug
+* watching the sender. Modifier::LogNullification suppresses everything but the membership
+* viewport: the room genuinely heard it, and that cannot be taken back — being off the record only
+* ever means staying out of the record.
+*
 * A player message also ends a trial's grace subphase when the sender is the side holding the
 * floor — the one place a message drives something other than itself.
 */
@@ -54,10 +60,33 @@ impl ActionInterface for SendMessage {
                 channel.loggable
             };
 
-            // relay to all active bugs targeting this player if the channel is loggable and the player
-            // does not have log LogNullification
             let actor_data = get_actor(eng, id).expect("actor should already be validated");
             if loggable && !actor_data.has_modifier(Modifier::LogNullification) {
+                // The record, written twice because two abilities ask two different questions of
+                // it. An autopsy asks what a given player said, so it reads the sender's log
+                // viewport; a tap-in asks what was said in a given channel, so it reads the
+                // channel's. Neither can be answered from the other: sender_display may be a lie,
+                // and a channel's live viewport keeps messages this branch is suppressing.
+                let sender_log = eng
+                    .world
+                    .get_player(id)
+                    .expect("expected valid player")
+                    .log_viewport;
+                let channel_log = get_channel(eng, self.channel_id)
+                    .expect("channel already validated")
+                    .log_viewport;
+                for viewport in [sender_log, channel_log] {
+                    ctx.push_cmd(
+                        Command::AddMessage {
+                            content: self.content.clone(),
+                            channel_id: self.channel_id,
+                            sender_display: self.display,
+                        },
+                        CommandRecipient::Viewport(viewport),
+                        eng.time,
+                    );
+                }
+
                 let bug_ids: Vec<BugKey> = eng
                     .world
                     .get_player(id)
@@ -69,10 +98,8 @@ impl ActionInterface for SendMessage {
                 for bug_id in bug_ids {
                     let bug = eng.world.get_bug(bug_id).expect("expected valid bug");
                     if bug.enabled {
-                        // IMPORTANT:
-                        // since we're using the player's diplay here, it means that if they're posing
-                        // as someone else and send a message, the message will be relayed with that
-                        // fake identity (it will reveal them).
+                        // A borrowed display is relayed as-is, so posing as someone else and then
+                        // speaking on a bugged channel exposes the pose to whoever is listening.
                         let bug_viewport = bug.viewport;
                         ctx.push_cmd(
                             Command::AddBugMessage {

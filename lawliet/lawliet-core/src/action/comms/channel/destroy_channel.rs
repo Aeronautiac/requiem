@@ -27,7 +27,9 @@ impl ActionInterface for DestroyChannel {
         mutate: bool,
     ) -> ActionResult {
         actor.require_system()?;
-        let viewport = get_channel(eng, self.channel_id)?.viewport;
+        let channel = get_channel(eng, self.channel_id)?;
+        let viewport = channel.membership_viewport;
+        let log_viewport = channel.log_viewport;
 
         // Order matters and is easy to get wrong: the archival notice is addressed to the very
         // viewport being torn down, so it must be emitted while the members are still in it.
@@ -46,6 +48,8 @@ impl ActionInterface for DestroyChannel {
         if mutate {
             eng.world.remove_channel(self.channel_id);
             eng.world.remove_viewport(viewport);
+            // Nobody is ever granted the log viewport, so there is no one to exit from it.
+            eng.world.remove_viewport(log_viewport);
         }
 
         Ok(ActionResponse::DestroyChannel(DestroyChannelResponse {}))

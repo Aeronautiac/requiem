@@ -4,6 +4,7 @@
 
 use indexmap::IndexSet;
 use lawliet_types::{action::ActionContext, command::CommandRecipient};
+use smallvec::SmallVec;
 
 use crate::{
     Time,
@@ -32,7 +33,7 @@ use crate::{
     kidnapping::Kidnapping,
     lounge::Lounge,
     notebook::Notebook,
-    passive::{Passive, PassiveType},
+    passive::{ContactLog, Passive, PassiveType},
     poll::Poll,
     prosecution::Prosecution,
 };
@@ -189,6 +190,78 @@ pub fn actor_get_effective_passive(
         }
     }
     None
+}
+
+// Whether `actor_id` effectively possesses `passive_id` — owning it outright, or reaching it
+// through an ActorLinkType::Passive link to someone who does.
+//
+// This is the inverse of actor_get_effective_passive, which searches by TYPE and stops at the first
+// match. Passive VIEWPORT membership is what needs this direction: two passives of the same type can
+// coexist, so "does this actor reach passive P" cannot be answered by asking "what passive of P's
+// type does this actor reach".
+//
+// Follows the same traversal, so it inherits the same shape: a Passive link cycle would recurse
+// forever, which no configuration currently produces.
+pub fn actor_reaches_passive(eng: &Engine, actor_id: ActorKey, passive_id: PassiveKey) -> bool {
+    let Some(actor_data) = eng.world.get_actor(actor_id) else {
+        return false;
+    };
+
+    if actor_data.passives.contains(&passive_id) {
+        return true;
+    }
+
+    actor_data.actor_links.iter().any(|link| {
+        link.link_type == ActorLinkType::Passive
+            && eng
+                .world
+                .get_actor(link.link_dest)
+                .is_some_and(|other| !other.has_modifier(Modifier::DisablePassiveLinks))
+            && actor_reaches_passive(eng, link.link_dest, passive_id)
+    })
+}
+
+// Write a contact to every contact-log passive entitled to see it, addressed to that passive's own
+// viewport.
+//
+// `initiator` is the actor who actually performed the contact, and is used for nothing but the
+// LogNullification check — it never reaches the log, which carries displays only. The two come
+// apart for a fabricated lounge, where the displays name a pair that never spoke.
+//
+// None when the engine itself did it: there is no actor to be off the record, so it is always
+// logged, and the log names ActorDisplay::System as the contactor.
+pub fn cmd_contact_log(
+    eng: &mut Engine,
+    ctx: &mut ActionContext,
+    initiator: Option<ActorKey>,
+    log: ContactLog,
+) {
+    if initiator.is_some_and(|id| {
+        get_actor(eng, id).is_ok_and(|actor| actor.has_modifier(Modifier::LogNullification))
+    }) {
+        return;
+    }
+
+    let entitled: SmallVec<[(PassiveKey, ViewportKey); 4]> = eng
+        .world
+        .passives
+        .iter()
+        .filter_map(|(id, passive)| match passive.passive_type {
+            PassiveType::ContactLogs(kind) if kind.covers(log.contact_id) => {
+                Some((id, passive.viewport))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let time = eng.time;
+    for (passive_id, viewport) in entitled {
+        ctx.push_cmd(
+            Command::AddContactLog { passive_id, log },
+            CommandRecipient::Viewport(viewport),
+            time,
+        );
+    }
 }
 
 pub fn get_player(eng: &Engine, id: ActorKey) -> Result<&Player, ActionError> {
@@ -486,7 +559,7 @@ pub fn cmd_channel(
         .world
         .get_channel(channel_id)
         .expect("channel addressed by a command does not exist: engine invariant violated")
-        .viewport;
+        .membership_viewport;
     ctx.push_cmd(cmd, CommandRecipient::Viewport(viewport), eng.time);
 }
 
@@ -505,7 +578,7 @@ pub fn owner_view_recipient(eng: &Engine, owner_id: ActorKey) -> CommandRecipien
         Ok(org) => CommandRecipient::Viewport(
             get_channel(eng, org.channel_id)
                 .expect("org channel does not exist: engine invariant violated")
-                .viewport,
+                .membership_viewport,
         ),
         Err(_) => CommandRecipient::Actor(owner_id),
     }

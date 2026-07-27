@@ -19,8 +19,9 @@ use crate::{
     channel::{ChannelMember, ChannelPermissions},
     command::Command,
     common::{ActorKey, LoungeKey},
-    helpers::{cmd_channel, get_player, get_player_mut},
+    helpers::{cmd_channel, cmd_contact_log, get_player, get_player_mut},
     lounge::{Lounge, LoungeVariant},
+    passive::{ContactEvent, ContactLog},
     world::ContactChannel,
 };
 
@@ -44,6 +45,12 @@ impl ActionInterface for CreateLounge {
         actor.admin_or_system()?;
 
         let mut participants: SmallVec<[Participant; 8]> = smallvec![];
+        // How the contact reads to a log watcher, and who actually made it. These come apart for a
+        // Fake lounge: the displays name a pair that never spoke, while the creator is the only one
+        // who did anything.
+        let contact_displays: (ActorDisplay, ActorDisplay);
+        let initiator: ActorKey;
+
         match &self.variant {
             LoungeVariant::Fake {
                 creator_id,
@@ -57,6 +64,11 @@ impl ActionInterface for CreateLounge {
                         ActorDisplay::Raw(*contactor_id),
                     ],
                 });
+                contact_displays = (
+                    ActorDisplay::Raw(*contactor_id),
+                    ActorDisplay::Raw(*contacted_id),
+                );
+                initiator = *creator_id;
             }
             LoungeVariant::Basic {
                 contacted_id,
@@ -70,6 +82,11 @@ impl ActionInterface for CreateLounge {
                     id: *contacted_id,
                     displays: indexset![ActorDisplay::Raw(*contacted_id),],
                 });
+                contact_displays = (
+                    ActorDisplay::Raw(*contactor_id),
+                    ActorDisplay::Raw(*contacted_id),
+                );
+                initiator = *contactor_id;
             }
             LoungeVariant::Anonymous {
                 contacted_id,
@@ -94,6 +111,11 @@ impl ActionInterface for CreateLounge {
                     id: *contacted_id,
                     displays: indexset![ActorDisplay::Raw(*contacted_id),],
                 });
+                contact_displays = (
+                    ActorDisplay::Role(role),
+                    ActorDisplay::Raw(*contacted_id),
+                );
+                initiator = *contactor_id;
             }
         };
         for participant in &participants {
@@ -117,6 +139,18 @@ impl ActionInterface for CreateLounge {
             let contact_id = eng
                 .world
                 .register_contact_channel(ContactChannel::Lounge(lounge_id));
+
+            cmd_contact_log(
+                eng,
+                ctx,
+                Some(initiator),
+                ContactLog {
+                    contact_id,
+                    contactor: contact_displays.0,
+                    contacted: contact_displays.1,
+                    event: ContactEvent::LoungeOpened,
+                },
+            );
 
             for participant in participants {
                 Action::SetMember(SetMember {

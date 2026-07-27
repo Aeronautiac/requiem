@@ -25,6 +25,7 @@ pub mod false_anonymous_contact;
 pub mod force_invite;
 pub mod gun;
 pub mod ipp;
+pub mod kira_connection;
 pub mod leader_resign;
 pub mod notebook_reveal;
 pub mod outsource;
@@ -78,6 +79,11 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::TrueNameReveal(a) => a.ability_name(),
             AbilityBehaviour::NotebookReveal(a) => a.ability_name(),
             AbilityBehaviour::CivilianArrest(a) => a.ability_name(),
+            AbilityBehaviour::UnlawfulArrest(a) => a.ability_name(),
+            AbilityBehaviour::UnderTheRadar(a) => a.ability_name(),
+            AbilityBehaviour::ShinigamiSacrifice(a) => a.ability_name(),
+            AbilityBehaviour::KiraConnection(a) => a.ability_name(),
+            AbilityBehaviour::TrueNameReroll(a) => a.ability_name(),
         }
     }
 
@@ -140,6 +146,21 @@ impl AbilityInterface for AbilityBehaviour {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
             AbilityBehaviour::CivilianArrest(a) => {
+                a.handle(eng, ctx, actor, ability, version, mutate)
+            }
+            AbilityBehaviour::UnlawfulArrest(a) => {
+                a.handle(eng, ctx, actor, ability, version, mutate)
+            }
+            AbilityBehaviour::UnderTheRadar(a) => {
+                a.handle(eng, ctx, actor, ability, version, mutate)
+            }
+            AbilityBehaviour::ShinigamiSacrifice(a) => {
+                a.handle(eng, ctx, actor, ability, version, mutate)
+            }
+            AbilityBehaviour::KiraConnection(a) => {
+                a.handle(eng, ctx, actor, ability, version, mutate)
+            }
+            AbilityBehaviour::TrueNameReroll(a) => {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
         }

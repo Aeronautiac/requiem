@@ -13,6 +13,7 @@ use crate::{
     common::{ActorKey, Version},
     engine::Engine,
     helpers::{cmd_world_event, get_actor_mut, get_charge_pool_mut, sync_presence},
+    viewport::ViewportKind,
 };
 
 // true names must be unique
@@ -44,6 +45,15 @@ impl ActionInterface for AddPlayer {
 
         // player will only be physically created in the mutation path
         if mutate {
+            // Allocated here rather than in Player::new because viewport lifetime belongs to
+            // actions. Nothing is ever granted access to it: it names the player as a sender, and
+            // is only ever addressed to.
+            let log_viewport = eng.world.add_viewport(ViewportKind::Log);
+            eng.world
+                .get_player_mut(player_id)
+                .expect("just created")
+                .log_viewport = log_viewport;
+
             // A new player starts present, so they enter the presence viewport here — and
             // because their watermark starts at zero, entry hands them every world event since
             // the game began. That is what the BasePlayer stream existed for ("any player shall

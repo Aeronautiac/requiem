@@ -27,13 +27,15 @@ impl ActionInterface for CreateChannel {
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;
 
-        // The channel owns its viewport for its whole life; DestroyChannel frees it. Both live
+        // The channel owns both viewports for its whole life; DestroyChannel frees them. Both live
         // in actions rather than World::add_channel/remove_channel so the allocation sits next
         // to the `mutate` gate that governs it instead of inheriting it invisibly.
         let (id, viewport) = if mutate {
             let viewport = eng.world.add_viewport(ViewportKind::Channel);
+            let log_viewport = eng.world.add_viewport(ViewportKind::Log);
             (
-                eng.world.add_channel(Channel::new(self.loggable, viewport)),
+                eng.world
+                    .add_channel(Channel::new(self.loggable, viewport, log_viewport)),
                 viewport,
             )
         } else {

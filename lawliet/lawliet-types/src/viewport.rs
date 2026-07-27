@@ -24,4 +24,9 @@ pub enum ViewportKind {
     // The world-level singleton every present player has access to. Replaces both the old
     // BasePlayer stream and the deferred-command queue.
     Presence,
+    // One per player, naming them as the sender of everything logged from them. The only viewport
+    // that is an identity rather than an audience: nobody is ever granted access to it, and the
+    // engine never delivers through it. yagami keys its message store by it, which is how an
+    // autopsy answers who really sent something that was said under a borrowed display.
+    Log,
 }

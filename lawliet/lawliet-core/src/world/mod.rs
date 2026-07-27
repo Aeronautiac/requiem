@@ -38,7 +38,7 @@ pub enum WorldError {
 const MISSING_VIEWPORT: &str =
     "viewport does not exist: engine invariant violated (an object outlived its viewport)";
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContactChannel {
     Lounge(LoungeKey),
     Gc(GroupchatKey),
@@ -335,6 +335,18 @@ impl World {
 
     pub fn remove_contact_channel(&mut self, id: ID) {
         self.contact_channels.swap_remove(&id);
+    }
+
+    // The contact id a lounge or groupchat was registered under. Contact logs need this direction:
+    // they are written wherever the graph changes, and those sites hold the lounge or gc key rather
+    // than the id it was given.
+    //
+    // A scan, because the map is keyed the other way and there are few contact channels.
+    pub fn contact_id_of(&self, channel: ContactChannel) -> Option<ID> {
+        self.contact_channels
+            .iter()
+            .find(|(_, registered)| **registered == channel)
+            .map(|(id, _)| *id)
     }
 
     pub fn add_channel(&mut self, channel: Channel) -> ChannelKey {

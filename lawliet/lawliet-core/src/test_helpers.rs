@@ -165,6 +165,15 @@ pub fn quick_write(
     }
 }
 
+pub fn next_iteration(eng: &mut Engine, time: Time) {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::NextIteration(crate::action::NextIteration {}),
+    })
+    .unwrap();
+}
+
 pub fn null_action(eng: &mut Engine, time: Time) {
     eng.execute(ActionRequest {
         actor: ActionActor::System,

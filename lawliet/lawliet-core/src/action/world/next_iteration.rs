@@ -27,8 +27,11 @@ impl ActionInterface for NextIteration {
                 pool.on_iteration();
             }
 
+            // Iteration-scoped states: they last until the boundary and no further, so there is
+            // nothing per-actor to count down.
             for (_, actor) in eng.world.actors.iter_mut() {
                 actor.remove_state(State::Ipp);
+                actor.remove_state(State::UnderTheRadar);
             }
 
             eng.world.curr_iteration += 1;

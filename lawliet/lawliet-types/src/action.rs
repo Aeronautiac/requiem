@@ -92,6 +92,10 @@ pub enum ActionError {
     MustChooseSuccessor,
     NoEyes,
     CannotProsecuteSelf,
+    // ShinigamiSacrifice: only a founding member of the org can be spent, and never for their own
+    // name.
+    NotAnOgMember,
+    CannotSacrificeForOwnName,
     // A player used PublicKidnap with a `performer` set — designating who appears as the
     // kidnapper is an org-only choice; a player is always shown as themselves.
     PerformerRequiresOrg,
@@ -509,6 +513,12 @@ pub struct UpdateBugVisibilitiesResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct UpdateBugVisibilities {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdatePassiveVisibilitiesResponse {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdatePassiveVisibilities {}
 
 // channel
 
@@ -1279,6 +1289,7 @@ pub enum Action {
     InitializeEngine(InitializeEngine),
     SetRandomSeed(SetRandomSeed),
     UpdateBugVisibilities(UpdateBugVisibilities),
+    UpdatePassiveVisibilities(UpdatePassiveVisibilities),
     ProsecutionVoteRes(ProsecutionVoteRes),
     CreateKidnapping(CreateKidnapping),
     ReleaseKidnapping(ReleaseKidnapping),
@@ -1388,6 +1399,7 @@ pub enum ActionResponse {
     InitializeEngine(InitializeEngineResponse),
     SetRandomSeed(SetRandomSeedResponse),
     UpdateBugVisibilities(UpdateBugVisibilitiesResponse),
+    UpdatePassiveVisibilities(UpdatePassiveVisibilitiesResponse),
     ProsecutionVoteRes(ProsecutionVoteResResponse),
     CreateKidnapping(CreateKidnappingResponse),
     ReleaseKidnapping(ReleaseKidnappingResponse),

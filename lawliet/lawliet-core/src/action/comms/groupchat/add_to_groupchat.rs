@@ -12,7 +12,11 @@ use crate::{
     },
     actor::{ActorDisplay, modifier::Modifier},
     channel::{ChannelMember, ChannelPermissions},
-    helpers::{actor_id, get_actor, get_actor_mut, get_gc, get_gc_mut, get_player_mut},
+    helpers::{
+        actor_id, cmd_contact_log, get_actor, get_actor_mut, get_gc, get_gc_mut, get_player_mut,
+    },
+    passive::{ContactEvent, ContactLog},
+    world::ContactChannel,
 };
 
 // make sure to keep the player's caches up to date as well
@@ -76,6 +80,26 @@ impl ActionInterface for AddToGroupchat {
                 player_id: self.player_id,
             })
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+
+            // The gc owner is who brought them in. An ownerless gc was seated by the engine, which
+            // is what the log then says.
+            let adder = get_gc(eng, self.groupchat_id)?.owner;
+            if let Some(contact_id) = eng
+                .world
+                .contact_id_of(ContactChannel::Gc(self.groupchat_id))
+            {
+                cmd_contact_log(
+                    eng,
+                    ctx,
+                    adder,
+                    ContactLog {
+                        contact_id,
+                        contactor: adder.map_or(ActorDisplay::System, ActorDisplay::Raw),
+                        contacted: ActorDisplay::Raw(self.player_id),
+                        event: ContactEvent::GroupchatAdded,
+                    },
+                );
+            }
         }
 
         if self.owner {

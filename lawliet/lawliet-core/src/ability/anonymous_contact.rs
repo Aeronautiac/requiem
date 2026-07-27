@@ -1,8 +1,9 @@
+// Contact someone while showing only your role.
+//
 // TODO:
 // potentially add an option to tie lounges to ability ids. if the ability is destroyed, so is the lounge.
 // another approach is to switch it to a normal lounge.
 // do not refund the contact token.
-// also add dynamic role tracking for the case where the anonymous lounge persists after a role change.
 // this is low priority right now.
 
 use crate::{
@@ -39,6 +40,10 @@ impl AbilityInterface for AnonymousContact {
             return Err(ActionError::CannotContactSelf);
         }
 
+        // Static: the role is read once, here, and the lounge keeps showing it afterwards. Switch
+        // to Dynamic once a role change can update a display that already exists — until then
+        // Dynamic would be resolved once at creation anyway (see create_lounge) and only look
+        // like it tracked anything.
         Action::CreateLounge(CreateLounge {
             variant: LoungeVariant::Anonymous {
                 contacted_id: self.target,
