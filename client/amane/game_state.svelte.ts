@@ -912,6 +912,25 @@ export class GameState {
     if (viewport !== undefined) this.#channel_to_viewport.set(key, viewport);
   }
 
+  // Whether this delivery is the CANONICAL copy of a channel's content.
+  //
+  // The engine emits channel content more than once on purpose: to the channel's membership
+  // viewport, and to the record — the channel's log viewport, plus the sender's for a message.
+  // Identical content, different recipients. A connection that reads every viewport (any admin key,
+  // by definition) therefore receives all of them.
+  //
+  // Global state must be written for exactly ONE, because the channel's event list is shared by
+  // every view: writing per delivery grows a copy per viewport, and then every view renders the
+  // duplicates — including an ordinary player's, which holds no log viewport at all.
+  //
+  // The membership viewport is canonical because it is the copy every reader of the channel gets.
+  // The record is addressed to viewports nobody is ever granted, so it must never be what builds
+  // renderable state; it exists for the server to answer a reveal from.
+  #canonical_channel_copy(recipient: CommandRecipient, channel_key: string): boolean {
+    const viewport = recipientToViewport(recipient);
+    return viewport !== undefined && this.#channel_to_viewport.get(channel_key) === viewport;
+  }
+
   // What a command does to state every view shares. Runs exactly once, and is never replayed —
   // so unlike a per-view handler this one may consume what it reads.
   #apply_global({ recipient, cmd, timestamp }: CommandPayload) {
@@ -1057,6 +1076,9 @@ export class GameState {
     if ("AddMessage" in cmd) {
       const { channel_id, content, sender_display } = cmd.AddMessage;
       const key = slotKeyToString(channel_id);
+      // Three copies of every message reach an admin connection: the room's, the channel's record,
+      // and the sender's. Only the room's builds state.
+      if (!this.#canonical_channel_copy(recipient, key)) return;
       // its not possible to add a message to a channel that doesnt exist
       const channel = this.channels.get(key)!;
       channel.events.push({
@@ -1076,7 +1098,9 @@ export class GameState {
     // cost of the ability.
     if ("KiraConnectionAttempt" in cmd) {
       const { channel_id, user, success } = cmd.KiraConnectionAttempt;
-      const channel = this.channels.get(slotKeyToString(channel_id));
+      const key = slotKeyToString(channel_id);
+      if (!this.#canonical_channel_copy(recipient, key)) return;
+      const channel = this.channels.get(key);
       channel?.events.push({
         timestamp,
         data: { KiraConnectionAttempt: { user: slotKeyToString(user), success } },
@@ -1088,8 +1112,9 @@ export class GameState {
     // carrying no reader — the members learn they were tapped, never by whom. That gap is what
     // makes tapping a line you are on yourself a move rather than a waste.
     if ("ChannelTapped" in cmd) {
-      const channel = this.channels.get(slotKeyToString(cmd.ChannelTapped.channel_id));
-      channel?.events.push({ timestamp, data: { ChannelTapped: {} } });
+      const key = slotKeyToString(cmd.ChannelTapped.channel_id);
+      if (!this.#canonical_channel_copy(recipient, key)) return;
+      this.channels.get(key)?.events.push({ timestamp, data: { ChannelTapped: {} } });
       return;
     }
 
@@ -1097,7 +1122,7 @@ export class GameState {
     if ("NotebookWrite" in cmd) {
       const { notebook_id, user_id, message, true_name, delay, successes_remaining, attempts_remaining, success, target_saved } = cmd.NotebookWrite;
       const channel_key = this.#notebook_to_channel.get(slotKeyToString(notebook_id));
-      if (channel_key) {
+      if (channel_key && this.#canonical_channel_copy(recipient, channel_key)) {
         const channel = this.channels.get(channel_key);
         if (channel) {
           channel.events.push({
