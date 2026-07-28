@@ -13,7 +13,7 @@ use crate::{
     command::Command,
     helpers::{
         actor_id, get_ability, get_ability_config, get_ability_mut, get_actor, get_charge_pool_mut,
-        owner_view_recipient,
+        owner_view_recipient, require_running,
     },
 };
 
@@ -29,6 +29,9 @@ impl ActionInterface for UseAbility {
         mutate: bool,
     ) -> ActionResult {
         actor.require_not_system()?;
+        // The one gate that covers every ability, contact included — and with it group chats,
+        // lounges, polls and prosecutions, which all descend from an ability.
+        require_running(eng)?;
         let actor_id = actor_id(actor).unwrap();
         let config = get_ability_config(eng, self.ability_id)?;
         let req_presence = config.require_presence;

@@ -5,6 +5,7 @@
     actorLabel,
     GAME_STATE_KEY,
     displayKey,
+    isReadOnlyKind,
     phaseAnnouncement,
     playerLabel,
   } from "../../game_state.svelte.ts";
@@ -13,13 +14,14 @@
   import { now } from "../../time.svelte.ts";
   import type { GameEvent, GameState, WriteEvent } from "../../game_state.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import type { ActionRequest, ActorDisplay, PollSubject, ProsecutionPhaseView } from "../../bindings";
+  import type { ActionRequest, ActorDisplay, PollSubject, ProsecutionPhaseView, TapInOutcome } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
   import { formatDuration } from "../../lib/utils";
   import Button from "../kit/Button.svelte";
   import Message from "./Message.svelte";
   import Announcement from "./Announcement.svelte";
+  import ContactLogRow from "./ContactLogRow.svelte";
   import NotebookWrite from "./NotebookWrite.svelte";
   import NotebookPass from "./NotebookPass.svelte";
 
@@ -62,6 +64,12 @@
   // Bug feeds are read-only surveillance logs: never interactable, and always readable to
   // whoever the feed was listed for (visibility is gated when it's shown in the sidebar).
   const is_bug = $derived(current_channel?.kind === "Bug");
+  // Contact logs are read-only records of who reached whom, gated the same way.
+  const is_contact_log = $derived(current_channel?.kind === "ContactLog");
+  // Any feed rather than a room: no perms, no send box, no loggability control.
+  const read_only_feed = $derived(
+    current_channel != null && isReadOnlyKind(current_channel.kind),
+  );
   const archived = $derived(current_channel?.archived ?? false);
   // You can only send in a channel that actually exists. For news with no backing
   // channel this is false, so it isn't interactable — only the event log shows.
@@ -69,26 +77,21 @@
   const can_send = $derived(
     current_channel != null &&
       !archived &&
-      !is_info &&
-      !is_bug &&
+      !read_only_feed &&
       (is_admin || (current_perms?.send ?? false)),
   );
-  const can_read = $derived(is_info || is_bug || is_admin || (current_perms?.read ?? false));
+  const can_read = $derived(read_only_feed || is_admin || (current_perms?.read ?? false));
   // This viewer has left the channel's viewport, so nothing further about it will arrive: what is
   // shown is the last thing they heard, not the current state. Distinct from `archived`, which
   // means the channel itself is over for everyone — this one is personal, and the channel may well
   // still be busy without them. Admin reads every viewport, so it is never frozen for them.
   const frozen = $derived(
     !is_admin &&
-      !is_info &&
+      !read_only_feed &&
       backing_channel_id != null &&
       (game.views
         .get(ui.viewer)
-        ?.frozen(
-          is_bug
-            ? undefined // bug feeds are gated by visible_bugs, which never shrinks
-            : game.channel_viewport(backing_channel_id),
-        ) ??
+        ?.frozen(game.channel_viewport(backing_channel_id)) ??
         false),
   );
   // Notebook-ness isn't a channel kind — it's derived from the channel->notebook mapping.
@@ -100,14 +103,14 @@
       : undefined,
   );
   // Loggability is a global channel property (SetChannelLoggable). Show it, and let a viewer
-  // with loggability control flip it. Synthetic info/bug feeds aren't engine channels, so the
-  // control never applies there.
+  // with loggability control flip it. Synthetic feeds aren't engine channels, so the control
+  // never applies there.
   const loggable = $derived(
     backing_channel_id ? game.is_channel_loggable(backing_channel_id) : false,
   );
-  // Show the status on any real engine channel (info/bug feeds aren't engine channels);
+  // Show the status on any real engine channel (read-only feeds aren't engine channels);
   // it becomes an interactive toggle only for viewers with loggability control.
-  const show_loggability = $derived(current_channel != null && !is_info && !is_bug);
+  const show_loggability = $derived(current_channel != null && !read_only_feed);
   const can_control_loggability = $derived(
     show_loggability && (is_admin || (current_perms?.loggability_control ?? false)),
   );
@@ -227,6 +230,23 @@
     if (!w.success) return "#6b7280";
     if (w.target_saved) return "#f59e0b";
     return "#ef4444";
+  }
+
+  // The answer to a tap-in guess. A miss says WHICH miss on purpose: a contact channel is loggable
+  // unless an admin turned it off, so hitting a dark one is a real and unusual finding rather than
+  // a polite way of saying the number was wrong.
+  function tap_in_text(contact_id: number, outcome: TapInOutcome): string {
+    if (outcome === "NoSuchContact") {
+      return `Contact ${contact_id} does not exist. Nobody has ever been connected under that number.`;
+    }
+    if (outcome === "NotLoggable") {
+      return `Contact ${contact_id} exists, but logging is off there — nothing was ever written down.`;
+    }
+    const scope =
+      outcome.Found.range === null
+        ? "everything it has ever carried"
+        : `the last ${formatDuration(outcome.Found.range)}`;
+    return `Tapped into contact ${contact_id}. Reading ${scope}.`;
   }
 
   // News-feed text for a prosecution start/advance/end (derived from the phase diff).
@@ -513,6 +533,45 @@
               description="Release"
               content={`${rel.victim ? player_name(rel.victim) : "A prisoner"} has been released.`}
             />
+          {:else if "NewIteration" in event.data}
+            {@const it = event.data.NewIteration.iteration}
+            <Announcement
+              color="#f59e0b"
+              description={it === 1 ? "The Game Begins" : "New Day"}
+              content={it === 1
+                ? "Day 1. Abilities and notebooks are live."
+                : `Day ${it}.`}
+            />
+          {:else if "ChannelTapped" in event.data}
+            <Announcement
+              color="#eab308"
+              description="Tapped"
+              content="Someone outside this conversation read what was said here. There is no way to tell who."
+            />
+          {:else if "TapInResult" in event.data}
+            {@const tr = event.data.TapInResult}
+            <Announcement
+              color={typeof tr.outcome === "string" ? "#6b7280" : "#14b8a6"}
+              description="Tap In"
+              content={tap_in_text(tr.contact_id, tr.outcome)}
+            />
+          {:else if "KiraConnectionAttempt" in event.data}
+            {@const ka = event.data.KiraConnectionAttempt}
+            <Announcement
+              color={ka.success ? "#ef4444" : "#6b7280"}
+              description="Kira Connection"
+              content={ka.success
+                ? `${player_name(ka.user)} reached for Kira through this line — and Kira answered.`
+                : `${player_name(ka.user)} reached for Kira through this line. Nobody answered.`}
+            />
+          {:else if "ContactLogEntry" in event.data}
+            {@const log = event.data.ContactLogEntry}
+            <ContactLogRow
+              from={display_string(log.contactor)}
+              to={display_string(log.contacted)}
+              event={log.event}
+              timestamp={event.timestamp}
+            />
           {:else if "ProsecutionEvent" in event.data}
             {@const pe = event.data.ProsecutionEvent}
             <Announcement
@@ -600,6 +659,13 @@
                 {archived
                   ? "This surveillance feed is no longer active."
                   : "Read-only surveillance feed."}
+              </div>
+            {:else if is_contact_log}
+              <div
+                class="rounded-lg bg-neutral-800/50 px-4 py-2.5 text-center text-sm italic text-neutral-500"
+              >
+                Read-only contact log. Names here are how each contact appeared, not who
+                was really behind it.
               </div>
             {:else if archived}
               <div

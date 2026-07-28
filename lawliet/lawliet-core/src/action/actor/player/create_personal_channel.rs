@@ -52,6 +52,8 @@ impl ActionInterface for CreatePersonalChannel {
             ctx,
             Command::MapPersonalChannel { channel_id },
             channel_id,
+            false,
+            None,
         );
 
         if mutate {

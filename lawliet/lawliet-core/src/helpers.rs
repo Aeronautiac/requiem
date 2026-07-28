@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use indexmap::IndexSet;
-use lawliet_types::{action::ActionContext, command::CommandRecipient};
+use lawliet_types::{action::ActionContext, command::CommandRecipient, world::WorldPhase};
 use smallvec::SmallVec;
 
 use crate::{
@@ -83,6 +83,25 @@ pub fn require_time_not_passed(eng: &Engine, t: Time) -> Result<(), ActionError>
     } else {
         Err(ActionError::TimeAlreadyPassed)
     }
+}
+
+// Refuse anything that is PLAY while the world is not running.
+//
+// Not a blanket gate on players: a world in setup is a real, populated place, and a player may talk
+// in any channel they can already see — ordinary channel permission answers that, with no phase
+// rule needed. What waits is exactly two things: you cannot use abilities, and you cannot use or
+// pass a notebook.
+//
+// Abilities collapse to one gate because contact IS an ability, and group chats, lounges, polls and
+// prosecutions all descend from one — blocking the root blocks the branches.
+//
+// Checks FOR Running rather than against Setup, so a phase added on the other end of the game
+// (post-game, ended) is refused by default instead of silently counting as play.
+pub fn require_running(eng: &Engine) -> Result<(), ActionError> {
+    if eng.world.phase != WorldPhase::Running {
+        return Err(ActionError::GameNotStarted);
+    }
+    Ok(())
 }
 
 pub fn require_alive(eng: &Engine, actor_id: ActorKey) -> Result<(), ActionError> {
@@ -531,9 +550,13 @@ pub fn require_not_defendant(eng: &Engine, actor_id: ActorKey) -> Result<(), Act
     }
 }
 
-// Address a command to a channel. Most "who should see this" questions in the comms layer
-// reduce to this one, because notebooks, lounges, groupchats and orgs all hang off a backing
-// channel and inherit its answer.
+// Address a command to a channel, and to that channel's record when it belongs there. Most "who
+// should see this" questions in the comms layer reduce to this one, because notebooks, lounges,
+// groupchats and orgs all hang off a backing channel and inherit its answer.
+//
+// The membership viewport always receives it — the room witnessed whatever this is, and a monotonic
+// client cannot be told otherwise afterwards. The log viewport is the separate thing a tap-in reads
+// back, so being off the record only ever means staying out of it, never unsaying it.
 //
 // The mutate gate is not an optimization, it is the point. Resolving a recipient on the validate
 // pass is meaningless — push_cmd discards the command anyway — and actively dangerous, because
@@ -551,16 +574,85 @@ pub fn cmd_channel(
     ctx: &mut ActionContext,
     cmd: Command,
     channel_id: ChannelKey,
+    // Whether somebody in the room would have WITNESSED this. False for the plumbing that makes a
+    // channel work — registrations, membership bookkeeping, the loggable flag itself — which nobody
+    // witnesses and which is therefore no part of the record.
+    witnessed: bool,
+    // Whoever is doing it, used for nothing but the LogNullification check. None when the engine
+    // itself did it: there is no actor to be off the record, so it is always logged.
+    initiator: Option<ActorKey>,
 ) {
     if !ctx.mutate {
         return;
     }
-    let viewport = eng
+    let channel = eng
         .world
         .get_channel(channel_id)
-        .expect("channel addressed by a command does not exist: engine invariant violated")
-        .membership_viewport;
-    ctx.push_cmd(cmd, CommandRecipient::Viewport(viewport), eng.time);
+        .expect("channel addressed by a command does not exist: engine invariant violated");
+    let (membership, log, loggable) = (
+        channel.membership_viewport,
+        channel.log_viewport,
+        channel.loggable,
+    );
+
+    // Nullification covers events and not just messages, because the modifier would be worth
+    // nothing otherwise: taking yourself off the record is pointless if one Kira attempt puts you
+    // back on it.
+    let nullified = initiator.is_some_and(|id| {
+        get_actor(eng, id).is_ok_and(|actor| actor.has_modifier(Modifier::LogNullification))
+    });
+
+    if witnessed && loggable && !nullified {
+        ctx.push_cmd(cmd.clone(), CommandRecipient::Viewport(log), eng.time);
+    }
+    ctx.push_cmd(cmd, CommandRecipient::Viewport(membership), eng.time);
+}
+
+// Tell an actor what states they are currently in.
+//
+// The whole set rather than the change: a client that ever missed one would otherwise stay wrong
+// forever, and the set is a handful of bits.
+//
+// Directed, with no broadcast form. What OTHER viewers may know about an actor is announced by the
+// event that caused it — Death, Kidnapping, Bugged — each of which already answers the visibility
+// question correctly for its own case. Presence therefore does not gate this: a player who has just
+// lost presence still learns they are dead, because this is addressed to them and not to a viewport.
+pub fn cmd_actor_state(eng: &mut Engine, ctx: &mut ActionContext, actor_id: ActorKey) {
+    let Ok(actor) = get_actor(eng, actor_id) else {
+        return;
+    };
+    let state = actor.states;
+    ctx.push_cmd(
+        Command::ActorState { state, actor_id },
+        owner_view_recipient(eng, actor_id),
+        eng.time,
+    );
+}
+
+// Tell a member whether they are an OG of an org, and mirror it to System for the admin inspector.
+//
+// Personal info, addressed exactly like a role or a true name: yours alone. The rest of the org
+// hears nothing — its roster is a separate stream on the org's channel that says only who is in it,
+// so who an org may spend is something each member knows about themselves and must be told about
+// anyone else.
+pub fn cmd_og_status(
+    eng: &Engine,
+    ctx: &mut ActionContext,
+    org_id: ActorKey,
+    target_id: ActorKey,
+    og: bool,
+) {
+    for recipient in [CommandRecipient::Actor(target_id), CommandRecipient::System] {
+        ctx.push_cmd(
+            Command::OgStatus {
+                target_id,
+                org_id,
+                og,
+            },
+            recipient,
+            eng.time,
+        );
+    }
 }
 
 // Where a view of something an ACTOR owns should be addressed.

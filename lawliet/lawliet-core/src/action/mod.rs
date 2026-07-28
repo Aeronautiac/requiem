@@ -90,6 +90,8 @@ impl ActionInterface for Action {
             Action::RemoveVote(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::PollCleanup(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::AddToOrg(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::SetOgStatus(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::SetBlacklistStatus(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::RemoveFromOrg(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CreateOrg(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::SystemUseOrgAbility(a) => a.handle(eng, ctx, actor, version, mutate),
@@ -144,6 +146,7 @@ impl ActionInterface for Action {
             Action::ReleaseIncarceration(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CullIncarcerations(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CreatePersonalChannel(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::StartGame(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::NextIteration(a) => a.handle(eng, ctx, actor, version, mutate),
         }
     }

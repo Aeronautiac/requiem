@@ -35,6 +35,22 @@ fn identifier(name: AbilityName, variant: Variant) -> AbilityIdentifier {
     AbilityIdentifier { name, variant }
 }
 
+// The wrong guesses a tap-in gets, shared by both variants because it is not part of what either
+// one buys. A contact channel is only reachable by guessing its number out of one incrementing
+// sequence, so without a cap on misses the sequence could simply be walked from the top down until
+// something answered — which would give away how many contacts exist in the game.
+fn tap_in_guesses() -> ConfigPoolLink {
+    ConfigPoolLink {
+        link_type: PoolLinkType::Restrictive,
+        weight: 1,
+        condition: ChargeCondition::OnFailure.into(),
+        details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
+            charges: 3,
+            reset_time: 1,
+        }),
+    }
+}
+
 pub type AbilityConfigMap = IndexMap<AbilityIdentifier, AbilityConfig>;
 
 #[derive(Debug)]
@@ -206,15 +222,18 @@ pub fn default_ability_config() -> AbilityConfigMap {
         identifier(AbilityName::TapIn, 0),
         AbilityConfig {
             require_presence: true,
-            default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Restrictive,
-                weight: 1,
-                condition: ChargeCondition::OnSuccess.into(),
-                details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
-                    charges: 1,
-                    reset_time: 1,
-                }),
-            }],
+            default_links: vec![
+                ConfigPoolLink {
+                    link_type: PoolLinkType::Restrictive,
+                    weight: 1,
+                    condition: ChargeCondition::OnSuccess.into(),
+                    details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
+                        charges: 1,
+                        reset_time: 1,
+                    }),
+                },
+                tap_in_guesses(),
+            ],
         },
     );
 
@@ -223,15 +242,18 @@ pub fn default_ability_config() -> AbilityConfigMap {
         identifier(AbilityName::TapIn, 1),
         AbilityConfig {
             require_presence: true,
-            default_links: vec![ConfigPoolLink {
-                link_type: PoolLinkType::Restrictive,
-                weight: 1,
-                condition: ChargeCondition::OnSuccess.into(),
-                details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
-                    charges: 1,
-                    reset_time: 1,
-                }),
-            }],
+            default_links: vec![
+                ConfigPoolLink {
+                    link_type: PoolLinkType::Restrictive,
+                    weight: 1,
+                    condition: ChargeCondition::OnSuccess.into(),
+                    details: ConfigPoolLinkDetails::Individual(PoolSpecifier {
+                        charges: 1,
+                        reset_time: 1,
+                    }),
+                },
+                tap_in_guesses(),
+            ],
         },
     );
 

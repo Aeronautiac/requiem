@@ -63,6 +63,8 @@ pub enum ActionError {
     AlreadyVoted,
     PlayerIsBlacklisted,
     OrgDoesntHaveLeadership,
+    GameNotStarted,
+    GameAlreadyStarted,
     ActorAlreadyInOrg,
     UserNotPresent,
     PlayerNotInOrg,
@@ -326,6 +328,49 @@ pub struct GiveOrgAbility {
     pub org_id: ActorKey,
     pub ability_id: AbilityKey,
     pub settings: OrgAbility,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct StartGameResponse {}
+
+// Begin play. Until this lands the world is in Setup: it exists, it is populated, and players may
+// talk in whatever channels they can already see — but nobody may use an ability or touch a
+// notebook, and no clock is running.
+//
+// Deliberately explicit rather than something creating the world does, because setup is real work
+// with no fixed length: the host is still building the roster, handing out roles and cutting keys,
+// and none of that should be racing a day timer.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct StartGame {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetOgStatusResponse {}
+
+// Make an existing member an OG, or stop them being one. Separate from AddToOrg, which can only say
+// what someone was at the moment they joined — this is the only way the flag ever moves afterwards.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetOgStatus {
+    pub actor_id: ActorKey,
+    pub org_id: ActorKey,
+    pub og: bool,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetBlacklistStatusResponse {}
+
+// Put a player on an org's blacklist, or take them off it. Blacklisting removes them if they are a
+// member and stops them being added again; unblacklisting only lifts the bar, it does not readmit.
+//
+// A low-level primitive rather than something an org does: no ability or vote reaches it, and it is
+// driven from above by whatever needs an org closed to somebody.
+//
+// Unlike OG status this needs no existing membership — barring somebody who was never in is the
+// ordinary case.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetBlacklistStatus {
+    pub actor_id: ActorKey,
+    pub org_id: ActorKey,
+    pub blacklisted: bool,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1195,6 +1240,7 @@ impl ActionContext {
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub enum Action {
+    StartGame(StartGame),
     NextIteration(NextIteration),
     ChangeOrgLeader(ChangeOrgLeader),
     ResignLeadership(ResignLeadership),
@@ -1246,6 +1292,8 @@ pub enum Action {
     RemoveVote(RemoveVote),
     PollCleanup(PollCleanup),
     AddToOrg(AddToOrg),
+    SetOgStatus(SetOgStatus),
+    SetBlacklistStatus(SetBlacklistStatus),
     RemoveFromOrg(RemoveFromOrg),
     CreateOrg(CreateOrg),
     SystemUseOrgAbility(SystemUseOrgAbility),
@@ -1304,6 +1352,7 @@ pub enum Action {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ActionResponse {
+    StartGame(StartGameResponse),
     NextIteration(NextIterationResponse),
     CreatePersonalChannel(CreatePersonalChannelResponse),
     ChangeOrgLeader(ChangeOrgLeaderResponse),
@@ -1356,6 +1405,8 @@ pub enum ActionResponse {
     RemoveVote(RemoveVoteResponse),
     PollCleanup(PollCleanupResponse),
     AddToOrg(AddToOrgResponse),
+    SetOgStatus(SetOgStatusResponse),
+    SetBlacklistStatus(SetBlacklistStatusResponse),
     RemoveFromOrg(RemoveFromOrgResponse),
     CreateOrg(CreateOrgResponse),
     SystemUseOrgAbility(SystemUseOrgAbilityResponse),

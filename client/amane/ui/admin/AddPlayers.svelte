@@ -29,7 +29,9 @@
   <!-- No display name here: creating the SLOT and saying who is on it are separate facts with
        separate lifetimes. The new player appears as `player-<slot>` and is named from the
        player list, which is also where a rename happens later. -->
-  <Input bind:value={true_name} placeholder="True Name" />
+  <!-- Blank is how you ask the server for a drawn name: it fills an empty true_name from the
+       reservoir and keeps anything you type. -->
+  <Input bind:value={true_name} placeholder="True Name (blank to draw one)" />
 
   <Select bind:value={role} options={ROLES.map((r) => ({ value: r, label: r }))} />
 
@@ -50,7 +52,11 @@
       if (err) {
         flash.set_error(`Action Failed: ${err}`);
       } else {
-        flash.set_success(`Added ${true_name}. Name them from the player list.`);
+        // The drawn name never comes back on the response, so a blank submission cannot be
+        // echoed here — the player's own Notifications log is where the name lands.
+        flash.set_success(
+          true_name ? `Added ${true_name}.` : "Added a player with a drawn name.",
+        );
       }
     }}>Add</Button
   >

@@ -30,7 +30,8 @@
     World: "World",
     Raw: "Misc",
     Prosecution: "Trials",
-    Bug: "Bugs",
+    // Every read-only record handed to the viewer: bug feeds and contact logs.
+    Logs: "Logs",
     // Personal collects the read-only Notifications feed and the player's own personal channels.
     Personal: "Personal",
     // Orgs get their own membership-gated section below, not the generic category loop.
@@ -47,7 +48,7 @@
     "Lounge",
     "Groupchat",
     "Prosecution",
-    "Bug",
+    "Logs",
     "Raw",
   ];
 
@@ -88,10 +89,15 @@
       }
     }
 
-    // Bug feeds are global (game.bugs, "bug:*"); a viewer sees only the ones the engine
-    // made visible to them (visible_bugs). Admin sees every bug.
+    // Bug feeds and contact logs are global (game.bugs / game.contact_logs); a viewer sees only
+    // the ones the engine made visible to them. Admin sees every one. Both land under "Logs".
     for (const [key, ch] of game.bugs) {
       if (ui.viewer !== "Admin" && !view?.visible_bugs.has(key)) continue;
+      bucket(ch.category, key);
+    }
+
+    for (const [key, ch] of game.contact_logs) {
+      if (ui.viewer !== "Admin" && !view?.visible_contact_logs.has(key)) continue;
       bucket(ch.category, key);
     }
 

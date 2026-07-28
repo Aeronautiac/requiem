@@ -16,7 +16,6 @@ mod notebook_tests {
     use crate::{
         actor::state::State,
         config::role::Role,
-        engine::Engine,
         helpers::{get_actor, get_notebook},
         test_helpers::*,
     };
@@ -24,7 +23,7 @@ mod notebook_tests {
     // a fake notebook should not kill someone
     #[test]
     fn fake_write_delayed() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "Light Yagami");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "Quillsh Wammy");
         let notebook_id = quick_notebook(&mut eng, 0, p1, true);
@@ -47,7 +46,7 @@ mod notebook_tests {
 
     #[test]
     fn fake_write_instant() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "Light Yagami");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "Quillsh Wammy");
         let notebook_id = quick_notebook(&mut eng, 0, p1, true);
@@ -62,7 +61,7 @@ mod notebook_tests {
 
     #[test]
     fn write_delayed() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "Light Yagami");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "Quillsh Wammy");
         let notebook_id = quick_notebook(&mut eng, 0, p1, false);
@@ -85,7 +84,7 @@ mod notebook_tests {
 
     #[test]
     fn write_instant() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "Light Yagami");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "Quillsh Wammy");
         let notebook_id = quick_notebook(&mut eng, 0, p1, false);
@@ -101,7 +100,7 @@ mod notebook_tests {
     // if you kill someone who is holding a notebook, you should get that notebook
     #[test]
     fn kill_wielder() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
         let p1_notebook_id = quick_notebook(&mut eng, 0, p1, false);
@@ -120,7 +119,7 @@ mod notebook_tests {
     // - the game should not announce a notebook transfer
     #[test]
     fn suicide() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "Light Yagami");
         let notebook_id = quick_notebook(&mut eng, 0, p1, false);
 
@@ -134,7 +133,7 @@ mod notebook_tests {
 
     #[test]
     fn lend() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
         let p1_notebook_id_1 = quick_notebook(&mut eng, 0, p1, false);
@@ -157,7 +156,7 @@ mod notebook_tests {
     // - should get back early
     #[test]
     fn kill_lent_to() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
         let p1_notebook_id_1 = quick_notebook(&mut eng, 0, p1, false);
@@ -177,7 +176,7 @@ mod notebook_tests {
     // - do not announce notebook transfer
     #[test]
     fn borrowed_suicide() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
         let notebook_id = quick_notebook(&mut eng, 0, p1, false);
@@ -199,7 +198,7 @@ mod notebook_tests {
     // - do not announce a transfer
     #[test]
     fn borrowed_true_owner_died() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
         let notebook_id = quick_notebook(&mut eng, 0, p1, false);
@@ -220,7 +219,7 @@ mod notebook_tests {
     // - do not announce a transfer
     #[test]
     fn borrowed_die_no_killer() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
         let notebook_id = quick_notebook(&mut eng, 0, p1, false);
@@ -240,7 +239,7 @@ mod notebook_tests {
     // - the scheduled death should fail with no side effects
     #[test]
     fn die_before_scheduled() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let notebook_id = quick_notebook(&mut eng, 0, p1, false);
 
@@ -255,7 +254,7 @@ mod notebook_tests {
     // restrictions
     #[test]
     fn dead_kill_living() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
         let p1_notebook_id = quick_notebook(&mut eng, 0, p1, false);
@@ -277,7 +276,7 @@ mod notebook_tests {
     // - the actions cancel each other out (scheduled death is removed, actor does not die)
     #[test]
     fn collisions() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let book_1_id = quick_notebook(&mut eng, 0, p1, false);
         let book_2_id = quick_notebook(&mut eng, 0, p1, false);
@@ -297,7 +296,7 @@ mod notebook_tests {
 
     #[test]
     fn dormancy() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
         let p3 = add_player(&mut eng, 0, Role::Civilian, "p3");

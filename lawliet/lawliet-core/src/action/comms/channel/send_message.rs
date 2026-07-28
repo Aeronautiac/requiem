@@ -62,30 +62,25 @@ impl ActionInterface for SendMessage {
 
             let actor_data = get_actor(eng, id).expect("actor should already be validated");
             if loggable && !actor_data.has_modifier(Modifier::LogNullification) {
-                // The record, written twice because two abilities ask two different questions of
-                // it. An autopsy asks what a given player said, so it reads the sender's log
-                // viewport; a tap-in asks what was said in a given channel, so it reads the
-                // channel's. Neither can be answered from the other: sender_display may be a lie,
-                // and a channel's live viewport keeps messages this branch is suppressing.
+                // The SENDER's half of the record, which cmd_channel cannot write because it is not
+                // about the channel at all. An autopsy asks what a given player said, wherever they
+                // said it, so it reads this; a tap-in asks what was said in a given channel, so it
+                // reads the one cmd_channel writes. Neither answers the other: sender_display may
+                // be a lie, but the viewport a message arrived on cannot be.
                 let sender_log = eng
                     .world
                     .get_player(id)
                     .expect("expected valid player")
                     .log_viewport;
-                let channel_log = get_channel(eng, self.channel_id)
-                    .expect("channel already validated")
-                    .log_viewport;
-                for viewport in [sender_log, channel_log] {
-                    ctx.push_cmd(
-                        Command::AddMessage {
-                            content: self.content.clone(),
-                            channel_id: self.channel_id,
-                            sender_display: self.display,
-                        },
-                        CommandRecipient::Viewport(viewport),
-                        eng.time,
-                    );
-                }
+                ctx.push_cmd(
+                    Command::AddMessage {
+                        content: self.content.clone(),
+                        channel_id: self.channel_id,
+                        sender_display: self.display,
+                    },
+                    CommandRecipient::Viewport(sender_log),
+                    eng.time,
+                );
 
                 let bug_ids: Vec<BugKey> = eng
                     .world
@@ -118,7 +113,8 @@ impl ActionInterface for SendMessage {
         }
 
         // Addressed to the channel, which is precisely everyone holding View on it — and, on
-        // entry, anyone granted View later.
+        // entry, anyone granted View later. Witnessed, so it also lands on the channel's record
+        // unless the sender is off it.
         cmd_channel(
             eng,
             ctx,
@@ -128,6 +124,8 @@ impl ActionInterface for SendMessage {
                 sender_display: self.display,
             },
             self.channel_id,
+            true,
+            player_id(actor),
         );
 
         // After the message, so the thing that started the slot is on the wire before the slot

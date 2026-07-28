@@ -16,7 +16,9 @@ use crate::{
         Action, ActionError, ActionInterface, ActionResponse, ChangeOrgLeader, UpdateKidnapChannels,
     },
     actor::{ActorLink, ActorLinkType},
-    helpers::{cmd_channel, get_actor_mut, get_org, get_org_mut, get_player, get_player_mut},
+    helpers::{
+        cmd_channel, cmd_og_status, get_actor_mut, get_org, get_org_mut, get_player, get_player_mut,
+    },
 };
 
 use crate::action::ActionActor;
@@ -69,6 +71,11 @@ impl ActionInterface for AddToOrg {
             player_data.orgs.insert(self.org_id);
         }
 
+        // Their OG standing, which joining is the first thing to decide. Personal, so it goes to
+        // them and to System rather than onto the roster below — the org learns that they joined,
+        // not what they joined as.
+        cmd_og_status(eng, ctx, self.org_id, self.actor_id, self.og);
+
         // Surface the org membership, addressed to the org's backing channel: who may see an
         // org's roster is exactly who may see the org's channel. This is the org member list,
         // distinct from the org channel's member list (SetMember below).
@@ -81,6 +88,8 @@ impl ActionInterface for AddToOrg {
                 org_id: self.org_id,
             },
             org_channel,
+            false,
+            None,
         );
 
         Action::SetMember(SetMember {

@@ -52,6 +52,8 @@ impl ActionInterface for CreateGroupchat {
                 contact_id,
             },
             channel_id,
+            false,
+            None,
         );
 
         Ok(ActionResponse::CreateGroupchat(CreateGroupchatResponse {

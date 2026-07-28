@@ -111,10 +111,7 @@ impl ActionInterface for CreateLounge {
                     id: *contacted_id,
                     displays: indexset![ActorDisplay::Raw(*contacted_id),],
                 });
-                contact_displays = (
-                    ActorDisplay::Role(role),
-                    ActorDisplay::Raw(*contacted_id),
-                );
+                contact_displays = (ActorDisplay::Role(role), ActorDisplay::Raw(*contacted_id));
                 initiator = *contactor_id;
             }
         };
@@ -181,6 +178,8 @@ impl ActionInterface for CreateLounge {
                         contact_id,
                     },
                     channel_id,
+                    false,
+                    None,
                 );
             }
 

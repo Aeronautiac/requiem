@@ -84,6 +84,7 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::ShinigamiSacrifice(a) => a.ability_name(),
             AbilityBehaviour::KiraConnection(a) => a.ability_name(),
             AbilityBehaviour::TrueNameReroll(a) => a.ability_name(),
+            AbilityBehaviour::TapIn(a) => a.ability_name(),
         }
     }
 
@@ -163,6 +164,7 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::TrueNameReroll(a) => {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
+            AbilityBehaviour::TapIn(a) => a.handle(eng, ctx, actor, ability, version, mutate),
         }
     }
 }

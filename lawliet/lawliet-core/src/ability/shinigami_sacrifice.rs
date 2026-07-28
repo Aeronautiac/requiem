@@ -75,6 +75,8 @@ impl AbilityInterface for ShinigamiSacrifice {
                 true_name,
             },
             org_channel,
+            true,
+            Some(org_id),
         );
 
         Ok(super::AbilityStatus::Success)

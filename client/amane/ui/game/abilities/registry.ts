@@ -26,6 +26,12 @@ import NotebookRevealAbility from "./NotebookRevealAbility.svelte";
 import CivilianArrestAbility from "./CivilianArrestAbility.svelte";
 import BugAbility from "./BugAbility.svelte";
 import KidnapAbility from "./KidnapAbility.svelte";
+import UnlawfulArrestAbility from "./UnlawfulArrestAbility.svelte";
+import UnderTheRadarAbility from "./UnderTheRadarAbility.svelte";
+import ShinigamiSacrificeAbility from "./ShinigamiSacrificeAbility.svelte";
+import KiraConnectionAbility from "./KiraConnectionAbility.svelte";
+import TrueNameRerollAbility from "./TrueNameRerollAbility.svelte";
+import TapInAbility from "./TapInAbility.svelte";
 
 // Every ability UI component takes the ability instance's id and a callback to run
 // once the ability has been used (closes the menu). `orgId`, when set, means the ability
@@ -65,6 +71,12 @@ export const ABILITY_UIS: Partial<
   Bug: BugAbility,
   PublicKidnap: KidnapAbility,
   AnonymousKidnap: KidnapAbility,
+  UnlawfulArrest: UnlawfulArrestAbility,
+  UnderTheRadar: UnderTheRadarAbility,
+  ShinigamiSacrifice: ShinigamiSacrificeAbility,
+  KiraConnection: KiraConnectionAbility,
+  TrueNameReroll: TrueNameRerollAbility,
+  TapIn: TapInAbility,
 };
 
 // "AnonymousContact" -> "Anonymous Contact"

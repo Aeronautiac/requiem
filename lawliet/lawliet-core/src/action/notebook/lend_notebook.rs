@@ -11,7 +11,7 @@ use crate::{
     actor::modifier::Modifier,
     common::Version,
     engine::Engine,
-    helpers::{actor_id, get_actor_mut, get_notebook, get_notebook_mut},
+    helpers::{actor_id, get_actor_mut, get_notebook, get_notebook_mut, require_running},
 };
 
 pub use crate::action::{LendNotebook, LendNotebookResponse};
@@ -26,6 +26,7 @@ impl ActionInterface for LendNotebook {
         mutate: bool,
     ) -> ActionResult {
         actor.player_only()?;
+        require_running(eng)?;
 
         let user_id = actor_id(actor).unwrap();
         if user_id == self.target_id {

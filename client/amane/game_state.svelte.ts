@@ -1,10 +1,16 @@
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import type { AbilityKey, AbilityName, ActorDisplay, BugContext, BugKey, CommandPayload, CommandRecipient, NotebookKey, OrganizationName, PassiveType, PollOutcome, PollSubject, PollVisibility, ProfileUpdate, ProsecutionKey, ProsecutionPhaseView, Role } from "./bindings";
+import type { AbilityKey, AbilityName, ActorDisplay, BugContext, BugKey, CommandPayload, CommandRecipient, ContactLog, NotebookKey, OrganizationName, PassiveKey, PassiveType, PollOutcome, PollSubject, PollVisibility, ProfileUpdate, ProsecutionKey, ProsecutionPhaseView, Role, TapInOutcome } from "./bindings";
 import { slotKeyFromString, slotKeyToString } from "./bindings";
 
 // store all messages and events in the top level, but give every view a copy 
 
 export type WorldEvent = {
+  // A new day. Iteration 1 is the first day of play — the host starting the game IS the first turn
+  // of the clock, so this is also how a viewer learns play has begun.
+  NewIteration: {
+    iteration: number,
+  }
+} | {
   Death: {
     target_id: string,
     true_name: string,
@@ -93,14 +99,15 @@ export type ChannelPerms = {
 // "Personal" category as user-created, sendable personal channels (kind "Standard").
 
 // Sidebar grouping only. "World" leads (News lives under it); "Role" is a stronger world
-// channel; "Personal" collects the per-viewer Notifications feed and user-made personal
+// channel; "Logs" collects every read-only record the viewer has been handed (bug feeds,
+// contact logs); "Personal" collects the per-viewer Notifications feed and user-made personal
 // channels. Categories hold no significance beyond display.
 export type ChannelCategory =
   | "Raw" | "Lounge" | "Groupchat" | "Notebook" | "Role"
-  | "World" | "Org" | "Prosecution" | "Bug" | "Personal";
+  | "World" | "Org" | "Prosecution" | "Logs" | "Personal";
 export const CHANNEL_CATEGORIES: ChannelCategory[] = [
   "Raw", "Lounge", "Groupchat", "Notebook", "Role",
-  "World", "Org", "Prosecution", "Bug", "Personal",
+  "World", "Org", "Prosecution", "Logs", "Personal",
 ];
 
 // Behavioural type: inherent properties a channel carries regardless of category. Only
@@ -112,7 +119,18 @@ export const CHANNEL_CATEGORIES: ChannelCategory[] = [
 //                 lives per-view in GameView.info_channels. Always readable, never sendable.
 //   - "Bug":      a surveillance feed of a bug's relayed messages. Read-only, non-interactable;
 //                 held globally (game.bugs, "bug:*"), shown per GameView.visible_bugs.
-export type ChannelKind = "Standard" | "Info" | "Bug";
+//   - "ContactLog": one contact-log passive's record of who reached whom. Read-only,
+//                 non-interactable; held globally (game.contact_logs, "contacts:*"), shown per
+//                 GameView.visible_contact_logs.
+export type ChannelKind = "Standard" | "Info" | "Bug" | "ContactLog";
+
+// Every read-only kind: a feed you are handed rather than a room you are in. None of them are
+// engine channels, so none carry perms, loggability, or a send box — the one question each
+// render site asks. Sidebar grouping is the separate "Logs" category, which Info deliberately
+// stays out of (Notifications belongs under Personal).
+export function isReadOnlyKind(kind: ChannelKind): boolean {
+  return kind === "Info" || kind === "Bug" || kind === "ContactLog";
+}
 
 
 export type Channel = {
@@ -162,6 +180,14 @@ export type InfoEvent = {
   // The viewer received a notebook (any source — pass, gift, role grant). Derived on the
   // frontend from gaining read access to a notebook channel; no engine command backs it.
   NotebookReceived: Record<string, never>,
+} | {
+  // What the viewer's tap-in guess turned up. A private answer to a private question, so it lands
+  // in Notifications rather than in the channel that was tapped — that channel is told separately,
+  // and is never told it was this viewer.
+  TapInResult: {
+    contact_id: number,
+    outcome: TapInOutcome,
+  }
 }
 
 // A poll started (outcome null) or ended (outcome set), rendered inline in the poll's
@@ -177,9 +203,32 @@ export type PollNoticeEvent = {
   }
 }
 
+// One line of a contact log's record, rendered inside that log's read-only feed. The engine's
+// ContactLog verbatim — both ends are displays, so there is nothing to resolve at apply time and
+// nothing here can be turned back into a player.
+export type ContactLogEvent = {
+  ContactLogEntry: ContactLog
+}
+
+// Someone reached for Kira through a lounge, rendered in that lounge. Emitted whether or not
+// they found him, and the user is named raw — you cannot feel for Kira quietly, and the person
+// probed always learns who tried.
+export type KiraConnectionEvent = {
+  KiraConnectionAttempt: {
+    // Actor KEY, resolved for display at render time (see PollData.opener for why).
+    user: string,
+    success: boolean,
+  }
+}
+
+// This channel's record was read. Carries nothing: who tapped is exactly what is withheld.
+export type ChannelTappedEvent = {
+  ChannelTapped: Record<string, never>
+}
+
 export type GameEvent = {
   timestamp: number,
-  data: { Message: Message } | { Write: WriteEvent } | WorldEvent | InfoEvent | PollNoticeEvent,
+  data: { Message: Message } | { Write: WriteEvent } | WorldEvent | InfoEvent | PollNoticeEvent | ContactLogEvent | KiraConnectionEvent | ChannelTappedEvent,
 }
 
 // Shared, globally-held poll data (subject + scope + tally). Mirrors the engine's
@@ -273,8 +322,17 @@ export class GameView {
   abilities = new SvelteMap<string, AbilityView>();
   // passive id -> the passive this viewer holds (from UpdatePassiveView). Observable list.
   passives = new SvelteMap<string, PassiveView>();
+  // This viewer's own states (from ActorState), as a StateFlag bitmask. Replaced wholesale on every
+  // update — the command carries the entire set, so there is no accumulating to get wrong.
+  //
+  // Own states only. What this viewer knows about ANOTHER actor's state is whatever the event that
+  // caused it told them (a Death announcement, a Kidnapping), never this.
+  states = $state(0);
   // gc keys this viewer owns (from GcOwnerStatus). Drives the group-chat controls.
   owned_gcs = new SvelteSet<string>();
+  // org ids this viewer is an OG of (from OgStatus). Personal: the rest of the org is never told
+  // who is an OG, so this answers the question for yourself and for nobody else.
+  og_orgs = new SvelteSet<string>();
   // poll id -> this viewer's personal view of a poll they can see (from UpdatePollView).
   // The shared poll data lives in GameState.polls; this is just eligibility + own vote.
   poll_views = new SvelteMap<string, PollView>();
@@ -287,6 +345,14 @@ export class GameView {
   // global (GameState.bugs); this is the per-viewer gate. Never shrinks: losing access to a bug
   // stops the relay, it does not unsee what was already relayed.
   visible_bugs = new SvelteSet<string>();
+  // contact-log channel keys ("contacts:*") this viewer has been given access to, and never
+  // shrinks for the same reason as visible_bugs.
+  //
+  // Opened by the first entry that arrives rather than by a creation command, because a passive's
+  // viewport has none — AddContactLog is the only thing ever addressed there. So a contact log
+  // that has recorded nothing shows no feed at all, which is right: the passive itself is what
+  // says you hold one (it is listed in `passives`), and an empty record tells you nothing.
+  visible_contact_logs = new SvelteSet<string>();
   // viewport keys this view currently has access to, tracked from EnterViewport/ExitViewport.
   // This is what routes a Viewport-addressed command to the right views when a client holds
   // several actors — the command names a viewport, and every view holding it receives it.
@@ -509,6 +575,9 @@ export function playerLabel(id: string, players: ReadonlyMap<string, Player>): s
 export interface PlayerInfo {
   role?: Role;
   true_name?: string;
+  // Org ids this player is an OG of. Admin-only, like the rest of this: OG standing is personal
+  // info that goes to the member and to System, and to nobody else in the org.
+  og_orgs?: SvelteSet<string>;
 }
 
 export function new_player(display_name: string | null): Player {
@@ -618,6 +687,12 @@ export function bugChannelKey(bug_id: BugKey): string {
   return `bug:${slotKeyToString(bug_id)}`;
 }
 
+// Namespaced channel key for one contact-log passive's record. Same reason as bugs: passives have
+// their own slot space, and the resolve path is keyed by channel.
+export function contactLogChannelKey(passive_id: PassiveKey): string {
+  return `contacts:${slotKeyToString(passive_id)}`;
+}
+
 // Maps a command recipient to the key of the single view it targets. Actor recipients key by
 // their slot; System is the admin view (world events mirrored for admin land there). Returns
 // undefined for a Viewport recipient, which does not name one view — use recipientToViews.
@@ -642,6 +717,7 @@ export class GameState {
   #channel_to_notebook = new SvelteMap<string, string>();
   #notebook_to_channel = new SvelteMap<string, string>();
   #channel_to_gc = new SvelteMap<string, string>();
+  #channel_to_lounge = new SvelteMap<string, string>();
   #channel_to_org = new SvelteMap<string, string>();
   // trial channel key -> prosecution id. Not for rendering (that's driven by the "Prosecution"
   // channel category); this is so an action taken from within the channel can find its prosecution.
@@ -692,6 +768,11 @@ export class GameState {
   // relayed messages). Held globally like channels; per-viewer visibility is each view's
   // visible_bugs, opened by EnterViewport on the bug's viewport.
   bugs = new SvelteMap<string, Channel>();
+  // contact-log channel key ("contacts:*") -> one contact-log passive's read-only record. Global
+  // like bugs, and for the stronger reason: the record is addressed to the PASSIVE's viewport, so
+  // every actor who reaches that passive reads the identical thing. Per-viewer visibility is each
+  // view's visible_contact_logs.
+  contact_logs = new SvelteMap<string, Channel>();
   // kidnapping id -> tracked kidnapping. Populated by the Kidnapping world event; the KidnapReveal
   // event references the id to resolve the victim, and this is the hook for a future live-countdown
   // timer. Held globally like bugs. See TrackedKidnapping for why entries outlive their reveal.
@@ -835,11 +916,13 @@ export class GameState {
   // so unlike a per-view handler this one may consume what it reads.
   #apply_global({ recipient, cmd, timestamp }: CommandPayload) {
     if ("MapLounge" in cmd) {
-      const { channel_id, contact_id } = cmd.MapLounge;
+      const { lounge_id, channel_id, contact_id } = cmd.MapLounge;
+      const channel_key = slotKeyToString(channel_id);
       // Lounges are identified by their contact-channel id.
       const name = `lounge-${contact_id}`;
 
-      this.#map_channel(recipient, slotKeyToString(channel_id), new_channel("Standard", "Lounge", name));
+      this.#map_channel(recipient, channel_key, new_channel("Standard", "Lounge", name));
+      this.#channel_to_lounge.set(channel_key, slotKeyToString(lounge_id));
 
       return;
     }
@@ -988,7 +1071,29 @@ export class GameState {
       return;
     }
 
-    // writes are treated the exact same as messages, so they should be stored using the same mechanism 
+    // A KiraConnection attempt, stored in the lounge it was made through like any other channel
+    // event. Unlike a message it carries no display: the user is named raw, which is the whole
+    // cost of the ability.
+    if ("KiraConnectionAttempt" in cmd) {
+      const { channel_id, user, success } = cmd.KiraConnectionAttempt;
+      const channel = this.channels.get(slotKeyToString(channel_id));
+      channel?.events.push({
+        timestamp,
+        data: { KiraConnectionAttempt: { user: slotKeyToString(user), success } },
+      });
+      return;
+    }
+
+    // Somebody read this channel's record. Stored on the channel like any other event, and
+    // carrying no reader — the members learn they were tapped, never by whom. That gap is what
+    // makes tapping a line you are on yourself a move rather than a waste.
+    if ("ChannelTapped" in cmd) {
+      const channel = this.channels.get(slotKeyToString(cmd.ChannelTapped.channel_id));
+      channel?.events.push({ timestamp, data: { ChannelTapped: {} } });
+      return;
+    }
+
+    // writes are treated the exact same as messages, so they should be stored using the same mechanism
     if ("NotebookWrite" in cmd) {
       const { notebook_id, user_id, message, true_name, delay, successes_remaining, attempts_remaining, success, target_saved } = cmd.NotebookWrite;
       const channel_key = this.#notebook_to_channel.get(slotKeyToString(notebook_id));
@@ -1153,10 +1258,22 @@ export class GameState {
     if ("NewBug" in cmd) {
       const key = bugChannelKey(cmd.NewBug.bug_key);
       if (!this.bugs.has(key)) {
-        this.bugs.set(key, new_channel("Bug", "Bug", `bug-${cmd.NewBug.bug_key.idx}v${cmd.NewBug.bug_key.version}`));
+        this.bugs.set(key, new_channel("Bug", "Logs", `bug-${cmd.NewBug.bug_key.idx}v${cmd.NewBug.bug_key.version}`));
       }
       const viewport = recipientToViewport(recipient);
       if (viewport !== undefined) this.#viewport_to_bug.set(viewport, key);
+      return;
+    }
+
+    // An ORG's tap-in answer, which belongs to the org rather than to any of its members: it lands
+    // in the org's channel, once, where everyone who could have voted for the tap will see it. A
+    // PLAYER's answer is private and handled per-view instead (see #apply_to_view). Orgs have no
+    // notification channel of their own yet; this is what should move to one when they do.
+    if ("TapInResult" in cmd) {
+      const channel_key = this.#org_of(recipient)?.channel_id;
+      const channel = channel_key ? this.channels.get(channel_key) : undefined;
+      const { contact_id, outcome } = cmd.TapInResult;
+      channel?.events.push({ timestamp, data: { TapInResult: { contact_id, outcome } } });
       return;
     }
 
@@ -1167,6 +1284,26 @@ export class GameState {
       const { bug_key, display, content } = cmd.AddBugMessage;
       const bug = this.bugs.get(bugChannelKey(bug_key));
       bug?.events.push({ timestamp, data: { Message: { sender_display: display, content } } });
+      return;
+    }
+
+    // One line of a contact log's record. The feed is created here on its first entry — nothing
+    // else is ever addressed to a passive's viewport, so there is no creation command to hang it
+    // off (see GameView.visible_contact_logs).
+    //
+    // Named by slot like a bug feed rather than by its ContactLogType (Full/Even/Odd): the type
+    // rides UpdatePassiveView, which goes to the passive's OWNER, and a viewer reaching it through
+    // a passive link never receives one. Naming it from what only some readers hold would give the
+    // same feed two names.
+    if ("AddContactLog" in cmd) {
+      const { passive_id, log } = cmd.AddContactLog;
+      const key = contactLogChannelKey(passive_id);
+      let feed = this.contact_logs.get(key);
+      if (!feed) {
+        feed = new_channel("ContactLog", "Logs", `contacts-${passive_id.idx}v${passive_id.version}`);
+        this.contact_logs.set(key, feed);
+      }
+      feed.events.push({ timestamp, data: { ContactLogEntry: log } });
       return;
     }
 
@@ -1189,6 +1326,16 @@ export class GameState {
       if ("TrueNameUpdate" in cmd) {
         const key = slotKeyToString(cmd.TrueNameUpdate.target_id);
         this.player_info.set(key, { ...this.player_info.get(key), true_name: cmd.TrueNameUpdate.true_name });
+        return;
+      }
+      if ("OgStatus" in cmd) {
+        const { target_id, org_id, og } = cmd.OgStatus;
+        const key = slotKeyToString(target_id);
+        const info = this.player_info.get(key) ?? {};
+        const orgs = info.og_orgs ?? new SvelteSet<string>();
+        if (og) orgs.add(slotKeyToString(org_id));
+        else orgs.delete(slotKeyToString(org_id));
+        this.player_info.set(key, { ...info, og_orgs: orgs });
         return;
       }
     }
@@ -1295,6 +1442,24 @@ export class GameState {
       return;
     }
 
+    // This viewer's own OG standing in one org. The System copy is handled in #apply_global and
+    // feeds the admin inspector; this is the member's own, and nobody else in the org gets either.
+    if ("OgStatus" in cmd) {
+      const { org_id, og } = cmd.OgStatus;
+      const key = slotKeyToString(org_id);
+      if (og) view.og_orgs.add(key);
+      else view.og_orgs.delete(key);
+      return;
+    }
+
+    // This viewer's own states. The command carries the whole set, so it replaces rather than
+    // merges. An org's arrives on its channel's viewport and has no per-view home yet, so it is
+    // skipped rather than written into every member's own states.
+    if ("ActorState" in cmd) {
+      if (viewport === undefined) view.states = cmd.ActorState.state;
+      return;
+    }
+
     // A passive the viewer now holds. Player-addressed in practice: an org's passives ride the org
     // channel's viewport, and orgs have no passive list to show them in yet, so those land in
     // whichever views can read that channel. Harmless, and it goes away when orgs get one.
@@ -1321,6 +1486,14 @@ export class GameState {
     // the same one line: the replay hands a late entrant this very command.
     if ("NewBug" in cmd) {
       view.visible_bugs.add(bugChannelKey(cmd.NewBug.bug_key));
+      return;
+    }
+
+    // This viewer's contact-log gate, opened by the same command that writes the entry — the
+    // entry itself is the only thing a passive's viewport ever carries, so it has to do both jobs.
+    // A view gaining the passive later replays the whole record and opens the gate on line one.
+    if ("AddContactLog" in cmd) {
+      view.visible_contact_logs.add(contactLogChannelKey(cmd.AddContactLog.passive_id));
       return;
     }
 
@@ -1461,6 +1634,14 @@ export class GameState {
       return;
     }
 
+    if ("NewIteration" in cmd) {
+      view.events.push({
+        timestamp,
+        data: { NewIteration: { iteration: cmd.NewIteration.iteration } },
+      });
+      return;
+    }
+
     // ---- directed personal events: this view's Notifications feed ----
 
     if ("RevealTrueName" in cmd) {
@@ -1489,6 +1670,16 @@ export class GameState {
     // lands in their Notifications channel — never News. Context only (never who).
     if ("Bugged" in cmd) {
       this.push_notif(view, recipient, timestamp, { Bugged: { context: cmd.Bugged.context } });
+      return;
+    }
+
+    // A PLAYER's tap-in answer, private to whoever asked — the tapped channel hears about the tap
+    // on its own stream and is never told who made it. An org's is not personal and never reaches
+    // here: it is viewport-addressed and rendered once in the org's channel (see #apply_global).
+    if ("TapInResult" in cmd) {
+      if (viewport !== undefined) return;
+      const { contact_id, outcome } = cmd.TapInResult;
+      this.push_notif(view, recipient, timestamp, { TapInResult: { contact_id, outcome } });
       return;
     }
 
@@ -1534,9 +1725,13 @@ export class GameState {
       const view = viewer === "Admin" ? this.system_view() : this.views.get(viewer);
       return view?.info_channels.get(key);
     }
-    // Bug feeds are global (visibility is gated per-viewer at the list level, see Channels).
+    // Bug feeds and contact logs are global (visibility is gated per-viewer at the list level,
+    // see Channels).
     if (key.startsWith("bug:")) {
       return this.bugs.get(key);
+    }
+    if (key.startsWith("contacts:")) {
+      return this.contact_logs.get(key);
     }
     return this.channels.get(key);
   }
@@ -1585,14 +1780,18 @@ export class GameState {
     }
   }
 
-  // The org ability list a command targets, or undefined if it is not an org's. An org's abilities
-  // are addressed to its channel's viewport rather than to the org actor — "everyone in the org" is
-  // expressed as "everyone who can see the org's channel".
-  #org_abilities(recipient: CommandRecipient): SvelteMap<string, AbilityView> | undefined {
+  // The org a command targets, or undefined if it is not an org's. An org's things are addressed to
+  // its channel's viewport rather than to the org actor — "everyone in the org" is expressed as
+  // "everyone who can see the org's channel".
+  #org_of(recipient: CommandRecipient): Org | undefined {
     const viewport = recipientToViewport(recipient);
     if (viewport === undefined) return undefined;
     const org_key = this.#viewport_to_org.get(viewport);
-    return org_key ? this.orgs.get(org_key)?.abilities : undefined;
+    return org_key ? this.orgs.get(org_key) : undefined;
+  }
+
+  #org_abilities(recipient: CommandRecipient): SvelteMap<string, AbilityView> | undefined {
+    return this.#org_of(recipient)?.abilities;
   }
 
   // Resolve an actor key to a display name — a player, or an org (a vote opener may be either,
@@ -1652,6 +1851,12 @@ export class GameState {
   // target the correct gc. Returns the string key (use slotKeyFromString for actions).
   gc_key_for_channel(channel_key: string): string | undefined {
     return this.#channel_to_gc.get(channel_key);
+  }
+
+  // The lounge backing a channel, if any. Same shape as gc_key_for_channel — KiraConnection
+  // targets the LOUNGE, not the channel it shows up in.
+  lounge_key_for_channel(channel_key: string): string | undefined {
+    return this.#channel_to_lounge.get(channel_key);
   }
 
   // Resolve an ActorDisplay to the name to show. Raw displays look up the player's

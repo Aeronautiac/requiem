@@ -100,6 +100,7 @@ export const StateFlag = {
   Ipp: 1 << 2,
   Kidnapped: 1 << 3,
   Custody: 1 << 4,
+  UnderTheRadar: 1 << 5,
 } as const;
 
 // BitFlags<ChannelPermission>
@@ -161,6 +162,16 @@ export type ContactLog = {
   contacted: ActorDisplay;
   event: ContactEvent;
 };
+
+// what a tap-in guess turned up. the two misses read differently on purpose: a contact channel is
+// loggable unless an admin deliberately turned it off, so "dark" is a rare and meaningful answer
+// rather than a way of hiding whether the id was real.
+//
+// Found carries the channel and how far back to read — range null means the whole record.
+export type TapInOutcome =
+  | { Found: { channel_id: ChannelKey; range: number | null } }
+  | "NoSuchContact"
+  | "NotLoggable";
 
 export type PassiveType =
   | "Wanted"
@@ -297,6 +308,11 @@ export type AbilityBehaviour =
   // the private investigator's single reroll for the game. true_name is replaced by the server
   // before the engine sees it, like the timestamp — whatever the client sends here is not kept.
   | { TrueNameReroll: { target: ActorKey; true_name: string } }
+  // peer into a contact channel's record by GUESSING its number. contact channels are numbered in
+  // one strictly incrementing sequence and that number is the only handle on one, so you tap what
+  // you can work out from what you know. any contact channel is fair game, your own included.
+  // wrong guesses are rationed, so the sequence can't be walked from the top down.
+  | { TapIn: { contact_id: number } }
   | { PublicKidnap: { target: ActorKey; performer: ActorKey | null } }
   | { AnonymousKidnap: { target: ActorKey } }
   | { Bug: { target: ActorKey } };
@@ -386,6 +402,25 @@ export type AddToOrg = {
   og: boolean;
   actor_id: ActorKey;
   org_id: ActorKey;
+};
+
+// Make an existing member an OG, or stop them being one. AddToOrg can only say what someone was at
+// the moment they joined; this is the only thing that moves the flag afterwards.
+export type SetOgStatus = {
+  actor_id: ActorKey;
+  org_id: ActorKey;
+  og: boolean;
+};
+
+// Bar a player from an org, or lift the bar. Blacklisting KICKS them if they are a member;
+// unblacklisting only makes them eligible again and never readmits anyone.
+//
+// A low-level primitive, not an org operation — no org ability or vote reaches it. Driven from
+// above by whatever needs an org closed to somebody.
+export type SetBlacklistStatus = {
+  actor_id: ActorKey;
+  org_id: ActorKey;
+  blacklisted: boolean;
 };
 
 export type ChangeOrgLeader = {
@@ -806,6 +841,11 @@ export type InitializeEngine = {
 
 export type InitializeWorld = Record<string, never>;
 
+// Begin play. Until this lands the world is in setup: it exists and is populated, players may talk
+// in whatever channels they can already see, and nobody may use an ability or touch a notebook.
+// Explicit rather than automatic, because setup has no fixed length and should not race a day timer.
+export type StartGame = Record<string, never>;
+
 export type SetRandomSeed = {
   seed: number;
 };
@@ -863,6 +903,7 @@ export type Action =
   | { NotebookScheduledKill: NotebookScheduledKill }
   | { TryDeleteChargePool: TryDeleteChargePool }
   | { InitializeWorld: InitializeWorld }
+  | { StartGame: StartGame }
   | { AddChargePool: AddChargePool }
   | { ClearVolatileLinks: ClearVolatileLinks }
   | { UseOrgAbility: UseOrgAbility }
@@ -875,6 +916,8 @@ export type Action =
   | { RemoveVote: RemoveVote }
   | { PollCleanup: PollCleanup }
   | { AddToOrg: AddToOrg }
+  | { SetOgStatus: SetOgStatus }
+  | { SetBlacklistStatus: SetBlacklistStatus }
   | { RemoveFromOrg: RemoveFromOrg }
   | { CreateOrg: CreateOrg }
   | { SystemUseOrgAbility: SystemUseOrgAbility }
@@ -1088,7 +1131,15 @@ export type Command =
   | { ArchiveBug: { bug_key: BugKey } }
   // directed to the bug's target: you're under surveillance, and in what context (never by whom)
   | { Bugged: { context: BugContext } }
+  // a new day. a world event, so it reaches everyone present — and an absent player is handed it
+  // when they return rather than told at the time. iteration 1 is the first day of play; 0 is the
+  // setup phase before the host started the game.
+  | { NewIteration: { iteration: number } }
   | { GcOwnerStatus: { owner: boolean; gc_id: GroupchatKey } }
+  // DIRECTED (to the member) + System: whether this player is an OG of this org. personal info,
+  // addressed like a role or a true name — the rest of the org is told nothing. the org's ROSTER is
+  // a separate stream on the org channel that says only who is in it.
+  | { OgStatus: { target_id: ActorKey; org_id: ActorKey; og: boolean } }
   | { ShowChannelMember: { channel_id: ChannelKey; display: ActorDisplay; channel_perms: ChannelPermissions } }
   | { RemoveChannelMember: { channel_id: ChannelKey; display: ActorDisplay } }
   | { UpdateChannelView: { channel_id: ChannelKey; perms: ChannelPermissions; displays: ActorDisplay[] } }
@@ -1098,6 +1149,8 @@ export type Command =
   | { KiraConnectionAttempt: { channel_id: ChannelKey; user: ActorKey; success: boolean } }
   | { MapNotebook: { notebook_id: NotebookKey; channel_id: ChannelKey } }
   | { NotebookWrite: { notebook_id: NotebookKey; user_id: ActorKey; message: string | null; true_name: string; delay: number; successes_remaining: number; attempts_remaining: number; success: boolean; target_saved: boolean } }
+  // "the book in your hands is not yours" — addressed to whoever now holds it and nobody else. a
+  // fact about one person, not something the channel carried, so it never reaches the record.
   | { NotebookBorrowingStatus: { notebook_id: NotebookKey; borrowed: boolean } }
   // one line in a contact log, addressed to the passive's own viewport — so gaining the passive
   // backfills everything it ever logged, exactly as gaining a channel does. passive_id names which
@@ -1108,6 +1161,12 @@ export type Command =
   | { UpdatePassiveView: { passive_type: PassiveType; passive_id: PassiveKey; owner_id: ActorKey } }
   | { RemovePassive: { passive_id: PassiveKey } }
   | { RevealAutopsyMessages: { target_id: ActorKey; range: number; redact_names: boolean } }
+  // what a tap-in guess found, addressed to whoever guessed (an org's goes to its channel). every
+  // outcome reports back — learning an id is unused is a real, and rationed, result.
+  | { TapInResult: { contact_id: number; outcome: TapInOutcome } }
+  // this channel was read by somebody outside the conversation. addressed to the channel and
+  // deliberately anonymous: the members learn they were tapped, never by whom.
+  | { ChannelTapped: { channel_id: ChannelKey } }
   | { RevealTrueName: { target_id: ActorKey; true_name: string } }
   | { RevealNotebookHolding: { target_id: ActorKey; holding: boolean } }
   | { RoleUpdate: { target_id: ActorKey; role: Role } }

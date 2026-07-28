@@ -35,7 +35,7 @@ use crate::{
     names::NamePool,
     now,
     state::{GameId, WrappedServerState, lock_state},
-    wire::{ActionOutcome, ExecOutcome, ResponsePair, ServerInput},
+    wire::{ActionOutcome, ExecOutcome, Profile, ResponsePair, ServerInput},
 };
 
 // carries the source ticket so the game task can route replies and enforce permissions.
@@ -385,15 +385,31 @@ pub async fn game(
                     // but done here rather than at the socket because only the coordinator knows
                     // which names are already in play.
                     //
+                    // A reroll is ALWAYS replaced -- it is a player's own ability, and letting the
+                    // user choose is the whole thing being prevented. AddPlayer and SetTrueName are
+                    // admin actions, so a name they carry is deliberate and kept as sent; an empty
+                    // one is how an admin asks for a drawn name instead.
+                    //
                     // An exhausted reservoir leaves whatever arrived, and the engine refuses it as
                     // a duplicate -- a wrong name is worse than a failed action.
-                    if let Action::UseAbility(use_ability) = &mut request.payload
-                        && let AbilityBehaviour::TrueNameReroll(reroll) =
-                            &mut use_ability.ability_args
+                    let unnamed = match &mut request.payload {
+                        Action::UseAbility(use_ability) => match &mut use_ability.ability_args {
+                            AbilityBehaviour::TrueNameReroll(reroll) => Some(&mut reroll.true_name),
+                            _ => None,
+                        },
+                        Action::AddPlayer(add) if add.true_name.is_empty() => {
+                            Some(&mut add.true_name)
+                        }
+                        Action::SetTrueName(set) if set.true_name.is_empty() => {
+                            Some(&mut set.true_name)
+                        }
+                        _ => None,
+                    };
+                    if let Some(slot) = unnamed
                         && let Some(name) =
                             names.draw(|name| true_names.values().any(|held| held == name))
                     {
-                        reroll.true_name = name;
+                        *slot = name;
                     }
 
                     let line = to_line(&request);
@@ -487,6 +503,41 @@ pub async fn game(
                         } = &payload.cmd
                         {
                             true_names.insert(*target_id, true_name.clone());
+                        }
+                    }
+
+                    // A new player slot gets a display name drawn for it, so nobody is ever left
+                    // rendering as a raw slot. Cosmetic, like a colour in a lobby, and drawn
+                    // independently of the true name. An admin replaces it with SetProfile.
+                    //
+                    // Written before the broadcast below, which is what makes it ride out with the
+                    // MapPlayer that entitles a connection to it (see actors_introduced_by). The
+                    // guard is for a rebuilt game: profiles are server state and outlive the child.
+                    {
+                        let mut server_state = lock_state(&state);
+                        if let Some(game) = server_state.games.get_mut(&game_id) {
+                            for payload in &commands {
+                                let Command::MapPlayer { player_id } = &payload.cmd else {
+                                    continue;
+                                };
+                                if game.profiles.contains_key(player_id) {
+                                    continue;
+                                }
+                                let taken = |name: &str| {
+                                    game.profiles.values().any(|profile| {
+                                        profile.display_name.as_deref() == Some(name)
+                                    })
+                                };
+                                let Some(display_name) = names.draw(taken) else {
+                                    continue;
+                                };
+                                game.profiles.insert(
+                                    *player_id,
+                                    Profile {
+                                        display_name: Some(display_name),
+                                    },
+                                );
+                            }
                         }
                     }
 

@@ -68,6 +68,8 @@ impl ActionInterface for InitializeWorld {
                         channel_name: name,
                     },
                     channel_id,
+                    false,
+                    None,
                 );
             }
         }

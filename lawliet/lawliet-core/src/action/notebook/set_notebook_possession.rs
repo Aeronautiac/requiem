@@ -5,6 +5,7 @@
 */
 
 use indexmap::indexset;
+use lawliet_types::command::CommandRecipient;
 
 use crate::{
     action::{
@@ -14,7 +15,7 @@ use crate::{
     actor::ActorDisplay,
     channel::{ChannelMember, ChannelPermission},
     command::Command,
-    helpers::{cmd_channel, get_actor_mut, get_notebook},
+    helpers::{get_actor_mut, get_notebook},
 };
 
 pub use crate::action::{SetNotebookPossession, SetNotebookPossessionResponse};
@@ -31,19 +32,23 @@ impl ActionInterface for SetNotebookPossession {
         let notebook = get_notebook(eng, self.notebook_id)?;
         let channel_id = notebook.channel_id;
 
-        // Callers finalize the notebook's ownership fields before this action, so the borrow
-        // flag reflects the post-transfer state. Addressed to the notebook's channel, which is
-        // where it is shown and who is entitled to know.
+        // Callers finalize the notebook's ownership fields before this action, so the borrow flag
+        // reflects the post-transfer state.
+        //
+        // Addressed to whoever now holds the book, and to nobody else: this is a status flag saying
+        // "the book in your hands is not yours", which is a fact about one person. It is no part of
+        // what the channel carried, so it never reaches the record.
         let borrowed = notebook.borrowed.is_some();
-        cmd_channel(
-            eng,
-            ctx,
-            Command::NotebookBorrowingStatus {
-                notebook_id: self.notebook_id,
-                borrowed,
-            },
-            channel_id,
-        );
+        if let Some(holder) = self.to {
+            ctx.push_cmd(
+                Command::NotebookBorrowingStatus {
+                    notebook_id: self.notebook_id,
+                    borrowed,
+                },
+                CommandRecipient::Actor(holder),
+                eng.time,
+            );
+        }
 
         if let Some(from) = self.from {
             if mutate {

@@ -4,18 +4,29 @@ pub mod initialize_engine;
 pub mod initialize_world;
 pub mod next_iteration;
 pub mod set_random_seed;
+pub mod start_game;
 pub mod set_world_channel_override;
 pub mod update_world_channel_perms;
 
 #[cfg(test)]
 mod world_tests {
+    use indexmap::indexset;
+    use lawliet_types::{
+        ability::{AbilityBehaviour, Gun},
+        action::{
+            Action, ActionActor, ActionError, ActionRequest, CreateAndGiveAbility, LendNotebook,
+        },
+        actor::ActorDisplay,
+        world::WorldPhase,
+    };
+
     use crate::{
         actor::{
             player::{OverrideResolver, OverrideSource, WorldChannelOverride},
             state::State,
         },
-        channel::{ChannelPermission, ChannelPermissions},
-        config::{role::Role, world::WorldChannelName},
+        channel::{ChannelMember, ChannelPermission, ChannelPermissions},
+        config::{ability::AbilityName, role::Role, world::WorldChannelName},
         engine::Engine,
         helpers::{get_channel, get_player},
         test_helpers::*,
@@ -32,6 +43,161 @@ mod world_tests {
             .get_member(player_id)
             .unwrap()
             .perms
+    }
+
+    // ---- phases ----
+
+    // A world in setup is a real, populated place. What waits for the start is play: abilities, and
+    // using or passing a notebook. Talking is not play — ordinary channel permission answers that.
+    #[test]
+    fn setup_blocks_play_but_not_talking() {
+        let mut eng = Engine::new();
+        init_engine_unstarted(&mut eng);
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
+        let channel = create_channel(&mut eng, 0, true);
+        set_member(
+            &mut eng,
+            0,
+            p1,
+            channel,
+            Some(ChannelMember {
+                perms: ChannelPermission::Send | ChannelPermission::View,
+                displays: indexset![ActorDisplay::Raw(p1)],
+            }),
+        )
+        .unwrap();
+        let ability = quick_ability(
+            &mut eng,
+            0,
+            CreateAndGiveAbility {
+                ability_name: AbilityName::Gun,
+                variant: 0,
+                actor_id: p1,
+                volatile: false,
+                transferrable: false,
+            },
+        );
+        let notebook = quick_notebook(&mut eng, 0, p1, false);
+
+        assert!(matches!(
+            use_ability(
+                &mut eng,
+                1,
+                p1,
+                ability,
+                AbilityBehaviour::Gun(Gun { target_id: p2 })
+            ),
+            Err((ActionError::GameNotStarted, _))
+        ));
+        // Not quick_lend, which unwraps and so cannot express a rejection.
+        let lend = eng.execute(ActionRequest {
+            actor: ActionActor::Player(p1),
+            timestamp: 1,
+            payload: Action::LendNotebook(LendNotebook {
+                notebook_id: notebook,
+                target_id: p2,
+            }),
+        });
+        assert!(matches!(lend, Err((ActionError::GameNotStarted, _))));
+        assert!(
+            send_message(&mut eng, 1, p1, channel, ActorDisplay::Raw(p1), "hello").is_ok(),
+            "talking is not play"
+        );
+
+        start_game(&mut eng, 2).unwrap();
+        assert!(
+            use_ability(
+                &mut eng,
+                3,
+                p1,
+                ability,
+                AbilityBehaviour::Gun(Gun { target_id: p2 })
+            )
+            .is_ok()
+        );
+    }
+
+    // The start IS the first turn of the clock, so the world opens on iteration 1 — iteration 0
+    // being the time before play.
+    #[test]
+    fn starting_turns_the_first_day() {
+        let mut eng = Engine::new();
+        init_engine_unstarted(&mut eng);
+        assert_eq!(eng.world.phase, WorldPhase::Setup);
+        assert_eq!(eng.world.curr_iteration, 0);
+
+        start_game(&mut eng, 0).unwrap();
+
+        assert_eq!(eng.world.phase, WorldPhase::Running);
+        assert_eq!(eng.world.curr_iteration, 1);
+        assert!(matches!(
+            start_game(&mut eng, 1),
+            Err((ActionError::GameAlreadyStarted, _))
+        ));
+    }
+
+    // Autonomous days re-arm themselves; an early manual turn cancels the pending one so the new
+    // day gets a full duration rather than the remainder of the last.
+    #[test]
+    fn an_early_turn_restarts_the_clock() {
+        let mut eng = Engine::new();
+        init_engine_unstarted(&mut eng);
+        start_game(&mut eng, 0).unwrap();
+
+        let armed = eng.world.iteration_job.expect("autonomous days arm a job");
+        assert_eq!(
+            eng.jobs.view(armed).unwrap().request.timestamp,
+            eng.config.defaults.iteration_duration
+        );
+
+        let early = 5_000;
+        next_iteration(&mut eng, early);
+
+        let rearmed = eng.world.iteration_job.expect("and re-arm on every turn");
+        assert_ne!(rearmed, armed);
+        assert_eq!(
+            eng.jobs.view(rearmed).unwrap().request.timestamp,
+            early + eng.config.defaults.iteration_duration
+        );
+    }
+
+    // The queue runs on the way IN to an action, so one action long after the fact catches the
+    // world all the way up rather than losing the days it slept through — and rather than turning
+    // one day and leaving the rest pending. This is what makes an idle game survive a gap, since
+    // nothing else drives the clock: no action, no time.
+    #[test]
+    fn one_late_action_turns_every_day_it_passed() {
+        let mut eng = Engine::new();
+        init_engine_unstarted(&mut eng);
+        start_game(&mut eng, 0).unwrap();
+        assert_eq!(eng.world.curr_iteration, 1);
+
+        // A Null carries no intent of its own; all it does is drag the queue along with it.
+        let day = eng.config.defaults.iteration_duration;
+        null_action(&mut eng, day * 3 + 1);
+
+        assert_eq!(eng.world.curr_iteration, 4);
+        // And the clock is still armed, from the last day it turned rather than from where it
+        // started — a catch-up leaves the world running, not merely correct.
+        let armed = eng.world.iteration_job.expect("still armed");
+        assert_eq!(
+            eng.jobs.view(armed).unwrap().request.timestamp,
+            day * 3 + day
+        );
+    }
+
+    // Handing the clock to the host means nothing is ever scheduled; the day turns when they say.
+    #[test]
+    fn a_host_owned_clock_arms_nothing() {
+        let mut eng = Engine::new();
+        init_engine_unstarted(&mut eng);
+        eng.config.defaults.iterations_autonomous = false;
+
+        start_game(&mut eng, 0).unwrap();
+
+        assert_eq!(eng.world.curr_iteration, 1);
+        assert!(eng.world.iteration_job.is_none());
     }
 
     // ---- initialization ----

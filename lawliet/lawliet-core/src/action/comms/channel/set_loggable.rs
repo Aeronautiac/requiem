@@ -55,6 +55,8 @@ impl ActionInterface for SetLoggable {
                 loggable: self.loggable,
             },
             self.channel_id,
+            false,
+            None,
         );
 
         Ok(ActionResponse::SetLoggable(SetLoggableResponse {}))

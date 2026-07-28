@@ -166,6 +166,6 @@ export function createWebHost(config: WebHostConfig): HostContext {
 
     // A tab cannot close itself the way a desktop window can, and `canQuit` above is what
     // keeps the UI from offering it.
-    quit() {},
+    quit() { },
   };
 }

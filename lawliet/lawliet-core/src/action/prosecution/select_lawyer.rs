@@ -98,6 +98,8 @@ impl ActionInterface for SelectLawyer {
                     prosecution_id: self.prosecution_id,
                 },
                 channel_id,
+                false,
+                None,
             );
 
             // Both sides, shown to each other as themselves — there is no anonymity between a

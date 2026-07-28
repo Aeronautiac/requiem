@@ -53,6 +53,23 @@ pub struct CommandPayload {
     pub cmd: Command,
 }
 
+// What a tap-in guess turned up. The two misses read differently on purpose: a contact channel is
+// loggable unless an admin deliberately turned it off, so "dark" is a rare and meaningful answer
+// rather than a way of hiding whether the id was real.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TapInOutcome {
+    // There is a record to read. The frontend server queries this channel's log viewport; `range`
+    // is how far back from now, or None for everything it ever held.
+    Found {
+        channel_id: ChannelKey,
+        range: Option<Time>,
+    },
+    // Nothing has ever been registered under that id.
+    NoSuchContact,
+    // The channel is real, but logging is off there, so nothing was ever written down.
+    NotLoggable,
+}
+
 // command the frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
@@ -289,10 +306,27 @@ pub enum Command {
         context: BugContext,
     },
 
+    // a new day. a world event, so it reaches everyone present — and, like every world event, an
+    // absent player is handed it when they return rather than told at the time.
+    NewIteration {
+        iteration: IterationCount,
+    },
+
     // update the owner status of a gc for a player
     GcOwnerStatus {
         owner: bool,
         gc_id: GroupchatKey,
+    },
+
+    // DIRECTED (to the member) + System: whether this player is an OG of this org.
+    //
+    // Personal info, addressed like a role or a true name — you know your own standing, admin can
+    // inspect anyone's, and the rest of the org is told nothing. The org's ROSTER is a separate
+    // thing that rides the org channel and says only who is in it.
+    OgStatus {
+        target_id: ActorKey,
+        org_id: ActorKey,
+        og: bool,
     },
 
     // display a channel member
@@ -441,6 +475,20 @@ pub enum Command {
         target_id: ActorKey,
         range: Time,
         redact_names: bool,
+    },
+
+    // what a tap-in guess found, addressed to whoever guessed. every outcome is reported, because
+    // learning that an id is unused is a real (and rationed) result, not an error.
+    TapInResult {
+        contact_id: ID,
+        outcome: TapInOutcome,
+    },
+
+    // this channel was read by somebody outside the conversation. addressed to the channel, and
+    // deliberately anonymous — the members learn they were tapped, never by whom. that gap is what
+    // makes tapping a line you are on yourself a move rather than a waste.
+    ChannelTapped {
+        channel_id: ChannelKey,
     },
 
     // privately reveal a target player's true name to the recipient (BackgroundCheck)

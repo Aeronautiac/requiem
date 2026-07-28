@@ -55,7 +55,8 @@ use crate::{
             org::{
                 add_to_org::AddToOrg, change_org_leader::ChangeOrgLeader,
                 create_and_give_org_ability::CreateAndGiveOrgAbility, create_org::CreateOrg,
-                remove_from_org::RemoveFromOrg, set_leadership::SetLeadership,
+                remove_from_org::RemoveFromOrg, set_blacklist_status::SetBlacklistStatus,
+                set_leadership::SetLeadership, set_og_status::SetOgStatus,
                 use_org_ability::UseOrgAbility,
             },
             player::{add_player::AddPlayer, kill::Kill, revive::Revive},
@@ -68,7 +69,7 @@ use crate::{
         },
         passive::create_and_give_passive::CreateAndGivePassive,
         poll::{add_vote::AddVote, create_poll::CreatePoll, remove_vote::RemoveVote},
-        world::initialize_engine::InitializeEngine,
+        world::{initialize_engine::InitializeEngine, start_game::StartGame},
     },
     actor::organization::LeadershipTransferPolicies,
     chargepool::PoolLinkType,
@@ -380,13 +381,40 @@ pub fn quick_clear_links(eng: &mut Engine, time: Time, ability_id: AbilityKey) {
     .unwrap();
 }
 
+// An engine with a world, and the game running. Almost every test is about play, and play needs the
+// world out of Setup — a test that is about the setup phase itself should use init_engine_unstarted
+// and start it deliberately.
 pub fn init_engine(eng: &mut Engine) {
+    init_engine_unstarted(eng);
+    start_game(eng, 0).unwrap();
+}
+
+pub fn init_engine_unstarted(eng: &mut Engine) {
     eng.execute(ActionRequest {
         actor: ActionActor::System,
         timestamp: 0,
         payload: Action::InitializeEngine(InitializeEngine { seed: 0 }),
     })
     .unwrap();
+}
+
+// A bare engine with the game running — no world, no channels, no orgs.
+//
+// For tests that build exactly the objects they need by hand and would rather not have
+// InitializeEngine's world underneath them. They still need play to be legal, which is all this
+// adds over Engine::new().
+pub fn started_engine() -> Engine {
+    let mut eng = Engine::new();
+    start_game(&mut eng, 0).unwrap();
+    eng
+}
+
+pub fn start_game(eng: &mut Engine, time: Time) -> ExecutionResult {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::StartGame(StartGame {}),
+    })
 }
 
 pub fn add_org(eng: &mut Engine, time: Time, org: OrganizationName) -> ActorKey {
@@ -402,6 +430,42 @@ pub fn add_org(eng: &mut Engine, time: Time, org: OrganizationName) -> ActorKey 
         unreachable!()
     };
     response.id
+}
+
+pub fn set_blacklist_status(
+    eng: &mut Engine,
+    time: Time,
+    org: ActorKey,
+    actor: ActorKey,
+    blacklisted: bool,
+) -> ExecutionResult {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::SetBlacklistStatus(SetBlacklistStatus {
+            actor_id: actor,
+            org_id: org,
+            blacklisted,
+        }),
+    })
+}
+
+pub fn set_og_status(
+    eng: &mut Engine,
+    time: Time,
+    org: ActorKey,
+    actor: ActorKey,
+    og: bool,
+) -> ExecutionResult {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::SetOgStatus(SetOgStatus {
+            actor_id: actor,
+            org_id: org,
+            og,
+        }),
+    })
 }
 
 pub fn add_to_org(

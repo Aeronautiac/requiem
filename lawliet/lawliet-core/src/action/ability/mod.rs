@@ -33,7 +33,7 @@ mod ability_tests {
 
     #[test]
     fn basic_usage() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let ability_id = quick_ability(
@@ -71,7 +71,7 @@ mod ability_tests {
 
     #[test]
     fn use_unowned() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
 
@@ -102,7 +102,7 @@ mod ability_tests {
     // return by death?
     #[test]
     fn usage_exhaustion() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let ability_id = quick_ability(
@@ -147,7 +147,7 @@ mod ability_tests {
 
     #[test]
     fn usage_arg_mismatch() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let ability_id = quick_ability(
@@ -189,7 +189,7 @@ mod ability_tests {
 
     #[test]
     fn basic_transfer() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
 
@@ -246,7 +246,7 @@ mod ability_tests {
 
     #[test]
     fn transfer_local_state_persistence() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
 
@@ -304,7 +304,7 @@ mod ability_tests {
     // verify infinite usage behaviour
     #[test]
     fn no_links() {
-        let mut eng = Engine::new();
+        let mut eng = started_engine();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let a1 = quick_ability(

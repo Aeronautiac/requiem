@@ -48,6 +48,8 @@ impl ActionInterface for AddNotebook {
                 channel_id,
             },
             channel_id,
+            false,
+            None,
         );
 
         Ok(ActionResponse::AddNotebook(AddNotebookResponse { id }))

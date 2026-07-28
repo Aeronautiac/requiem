@@ -93,16 +93,26 @@ impl Jobs {
         }
     }
 
+    // Drop cancelled entries off the head, so peek and pop never hand one back.
+    //
+    // Driven by the HEAP, and the heap alone. The map and the heap are not the same set: an entry
+    // survives on the heap after its job leaves the map, and the map holds jobs whose turn on the
+    // heap has not come. Looping on the map while reading the heap is what let a cancellation with
+    // more than one job queued walk off the end of it.
+    //
+    // A head whose job is missing from the map is stale rather than wrong — it is dropped like a
+    // cancelled one.
     fn pop_cancelled(&mut self) {
-        while !self.jobs.is_empty() {
-            let id = self.job_queue.peek().unwrap().id;
-            let job = self.jobs.get_mut(&id).unwrap();
-            if job.cancelled {
-                self.remove_job(id);
-                self.pop();
-            } else {
+        while let Some(&QueueEntry { id, .. }) = self.job_queue.peek() {
+            let stale = match self.jobs.get(&id) {
+                Some(job) => job.cancelled,
+                None => true,
+            };
+            if !stale {
                 break;
             }
+            self.remove_job(id);
+            self.job_queue.pop();
         }
     }
 

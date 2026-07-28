@@ -9,7 +9,7 @@ use crate::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
         SystemUseOrgAbility,
     },
-    helpers::actor_id,
+    helpers::{actor_id, require_running},
 };
 
 pub use crate::action::{UseOrgAbility, UseOrgAbilityResponse};
@@ -24,6 +24,10 @@ impl ActionInterface for UseOrgAbility {
         mutate: bool,
     ) -> ActionResult {
         actor.player_only()?;
+        // Also gated here, not just in UseAbility: an org ability may open a VOTE rather than fire,
+        // and a vote opened during setup would sit there waiting to resolve into a use that cannot
+        // happen.
+        require_running(eng)?;
 
         let response = Action::SystemUseOrgAbility(SystemUseOrgAbility {
             org_id: self.org_id,

@@ -54,6 +54,8 @@ impl ActionInterface for RemoveFromOrg {
                 org_id: self.org_id,
             },
             org_channel,
+            false,
+            None,
         );
 
         Action::SetMember(SetMember {

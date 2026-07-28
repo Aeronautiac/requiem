@@ -79,6 +79,8 @@ impl AbilityInterface for KiraConnection {
                 success: found,
             },
             channel_id,
+            true,
+            Some(user_id),
         );
 
         if !found {

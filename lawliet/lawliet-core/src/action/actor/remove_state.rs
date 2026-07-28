@@ -12,7 +12,7 @@ use crate::{
     },
     common::Version,
     engine::Engine,
-    helpers::{get_actor_mut, get_player, sync_presence},
+    helpers::{cmd_actor_state, get_actor_mut, get_player, sync_presence},
 };
 
 pub use crate::action::{RemoveState, RemoveStateResponse};
@@ -29,8 +29,14 @@ impl ActionInterface for RemoveState {
         actor.admin_or_system()?;
 
         let target = get_actor_mut(eng, self.actor_id)?;
+        // See AddState: removing a state the actor never had changes nothing.
+        let changed = target.states.contains(self.state);
         if mutate {
             target.remove_state(self.state);
+        }
+
+        if changed {
+            cmd_actor_state(eng, ctx, self.actor_id);
         }
 
         if get_player(eng, self.actor_id).is_ok() {

@@ -7,6 +7,8 @@
   // the sender header for a continuation of an uninterrupted run from the same sender within
   // a short window, tightening the run into one block; the row still carries its own time
   // (shown as a hover tooltip).
+  import { formatTime } from "../../lib/utils";
+
   interface Props {
     sender: string;
     content: string;
@@ -15,12 +17,7 @@
   }
   let { sender, content, timestamp, grouped = false }: Props = $props();
 
-  const time = $derived(
-    new Date(timestamp).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
-  );
+  const time = $derived(formatTime(timestamp));
 </script>
 
 <div

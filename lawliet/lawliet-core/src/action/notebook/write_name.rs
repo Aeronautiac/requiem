@@ -15,7 +15,7 @@ use crate::{
     engine::Engine,
     helpers::{
         actor_get_effective_passive, actor_id, cmd_channel, get_actor, get_notebook,
-        get_notebook_mut,
+        get_notebook_mut, require_running,
     },
     notebook::NotebookError,
     passive::PassiveType,
@@ -33,6 +33,7 @@ impl ActionInterface for WriteName {
         mutate: bool,
     ) -> ActionResult {
         actor.player_only()?;
+        require_running(eng)?;
         let player_id = actor_id(actor).unwrap();
         let target = eng.world.get_player_id_by_name(&self.true_name);
 
@@ -133,6 +134,8 @@ impl ActionInterface for WriteName {
                     user_id: player_id,
                 },
                 book_channel,
+                true,
+                Some(player_id),
             );
         } else {
             let book = get_notebook_mut(eng, self.notebook_id)?;
@@ -157,6 +160,8 @@ impl ActionInterface for WriteName {
                     user_id: player_id,
                 },
                 book_channel,
+                true,
+                Some(player_id),
             );
         }
 

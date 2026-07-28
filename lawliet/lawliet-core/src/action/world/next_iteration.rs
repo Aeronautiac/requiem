@@ -1,11 +1,12 @@
 use lawliet_types::{
-    action::{Action, ActionResponse, ArchiveBug, NextIteration},
+    action::{Action, ActionActor, ActionRequest, ActionResponse, ArchiveBug, NextIteration},
     actor::State,
+    command::Command,
     common::BugKey,
 };
 use smallvec::SmallVec;
 
-use crate::action::ActionInterface;
+use crate::{action::ActionInterface, helpers::cmd_world_event};
 
 impl ActionInterface for NextIteration {
     fn handle(
@@ -43,8 +44,33 @@ impl ActionInterface for NextIteration {
                 .handle(eng, ctx, actor, version, mutate)?;
         }
 
-        // TODO:
-        // announce new iteration
+        // Re-arm, or leave the clock alone if the host owns it.
+        //
+        // The pending advance is cancelled first, which is what makes an early manual turn behave:
+        // the new day gets a full duration instead of being cut short by a timer belonging to the
+        // day before. A natural turn cancels a job that has already fired, which is a no-op.
+        if mutate {
+            if let Some(job) = eng.world.iteration_job.take() {
+                eng.jobs.cancel_id(job);
+            }
+            if eng.config.defaults.iterations_autonomous {
+                let at = eng.time + eng.config.defaults.iteration_duration;
+                let job = eng.jobs.push(ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: at,
+                    payload: Action::NextIteration(NextIteration {}),
+                });
+                eng.world.iteration_job = Some(job);
+            }
+        }
+
+        cmd_world_event(
+            eng,
+            ctx,
+            Command::NewIteration {
+                iteration: eng.world.curr_iteration,
+            },
+        );
 
         Ok(ActionResponse::NextIteration(
             lawliet_types::action::NextIterationResponse {},

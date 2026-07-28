@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    common::{ActorKey, LoungeKey},
+    common::{ActorKey, ID, LoungeKey},
     role::Role,
 };
 
@@ -70,6 +70,21 @@ pub enum AbilityBehaviour {
     ShinigamiSacrifice(ShinigamiSacrifice),
     KiraConnection(KiraConnection),
     TrueNameReroll(TrueNameReroll),
+    TapIn(TapIn),
+}
+
+// Peer into a contact channel's record by GUESSING which one.
+//
+// Contact channels are numbered in one strictly incrementing sequence, and that number is the only
+// handle on one — you tap what you can work out from what you already know. Any contact channel is
+// fair game, including one you are in yourself: the channel is told it was read but never by whom,
+// so reading your own line is a way to make the other side believe an outsider is listening.
+//
+// Failed guesses draw a small failure pool, which is what stops the sequence being searched from
+// the top down to learn how many contacts exist.
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct TapIn {
+    pub contact_id: ID,
 }
 
 // Open a public arrest vote against a player: any present player may vote, majority

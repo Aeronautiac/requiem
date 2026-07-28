@@ -21,6 +21,21 @@
 <div class="flex items-center gap-2">
   <AddPlayers />
 
+  <!-- Setup ends when the host says so, not when the world is created. Rejected once the game is
+       running, so this is safe to leave in place rather than gate on a phase the client is not
+       told. -->
+  <Button
+    onclick={async () => {
+      const err = await client.dispatch({
+        actor: "Admin",
+        timestamp: now(),
+        payload: { StartGame: {} },
+      });
+      if (err) flash.set_error(err);
+      else flash.set_success("Day 1. Abilities and notebooks are live.");
+    }}>Start Game</Button
+  >
+
   <Button
     variant="danger"
     onclick={async () => {

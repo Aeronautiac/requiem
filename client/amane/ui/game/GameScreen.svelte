@@ -12,6 +12,7 @@
   import ViewSelect from "./ViewSelect.svelte";
   import AbilityMenu from "./abilities/AbilityMenu.svelte";
   import PassivesPanel from "./PassivesPanel.svelte";
+  import StatusBadges from "./StatusBadges.svelte";
   import ChannelView from "./ChannelView.svelte";
   import AdminPanel from "../admin/AdminPanel.svelte";
 
@@ -56,5 +57,6 @@
     <AbilityMenu />
     <PassivesPanel />
     <AdminPanel />
+    <StatusBadges />
   </div>
 </div>

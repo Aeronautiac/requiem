@@ -1,7 +1,10 @@
 use std::rc::Rc;
 
 use indexmap::{IndexMap, IndexSet, map::Entry};
-use lawliet_types::common::{ID, IterationCount};
+use lawliet_types::{
+    common::{ID, IterationCount, JobID},
+    world::WorldPhase,
+};
 use slotmap::SlotMap;
 
 use crate::{
@@ -63,7 +66,12 @@ pub struct World {
     pub kidnappings: SlotMap<KidnappingKey, Kidnapping>,
     pub incarcerations: SlotMap<IncarcerationKey, Incarceration>,
     pub world_channel_map: IndexMap<WorldChannelName, ChannelKey>,
+    pub phase: WorldPhase,
     pub curr_iteration: IterationCount,
+    // The scheduled turn of the next day, when days turn on their own. Held so it can be cancelled:
+    // an early manual advance has to take the pending one down with it, or the day it starts gets
+    // cut short by a timer belonging to the day before. Always None when the host owns the clock.
+    pub iteration_job: Option<JobID>,
     pub contact_channels: IndexMap<ID, ContactChannel>,
     pub contact_channel_id: ID,
     pub viewports: SlotMap<ViewportKey, Viewport>,
@@ -81,7 +89,9 @@ impl World {
         World {
             viewports,
             presence_viewport,
+            phase: WorldPhase::Setup,
             curr_iteration: 0,
+            iteration_job: None,
             blackout: false,
             actors: SlotMap::with_key(),
             abilities: SlotMap::with_key(),
