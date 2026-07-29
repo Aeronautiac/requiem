@@ -12,6 +12,7 @@ import type {
   ActionRequest,
   ActionResponse,
   ActorDisplay,
+  ActorKey,
   Batch,
   CommandPayload,
   CommandRecipient,
@@ -19,6 +20,7 @@ import type {
   ExecOutcome,
   GameControl,
   OutputData,
+  PrivilegeSet,
   ProsecutionPhaseView,
   ServerInput,
   ServerOutput,
@@ -40,6 +42,14 @@ export class SessionState {
   readonly host: HostContext;
   readonly ui = new UiState();
   readonly game = new GameState();
+  // What our own key permits, as the server states it. Null until the first packet, which arrives
+  // ahead of the catch-up — so the window is real but empty, and "null" reads as "nothing", which
+  // is the safe way round: the UI offers nothing until told otherwise rather than offering
+  // everything until corrected.
+  //
+  // Session-level rather than per-view, and deliberately not in GameState: it is a fact about this
+  // CONNECTION, not about the game, and no view may be built out of it.
+  privileges = $state<PrivilegeSet | null>(null);
   // Our own replies AND everything caused by other clients funnel through one ordered pipe, so
   // they can never race into a desync.
   #seq = new Sequencer();
@@ -82,7 +92,55 @@ export class SessionState {
       this.game.apply_profiles(data.Profiles);
       return;
     }
+    if ("Privileges" in data) {
+      this.#apply_privileges(data.Privileges);
+      return;
+    }
     this.#apply_batch(data.Batch);
+  }
+
+  // Replaced wholesale — the packet states the complete set, exactly as the controls that write it
+  // do. Applied in seq order like everything else, so it can never be read against state from
+  // before the change it describes.
+  #apply_privileges(privileges: PrivilegeSet) {
+    this.privileges = privileges;
+  }
+
+  // ---- what this key permits ----
+
+  // Whether the admin surfaces are offered at all. Not a security boundary: the server denies a
+  // control from a key without it whatever the client renders.
+  get administers(): boolean {
+    return this.privileges?.capabilities.includes("Administer") ?? false;
+  }
+
+  // Authority over OTHER administrators' keys, which is what decides whether a key form may offer
+  // Supervise or aim at an admin's key at all.
+  get supervises(): boolean {
+    return this.privileges?.capabilities.includes("Supervise") ?? false;
+  }
+
+  // The actors this key may act as, or empty for a scope that names none individually. `All` is
+  // deliberately not expanded into a list: it covers actors created later, which no list can.
+  get actors(): ActorKey[] {
+    const scope = this.privileges?.actors;
+    return scope !== undefined && scope !== "All" ? scope.Only : [];
+  }
+
+  // Every view this connection may look through, admin's first. THE answer to "who can I be" — the
+  // view picker offers exactly these, and the game screen renders nothing at all while it is empty,
+  // because almost every component below reads a current view and there is no honest one to give
+  // them.
+  //
+  // Read off the views that have actually received something rather than off `actors`: an actor is
+  // only worth looking through once something has been delivered to it, and `All` names no actors
+  // to enumerate. System is the admin view and appears under the name the UI uses for it, so it is
+  // never offered twice.
+  get viewers(): string[] {
+    const actors = [...this.game.views.keys()]
+      .filter((key) => key !== "System")
+      .sort((a, b) => parseInt(a) - parseInt(b));
+    return this.administers ? ["Admin", ...actors] : actors;
   }
 
   // Commands first, then the reply. That order is required, not incidental — a response routinely

@@ -31,11 +31,11 @@ use lawliet_types::{
 };
 
 use crate::{
-    auth::{Key, KeyData, Privileges, Ticket},
+    auth::{Key, KeyData, Privileges, Ticket, from_flags},
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
     wire::{
-        ActionOutcome, Batch, ExecOutcome, OutputData, Profile, ProfileUpdate, ResponsePair,
-        ServerInput, ServerOutput,
+        ActionOutcome, Batch, ExecOutcome, OutputData, PrivilegeSet, Profile, ProfileUpdate,
+        ResponsePair, ServerInput, ServerOutput,
     },
 };
 
@@ -415,6 +415,18 @@ pub fn push_profiles(conn: &mut ConnHandle, update: ProfileUpdate) {
     push(conn, OutputData::Profiles(update));
 }
 
+// Tell one connection what its own key permits. Like a profile, this needs no log -- the ledger IS
+// the current answer -- so it is sent straight from whatever rewrote it.
+pub fn push_privileges(conn: &mut ConnHandle, privileges: &Privileges) {
+    push(
+        conn,
+        OutputData::Privileges(PrivilegeSet {
+            actors: privileges.actors.clone(),
+            capabilities: from_flags(privileges.capabilities),
+        }),
+    );
+}
+
 // The actors a just-delivered command run introduced this connection to. Their profiles are owed
 // immediately: the connection has just been told they exist, so withholding the name until some
 // later change would leave every existing player nameless on arrival.
@@ -622,10 +634,18 @@ pub fn deliver_catchup(
         // connection (no cursor yet, covered by the replay) or advances the cursor the replay left.
         conn.cursor = Some(cursor);
 
-        let mut outputs = vec![OutputData::Batch(Batch {
-            commands,
-            response: None,
-        })];
+        // Ahead of the replay, so the client is never applying commands without knowing what it is.
+        // Nothing in the batch can contradict it: the same privileges decided both.
+        let mut outputs = vec![
+            OutputData::Privileges(PrivilegeSet {
+                actors: privileges.actors.clone(),
+                capabilities: from_flags(privileges.capabilities),
+            }),
+            OutputData::Batch(Batch {
+                commands,
+                response: None,
+            }),
+        ];
         outputs.extend(roster.map(OutputData::Profiles));
         outputs
     });

@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth::{Capability, Key, KeyData, Privileges, Ticket, to_flags},
-    delivery::push_profiles,
+    delivery::{push_privileges, push_profiles},
     game::GameEvent,
     state::{GameHandle, GameId, WrappedServerState, lock_state},
     wire::{ControlError, ControlOutcome, ControlResponse, GameControl},
@@ -107,6 +107,12 @@ pub fn revoke_key(game: &mut GameHandle, key: &Key) {
 // narrow walks every viewport in every cursor on the key, and a widen makes the game task walk the
 // entire log. Neither is cheap enough to run on a change that did not go that way, and a change
 // almost never goes both ways at once.
+//
+// The new set itself goes out to every attached connection UNCONDITIONALLY, ahead of both. Reach is
+// not the only thing a privilege set decides -- granting Supervise and stripping Administer each
+// change what the client should offer while moving no history at all -- so gating the announcement
+// on the same test as the delivery work would leave the client showing an admin menu to a key that
+// no longer administers.
 fn apply_privilege_change(game: &mut GameHandle, key: &Key, before: Privileges) {
     // split the borrow by field: cursors are edited through `connections` while `keys` is still
     // read for the ticket list and the new privilege set.
@@ -129,10 +135,6 @@ fn apply_privilege_change(game: &mut GameHandle, key: &Key, before: Privileges) 
     let gained_reach = after.actors.may_have_gained(&before.actors)
         || (after.administers() && !before.administers());
 
-    if !lost_actors && !gained_reach {
-        return;
-    }
-
     for ticket in &key_data.tickets {
         let Some(conn) = connections.get_mut(ticket) else {
             continue; // ticket minted, but its socket has not upgraded yet
@@ -140,9 +142,9 @@ fn apply_privilege_change(game: &mut GameHandle, key: &Key, before: Privileges) 
         if conn.dropped {
             continue; // already cut; nothing more will be read from this cursor or sent to it
         }
-        // an unattached connection needs neither half: it has no cursor to correct, and the replay
-        // it is still waiting for walks the whole log under the privileges as they are NOW -- which
-        // this control has already written to the ledger, under this same lock.
+        // an unattached connection needs none of this: it has no cursor to correct, and the replay
+        // it is still waiting for both walks the whole log under the privileges as they are NOW and
+        // states them -- which this control has already written to the ledger, under this same lock.
         let Some(cursor) = conn.cursor.as_mut() else {
             continue;
         };
@@ -150,6 +152,10 @@ fn apply_privilege_change(game: &mut GameHandle, key: &Key, before: Privileges) 
         if lost_actors {
             cursor.narrow(after);
         }
+
+        // After the narrow, which sends nothing, and before the widen, which sends history: the
+        // client is told what it now reaches, then handed it.
+        push_privileges(conn, after);
 
         if gained_reach {
             let _ = inbox.send(GameEvent::Widen {

@@ -7,6 +7,7 @@
   import FlashDisplay from "../Flash.svelte";
   import { now } from "../../time.svelte.ts";
   import AddPlayers from "./AddPlayers.svelte";
+  import KeyManager from "./KeyManager.svelte";
 
   const session = getContext<SessionState>(SESSION_KEY);
   const flash = new Flash();
@@ -14,6 +15,7 @@
 
 <div class="flex items-center gap-2">
   <AddPlayers />
+  <KeyManager />
 
   <!-- Rejected once the game is running, so this is safe to leave in place rather than gate on a
        phase the client is not told. -->

@@ -68,6 +68,10 @@ pub fn to_flags(capabilities: &[Capability]) -> BitFlags<Capability> {
         .fold(BitFlags::empty(), |flags, capability| flags | *capability)
 }
 
+pub fn from_flags(capabilities: BitFlags<Capability>) -> Vec<Capability> {
+    capabilities.iter().collect()
+}
+
 // which actors a key may act as / observe. `All` is not the same as a set holding every actor that
 // exists today: it covers actors created LATER, so an admin key needs no bookkeeping when the engine
 // adds a player. an `Only` set is enumerated at mint time and never has to be topped up.

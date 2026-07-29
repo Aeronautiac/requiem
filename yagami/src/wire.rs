@@ -120,6 +120,24 @@ pub struct ProfileUpdate {
     pub profiles: Vec<(ActorKey, Profile)>,
 }
 
+// What the connection's OWN key permits: the privilege set behind it, in the client's terms.
+//
+// The client needs this because a UI offering something the key cannot do is a bad UI. It is
+// emphatically not what enforces anything -- every action and every control is checked against the
+// ledger when it arrives, and a hand-written client that ignores this packet gains nothing but
+// rejections. The name is the one §10 uses: a key resolves to a privilege set, never to an "actor".
+//
+// Sent as the first thing a connection receives and again whenever the set is rewritten, so there
+// is never a window where the client is acting on a set the server has already replaced.
+//
+// Capabilities are a list of names rather than a bitmask, matching GameControl's direction: a
+// hand-written client never has to know bit values.
+#[derive(Serialize)]
+pub struct PrivilegeSet {
+    pub actors: ActorScope,
+    pub capabilities: Vec<Capability>,
+}
+
 // Boxing the big variant would trade a heap allocation on the COMMON path (every batch) to shrink a
 // value that is serialized and dropped immediately. The size only ever costs us one outbox slot per
 // queued output, which is bounded by OUTBOX_BUF_SIZE.
@@ -128,6 +146,7 @@ pub struct ProfileUpdate {
 pub enum OutputData {
     Batch(Batch),
     Profiles(ProfileUpdate),
+    Privileges(PrivilegeSet),
 }
 
 #[derive(Serialize)]

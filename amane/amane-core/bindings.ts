@@ -1122,9 +1122,18 @@ export type ProfileUpdate = {
   profiles: [ActorKey, Profile][];
 };
 
+// What this connection's own key permits. Arrives before anything else and again whenever it is
+// rewritten, so the UI never has to infer its own standing from which commands happened to show up.
+// UX only — the server checks every action and control against the ledger regardless.
+export type PrivilegeSet = {
+  actors: ActorScope;
+  capabilities: Capability[];
+};
+
 export type OutputData =
   | { Batch: Batch }
-  | { Profiles: ProfileUpdate };
+  | { Profiles: ProfileUpdate }
+  | { Privileges: PrivilegeSet };
 
 export type ServerOutput = {
   seq_num: number;

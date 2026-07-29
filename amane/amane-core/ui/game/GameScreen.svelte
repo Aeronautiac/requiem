@@ -34,6 +34,13 @@
   setContext(UI_STATE_KEY, ui);
 </script>
 
+{#if self.viewers.length === 0}
+  <!-- Nothing has been delivered to this connection yet, so there is no view to render and almost
+       everything below would be reading state that does not exist. -->
+  <p class="flex h-full items-center justify-center p-8 text-sm text-ink-dim">
+    Waiting for the server.
+  </p>
+{:else}
 <div class="flex flex-col h-full">
   <div class="flex flex-1 overflow-hidden">
     <aside class="w-52 shrink-0 border-r border-neutral-800 overflow-y-auto">
@@ -56,7 +63,10 @@
     <ViewSelect />
     <AbilityMenu />
     <PassivesPanel />
-    <AdminPanel />
+    {#if self.administers}
+      <AdminPanel />
+    {/if}
     <StatusBadges />
   </div>
 </div>
+{/if}
