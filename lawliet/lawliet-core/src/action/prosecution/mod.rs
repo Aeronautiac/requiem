@@ -143,9 +143,9 @@ mod prosecution_tests {
     };
 
     use crate::{
-        action::ActionError,
+        action::{Action, ActionActor, ActionError, ActionRequest, AdvanceProsecution},
         actor::ActorDisplay,
-        channel::{ChannelMember, ChannelPermission},
+        channel::{ChannelKind, ChannelMember, ChannelPermission},
         config::role::Role,
         engine::{Engine, ExecutionResult},
         helpers::{get_channel, get_prosecution},
@@ -404,7 +404,7 @@ mod prosecution_tests {
         // Introduced to the frontend, or an AddMessage there kills the client.
         assert!(ctx.commands.iter().any(|p| matches!(
             &p.cmd,
-            Command::MapLawyerChannel { channel_id, .. } if *channel_id == channel
+            Command::MapChannel { channel_id, kind: ChannelKind::Lawyer(_) } if *channel_id == channel
         )));
 
         // ...and both parties can actually use it.
@@ -560,6 +560,36 @@ mod prosecution_tests {
 
         let (_, channel) = get_prosecution(&eng, id).unwrap().phase_view();
         assert!(channel.is_some());
+    }
+
+    // The trial channel is registered on its OWN viewport. UpdateProsecution names it too, but that
+    // rides the presence viewport, so a frontend registering it from there files every message sent
+    // in the trial against the wrong viewport.
+    #[test]
+    fn the_trial_channel_is_mapped_on_its_own_viewport() {
+        let mut eng = Engine::new();
+        let (_, _, _, id) = trial(&mut eng);
+
+        let (_, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 1,
+                payload: Action::AdvanceProsecution(AdvanceProsecution {
+                    prosecution_id: id,
+                }),
+            })
+            .unwrap();
+
+        let channel = trial_channel(&eng, id);
+        let membership = get_channel(&eng, channel).unwrap().membership_viewport;
+
+        assert!(ctx.commands.iter().any(|p| matches!(
+            (&p.cmd, &p.recipient),
+            (
+                Command::MapChannel { channel_id, kind: ChannelKind::Trial(_) },
+                CommandRecipient::Viewport(v),
+            ) if *channel_id == channel && *v == membership
+        )));
     }
 
     // Addressed to the presence viewport rather than broadcast, so an absent player receives it on

@@ -8,6 +8,7 @@ use crate::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
         CreateChannel,
     },
+    channel::ChannelKind,
     command::Command,
     common::{NotebookKey, Version},
     engine::Engine,
@@ -43,9 +44,9 @@ impl ActionInterface for AddNotebook {
         cmd_channel(
             eng,
             ctx,
-            Command::MapNotebook {
-                notebook_id: id,
+            Command::MapChannel {
                 channel_id,
+                kind: ChannelKind::Notebook(id),
             },
             channel_id,
             false,

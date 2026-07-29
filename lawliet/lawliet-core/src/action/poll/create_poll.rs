@@ -11,6 +11,7 @@ use crate::{
         PollTimeout, ScheduleJob,
     },
     common::PollKey,
+    helpers::open_viewport,
     poll::Poll,
     viewport::ViewportKind,
 };
@@ -30,7 +31,7 @@ impl ActionInterface for CreatePoll {
 
         let id = if mutate {
             // The poll owns its viewport for its whole life; PollCleanup frees it.
-            let viewport = eng.world.add_viewport(ViewportKind::Poll);
+            let viewport = open_viewport(eng, ctx, ViewportKind::Poll);
             eng.world.add_poll(Poll::new(
                 *(self.accept_payload.clone()),
                 *(self.reject_payload.clone()),

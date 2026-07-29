@@ -163,7 +163,7 @@ fn apply_privilege_change(game: &mut GameHandle, key: &Key, before: Privileges) 
 // Push one actor's profile to every connection already entitled to it.
 //
 // Entitlement is not decided here: `profiles_for` drops any actor the connection has not been
-// delivered a MapPlayer for, so naming someone can never announce their existence to a viewer the
+// delivered a MapActor for, so naming someone can never announce their existence to a viewer the
 // command stream kept them from. A connection that learns of them LATER is handed the name then,
 // by whichever delivery introduced them.
 //

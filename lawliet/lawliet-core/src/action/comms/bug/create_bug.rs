@@ -10,7 +10,7 @@ use crate::{
     bug::{Bug, BugSource},
     command::Command,
     common::BugKey,
-    helpers::{get_ability, get_player_mut},
+    helpers::{get_ability, get_player_mut, open_viewport},
     viewport::ViewportKind,
 };
 
@@ -35,7 +35,7 @@ impl ActionInterface for CreateBug {
 
         let id = if mutate {
             // The bug owns its viewport for its whole life; DestroyBug frees it.
-            let viewport = eng.world.add_viewport(ViewportKind::Bug);
+            let viewport = open_viewport(eng, ctx, ViewportKind::Bug);
             let bug_id = eng
                 .world
                 .add_bug(Bug::new(self.target_id, self.source, viewport));

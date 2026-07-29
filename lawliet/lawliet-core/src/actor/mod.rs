@@ -43,7 +43,7 @@ pub enum ActorType {
     Player(Player),
 }
 
-pub use lawliet_types::actor::ActorDisplay;
+pub use lawliet_types::actor::{ActorDisplay, ActorKind};
 use lawliet_types::common::ChannelKey;
 
 #[derive(Debug)]

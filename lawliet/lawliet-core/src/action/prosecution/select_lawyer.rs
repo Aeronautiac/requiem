@@ -12,7 +12,7 @@
 * - create a private channel between defendant and lawyer
 * - set defense.lawyer
 *
-* Commands: MapLawyerChannel to the new channel's viewport, then SetMember for each side (which
+* Commands: MapChannel to the new channel's viewport, then SetMember for each side (which
 * emits their perms and the roster). The lawyer's identity reaches everyone else on the next
 * prosecution snapshot, not from here.
 */
@@ -29,6 +29,7 @@ use crate::{
         ActionResult, CreateChannel, SetMember,
     },
     actor::{ActorDisplay, modifier::Modifier},
+    channel::ChannelKind,
     common::Version,
     engine::Engine,
     helpers::{cmd_channel, get_actor, get_prosecution_mut, player_id, require_player},
@@ -93,9 +94,9 @@ impl ActionInterface for SelectLawyer {
             cmd_channel(
                 eng,
                 ctx,
-                Command::MapLawyerChannel {
+                Command::MapChannel {
                     channel_id,
-                    prosecution_id: self.prosecution_id,
+                    kind: ChannelKind::Lawyer(self.prosecution_id),
                 },
                 channel_id,
                 false,

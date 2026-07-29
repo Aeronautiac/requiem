@@ -23,16 +23,15 @@ mod comms_tests {
         },
         actor::{ActorDisplay, state::State},
         bug::BugSource,
-        channel::{ChannelMember, ChannelPermission},
+        channel::{ChannelKind, ChannelMember, ChannelPermission},
         command::Command,
-        common::{AbilityKey, ActorKey, BugKey},
+        common::{AbilityKey, ActorKey, BugKey, ViewportKey},
         config::{ability::AbilityName, role::Role},
         engine::Engine,
         helpers::{get_bug, get_channel, get_gc, get_player},
         lounge::LoungeVariant,
         passive::PassiveType,
         test_helpers::*,
-        viewport::ViewportKind,
     };
 
     // ---- channel ----
@@ -319,7 +318,7 @@ mod comms_tests {
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Viewport(viewport)
-                && matches!(&p.cmd, Command::MapGc { gc_id, channel_id: cid, .. }
+                && matches!(&p.cmd, Command::MapChannel { channel_id: cid, kind: ChannelKind::Groupchat { gc_id, .. } }
                     if *gc_id == data.id && *cid == channel_id)
         }));
     }
@@ -500,7 +499,7 @@ mod comms_tests {
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Viewport(viewport)
-                && matches!(&p.cmd, Command::MapLounge { lounge_id, channel_id, .. }
+                && matches!(&p.cmd, Command::MapChannel { channel_id, kind: ChannelKind::Lounge { lounge_id, .. } }
                     if *lounge_id == data.lounge_id && *channel_id == data.channel_id)
         }));
     }
@@ -546,6 +545,18 @@ mod comms_tests {
     }
 
     // ---- bug ----
+
+    // The viewport the bug's relay rides. Every visibility test below creates exactly one bug, and
+    // this is what an assertion about access to it has to name: EnterViewport carries the key
+    // alone, the kind being a property of the viewport rather than of the grant.
+    fn only_bug_viewport(eng: &Engine) -> ViewportKey {
+        eng.world
+            .bugs
+            .values()
+            .next()
+            .expect("the test should have created a bug")
+            .viewport
+    }
 
     #[test]
     fn create_bug_stored_in_world() {
@@ -1137,9 +1148,11 @@ mod comms_tests {
             })
             .unwrap();
 
+        let bug_viewport = only_bug_viewport(&eng);
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(owner)
-                && matches!(&p.cmd, Command::EnterViewport { actor, kind: ViewportKind::Bug, .. } if *actor == owner)
+                && matches!(&p.cmd, Command::EnterViewport { viewport, actor }
+                    if *viewport == bug_viewport && *actor == owner)
         }));
     }
 
@@ -1174,13 +1187,10 @@ mod comms_tests {
             })
             .unwrap();
 
-        assert!(!ctx.commands.iter().any(|p| matches!(
-            &p.cmd,
-            Command::EnterViewport {
-                kind: ViewportKind::Bug,
-                ..
-            }
-        )));
+        let bug_viewport = only_bug_viewport(&eng);
+        assert!(!ctx.commands.iter().any(
+            |p| matches!(&p.cmd, Command::EnterViewport { viewport, .. } if *viewport == bug_viewport)
+        ));
     }
 
     #[test]
@@ -1222,9 +1232,11 @@ mod comms_tests {
             })
             .unwrap();
 
+        let bug_viewport = only_bug_viewport(&eng);
         assert!(!ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(owner)
-                && matches!(&p.cmd, Command::EnterViewport { actor, kind: ViewportKind::Bug, .. } if *actor == owner)
+                && matches!(&p.cmd, Command::EnterViewport { viewport, actor }
+                    if *viewport == bug_viewport && *actor == owner)
         }));
     }
 
@@ -1252,9 +1264,11 @@ mod comms_tests {
             })
             .unwrap();
 
+        let bug_viewport = only_bug_viewport(&eng);
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(receiver)
-                && matches!(&p.cmd, Command::EnterViewport { actor, kind: ViewportKind::Bug, .. } if *actor == receiver)
+                && matches!(&p.cmd, Command::EnterViewport { viewport, actor }
+                    if *viewport == bug_viewport && *actor == receiver)
         }));
     }
 
@@ -1286,31 +1300,27 @@ mod comms_tests {
             })
             .unwrap();
 
-        // The command that introduces the bug must be addressed to the bug's own viewport, and
-        // must land there before anyone is admitted. That ordering is what makes a viewport
-        // legible: whoever enters learns what the viewport IS from the first thing in it.
-        let new_bug_pos = ctx
-            .commands
-            .iter()
-            .position(|p| {
-                matches!(p.recipient, CommandRecipient::Viewport(_))
-                    && matches!(&p.cmd, Command::NewBug { .. })
-            })
-            .unwrap();
+        // Everything the bug's viewport says about itself must land there before anyone is
+        // admitted. That ordering is what makes a viewport legible: whoever enters learns what the
+        // viewport IS from the first things in it — first that it is a bug's, then which bug.
+        let bug_viewport = only_bug_viewport(&eng);
+        let position = |find: &dyn Fn(&Command) -> bool| {
+            ctx.commands
+                .iter()
+                .position(|p| p.recipient == CommandRecipient::Viewport(bug_viewport) && find(&p.cmd))
+        };
+
+        let map_pos = position(&|cmd| matches!(cmd, Command::MapViewport { .. })).unwrap();
+        let new_bug_pos = position(&|cmd| matches!(cmd, Command::NewBug { .. })).unwrap();
         let enter_pos = ctx
             .commands
             .iter()
-            .position(|p| {
-                matches!(
-                    &p.cmd,
-                    Command::EnterViewport {
-                        kind: ViewportKind::Bug,
-                        ..
-                    }
-                )
-            })
+            .position(
+                |p| matches!(&p.cmd, Command::EnterViewport { viewport, .. } if *viewport == bug_viewport),
+            )
             .unwrap();
 
+        assert!(map_pos < new_bug_pos);
         assert!(new_bug_pos < enter_pos);
     }
 

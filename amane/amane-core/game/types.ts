@@ -1,0 +1,320 @@
+// The shapes a view holds. No behaviour and no state — just what the command handlers build and
+// the components read.
+import type {
+  AbilityName,
+  ActorDisplay,
+  BugContext,
+  ContactLog,
+  OrganizationName,
+  PassiveType,
+  PollOutcome,
+  PollSubject,
+  PollVisibility,
+  ProsecutionPhaseView,
+  Role,
+  TapInOutcome,
+} from "../bindings";
+
+export type WorldEvent = {
+  // Iteration 1 is the host starting the game, so this is also how a viewer learns play has begun.
+  NewIteration: {
+    iteration: number,
+  }
+} | {
+  Death: {
+    target_id: string,
+    true_name: string,
+    death_message: string,
+    role: Role,
+    notebook_transferred: boolean,
+    ability_transferred: boolean,
+  }
+} | {
+  PseudocideRevival: {
+    target_id: string,
+  }
+} | {
+  Kidnapping: {
+    kidnapping_id: string,
+    target_id: string,
+    duration: number | null, // null = indefinite
+  }
+} | {
+  KidnapReveal: {
+    kidnapping_id: string,
+    victim: string | null, // resolved from the tracked kidnapping (null = unknown)
+    kidnapper: string | null, // null = stayed anonymous
+  }
+} | {
+  Incarceration: {
+    incarceration_id: string,
+    victim_id: string,
+    duration: number | null, // null = held until released
+  }
+} | {
+  // Who ordered the incarceration is never disclosed, so unlike KidnapReveal there is nothing
+  // here to leak.
+  IncarcerationReleased: {
+    incarceration_id: string,
+    victim: string | null,
+  }
+} | {
+  AnonymousAnnouncement: {
+    content: string,
+  }
+} | {
+  // Derived by diffing the view's own prosecution snapshot, or from CloseProsecution. `phase` is
+  // the one being entered; on `ended` it's the last phase seen. `verdict` is only set on `ended`:
+  // true guilty, false acquitted, null for a prosecution that ended some other way.
+  ProsecutionEvent: {
+    prosecution_id: string,
+    prosecutor_display: ActorDisplay,
+    defendant_display: ActorDisplay,
+    phase: ProsecutionPhaseView,
+    ended: boolean,
+    verdict: boolean | null,
+  }
+}
+
+export type WriteEvent = {
+  user_id: string,
+  notebook_id: string,
+  message: string,
+  true_name: string,
+  delay: number,
+  successes_remaining: number,
+  attempts_remaining: number,
+  success: boolean,
+  target_saved: boolean,
+}
+
+// The three bits the engine sends, and nothing derived.
+//
+// No history cutoff belongs here. The engine's `Channel::viewers()` is exactly "everyone with
+// View", so losing read exits the membership viewport and this view stops being delivered the
+// channel's content. Delivery is the window.
+export type ChannelPerms = {
+  read: boolean;
+  send: boolean;
+  loggability_control: boolean;
+}
+
+// A channel carries two orthogonal axes: `category` is WHERE it renders in the sidebar (grouping
+// only, no behaviour), `kind` is HOW it behaves. The split lets the read-only Notifications feed
+// (kind "Info") sit in the same "Personal" category as sendable personal channels (kind "Standard").
+export type ChannelCategory =
+  | "Raw" | "Lounge" | "Groupchat" | "Notebook" | "Role"
+  | "World" | "Org" | "Prosecution" | "Logs" | "Personal";
+export const CHANNEL_CATEGORIES: ChannelCategory[] = [
+  "Raw", "Lounge", "Groupchat", "Notebook", "Role",
+  "World", "Org", "Prosecution", "Logs", "Personal",
+];
+
+// Only properties that can't be derived elsewhere live here — a channel that merely has an
+// associated object (a notebook, a group chat) stays "Standard" and is recognised via its mapping,
+// not a dedicated kind.
+//   - "Info":       frontend-only feed, built by the client rather than delivered.
+//   - "Bug":        a bug's relayed messages.
+//   - "ContactLog": a contact-log passive's record.
+export type ChannelKind = "Standard" | "Info" | "Bug" | "ContactLog";
+
+export type Channel = {
+  kind: ChannelKind;
+  category: ChannelCategory;
+  name: string;
+  archived: boolean;
+  events: GameEvent[];
+}
+
+export type Message = {
+  sender_display: ActorDisplay,
+  content: string,
+}
+
+// Entries that render inside a read-only Info channel. Kept separate from WorldEvent so a directed
+// personal event can never leak into the news stream.
+export type InfoEvent = {
+  RevealTrueName: {
+    target_id: string,
+    true_name: string,
+  }
+} | {
+  RevealNotebookHolding: {
+    target_id: string,
+    holding: boolean,
+  }
+} | {
+  // `context` says why (explicit ability vs custody); who planted it is intentionally unknown.
+  Bugged: {
+    context: BugContext,
+  }
+} | {
+  RoleUpdate: {
+    role: Role,
+  }
+} | {
+  TrueNameUpdate: {
+    true_name: string,
+  }
+} | {
+  // Derived from gaining read access to a notebook channel; no engine command backs it.
+  NotebookReceived: Record<string, never>,
+} | {
+  // A private answer to a private question: the tapped channel is told separately, and is never
+  // told who tapped it.
+  TapInResult: {
+    contact_id: number,
+    outcome: TapInOutcome,
+  }
+}
+
+// A poll started (outcome null) or ended, rendered inline in the poll's scoped channel. Distinct
+// from the Polls panel, which is where you actually vote.
+export type PollNoticeEvent = {
+  PollNotice: {
+    poll_id: string,
+    subject: PollSubject,
+    outcome: PollOutcome | null,
+    // Actor KEY, always null on a close notice. Resolved at render time — see PollData.opener.
+    opener: string | null,
+  }
+}
+
+// The engine's ContactLog verbatim — both ends are displays, so nothing here can be turned back
+// into a player.
+export type ContactLogEvent = {
+  ContactLogEntry: ContactLog
+}
+
+// Someone reached for Kira through a lounge. Emitted whether or not they found him, and the user
+// is named raw — you cannot feel for Kira quietly.
+export type KiraConnectionEvent = {
+  KiraConnectionAttempt: {
+    // Actor KEY, resolved at render time (see PollData.opener for why).
+    user: string,
+    success: boolean,
+  }
+}
+
+// This channel's record was read. Carries nothing: who tapped is exactly what is withheld.
+export type ChannelTappedEvent = {
+  ChannelTapped: Record<string, never>
+}
+
+export type GameEvent = {
+  timestamp: number,
+  data:
+    | { Message: Message }
+    | { Write: WriteEvent }
+    | WorldEvent
+    | InfoEvent
+    | PollNoticeEvent
+    | ContactLogEvent
+    | KiraConnectionEvent
+    | ChannelTappedEvent,
+}
+
+export type PollData = {
+  subject: PollSubject,
+  scope: PollVisibility,
+  accept: number,
+  reject: number,
+  potential: number,
+  // Actor KEY, not a name. Resolved at render time: a name resolved at apply time would be
+  // whatever `players` held then, and a replay later would resolve it differently.
+  opener: string | null,
+  // Set once resolved. The entry is KEPT rather than deleted: a view gaining the poll's viewport
+  // later replays its whole history and has to reach the same place. Live polls filter on null.
+  outcome: PollOutcome | null,
+}
+
+// Having an entry at all means the viewer can see the poll; `eligible` is whether they may vote.
+export type PollView = {
+  eligible: boolean,
+  own_vote: boolean | null,
+}
+
+// The trial channel and verdict poll ride their own command streams; trial_channel is just the id
+// so the UI can tag that channel as a prosecution channel.
+export type ProsecutionData = {
+  prosecutor_display: ActorDisplay,
+  defendant_display: ActorDisplay,
+  // Public — a trial's defence counsel is not a hidden fact.
+  lawyer_display: ActorDisplay | null,
+  phase: ProsecutionPhaseView,
+  trial_channel: string | null,
+}
+
+export interface AbilityView {
+  name: AbilityName;
+  // Split by outcome: conditional charge subtraction means successful and failed uses can have
+  // different remaining counts (a true-name guess bounded by an attempts pool on failure but an
+  // invite pool on success).
+  success_usages_remaining: number;
+  failure_usages_remaining: number;
+  iterations_to_reset: number;
+}
+
+// The type itself may carry data (VoteAmplification's multiplier), so this is the full PassiveType.
+export interface PassiveView {
+  type: PassiveType;
+}
+
+// Per-view because the same actor can be shown under different displays to different viewers
+// (deception). Keyed by display key -> member.
+export type ChannelMemberView = {
+  display: ActorDisplay;
+  perms: number;
+  // Sticky. A member that has never held a positive perm isn't an effective member.
+  had_positive: boolean;
+};
+
+// The presence of an entry IS the membership signal — non-members hold no entry and receive no
+// member updates.
+export type ChannelView = {
+  perms: ChannelPerms;
+  members: Map<string, ChannelMemberView>;
+  // The displays this viewer may send as in this channel.
+  displays: ActorDisplay[];
+};
+
+// A player slot this view has been told about (from MapActor).
+//
+// The slot comes first and always; the NAME is a separate server-level fact that may never arrive.
+// So `display_name` is nullable, and every render site goes through `playerLabel` rather than
+// reaching for the field — an unnamed slot is a normal, permanent state, not a missing value.
+export interface Player {
+  display_name: string | null;
+}
+
+// Populated from the System copy of the personal-info commands, so this stays empty on every view
+// but System's.
+export interface PlayerInfo {
+  role?: Role;
+  true_name?: string;
+  // OG standing goes to the member and to System, and to nobody else in the org.
+  og_orgs?: Set<string>;
+}
+
+// Members and abilities arrive on the org channel's viewport: a viewer is shown the org iff they
+// can see that channel, and all members see the same list.
+export interface Org {
+  name: OrganizationName;
+  members: Set<string>; // dead members included
+  abilities: Map<string, AbilityView>;
+}
+
+// Kept after its reveal rather than deleted: the reveal command carries only the kidnapping's id,
+// so resolving the victim is a lookup here, and a replay later must resolve the same one.
+export type TrackedKidnapping = {
+  victim: string;
+  duration: number | null; // null = indefinite
+  revealed: boolean;
+};
+
+// Kept for the same reason: the release command carries only the id.
+export type TrackedIncarceration = {
+  victim: string;
+  duration: number | null; // null = held until released
+  released: boolean;
+};

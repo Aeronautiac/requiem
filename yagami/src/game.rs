@@ -12,6 +12,7 @@ use std::{collections::HashMap, env::current_exe, process::Stdio, time::Duration
 use lawliet_types::{
     ability::AbilityBehaviour,
     action::{Action, ActionActor, ActionRequest, InitializeEngine, Null},
+    actor::ActorKind,
     command::Command,
     common::{ActorKey, Time},
     engine::ExecutionResult,
@@ -511,13 +512,17 @@ pub async fn game(
                     // independently of the true name. An admin replaces it with SetProfile.
                     //
                     // Written before the broadcast below, which is what makes it ride out with the
-                    // MapPlayer that entitles a connection to it (see actors_introduced_by). The
+                    // MapActor that entitles a connection to it (see actors_introduced_by). The
                     // guard is for a rebuilt game: profiles are server state and outlive the child.
                     {
                         let mut server_state = lock_state(&state);
                         if let Some(game) = server_state.games.get_mut(&game_id) {
                             for payload in &commands {
-                                let Command::MapPlayer { player_id } = &payload.cmd else {
+                                let Command::MapActor {
+                                    actor_id: player_id,
+                                    kind: ActorKind::Player,
+                                } = &payload.cmd
+                                else {
                                     continue;
                                 };
                                 if game.profiles.contains_key(player_id) {

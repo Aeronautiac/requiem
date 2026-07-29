@@ -24,8 +24,10 @@ use std::collections::{HashMap, HashSet};
 
 use lawliet_types::{
     action::ActionRequest,
+    actor::ActorKind,
     command::{Command, CommandPayload, CommandRecipient},
     common::{ActorKey, ViewportKey},
+    viewport::ViewportKind,
 };
 
 use crate::{
@@ -51,6 +53,12 @@ use crate::{
 pub struct History {
     log: Vec<CommandPayload>,
     index: HashMap<ViewportKey, Vec<usize>>,
+    // The viewports that carry the record, learned from MapViewport as the engine allocates them.
+    //
+    // A log viewport is an identity, not an audience. It exists so the server can answer an
+    // autopsy or a tap-in from what was actually said, and is the only kind of viewport this
+    // server has any reason to tell apart.
+    log_viewports: HashSet<ViewportKey>,
 }
 
 impl History {
@@ -62,9 +70,25 @@ impl History {
             if let CommandRecipient::Viewport(viewport) = &payload.recipient {
                 self.index.entry(*viewport).or_default().push(at + offset);
             }
+            // MapViewport is addressed to the viewport it describes and is emitted when that
+            // viewport is allocated, so this is always recorded before anything can be addressed
+            // there -- within this batch as much as across batches, since the whole batch is
+            // indexed before a single command of it is handed out.
+            if let Command::MapViewport {
+                viewport,
+                kind: ViewportKind::Log,
+            } = &payload.cmd
+            {
+                self.log_viewports.insert(*viewport);
+            }
         }
         self.log.extend(commands);
         at
+    }
+
+    // Whether this viewport is the record. Nothing addressed to one is ever delivered to a client.
+    fn is_log(&self, viewport: &ViewportKey) -> bool {
+        self.log_viewports.contains(viewport)
     }
 
     // One past the last command: where a batch that added nothing both begins and ends.
@@ -151,12 +175,12 @@ pub struct ViewportCursor {
     // "delivered up to here" -- never a position walked past without sending. That is what lets
     // `widen` seed a probe with these and trust them to suppress re-delivery.
     watermark: HashMap<ViewportKey, usize>,
-    // every actor whose MapPlayer this connection has been delivered -- i.e. every player it has
+    // every actor whose MapActor this connection has been delivered -- i.e. every player it has
     // been told exists.
     //
     // This gates the profile channel. Without it, sending a display name would be a second way to
     // learn of a player, ungated by anything the command stream decided: a viewer who was never
-    // sent someone's MapPlayer would be handed their name anyway. Grows only here, and only from
+    // sent someone's MapActor would be handed their name anyway. Grows only here, and only from
     // a command that actually went out.
     known_actors: HashSet<ActorKey>,
 }
@@ -202,11 +226,16 @@ impl ViewportCursor {
                 // viewport's watermark on every command, so a later EnterViewport finds the gap
                 // already closed and backfills nothing.
                 CommandRecipient::Viewport(viewport) => {
-                    let held = reach.administers()
-                        || self
-                            .access
-                            .get(viewport)
-                            .is_some_and(|holders| !holders.is_empty());
+                    // The record reaches no client, admin included. Membership already keeps it
+                    // from everyone else -- nobody is ever granted a log viewport -- so Administer
+                    // reading every viewport unconditionally is the one thing that would hand a
+                    // client the same message twice, once as content and once as the record.
+                    let held = !history.is_log(viewport)
+                        && (reach.administers()
+                            || self
+                                .access
+                                .get(viewport)
+                                .is_some_and(|holders| !holders.is_empty()));
 
                     // ...and never re-send what this viewport's mark already accounts for. A no-op
                     // on a live walk, where the mark trails the position by construction. It earns
@@ -257,8 +286,12 @@ impl ViewportCursor {
             // reaches it by -- the live push above and the backfill spliced in by an entry. Doing it
             // per-route is how the backfilled half gets forgotten, which is exactly what happened.
             for delivered in &out[handed_over..] {
-                if let Command::MapPlayer { player_id } = &delivered.cmd {
-                    self.known_actors.insert(*player_id);
+                if let Command::MapActor {
+                    actor_id,
+                    kind: ActorKind::Player,
+                } = &delivered.cmd
+                {
+                    self.known_actors.insert(*actor_id);
                 }
             }
         }
@@ -325,7 +358,7 @@ impl ViewportCursor {
     }
 
     // The profiles out of `wanted` this connection is entitled to: those, and only those, whose
-    // MapPlayer it has already been delivered. Anything else would make this channel a second,
+    // MapActor it has already been delivered. Anything else would make this channel a second,
     // ungated way to learn that a player exists.
     //
     // `None` when nothing is owed, and that has to stay silent: seq counts what a socket was
@@ -354,7 +387,7 @@ impl ViewportCursor {
 // hand one thing to one connection, stamped with that connection's next sequence number.
 //
 // Both channels go through here, which is what puts them in ONE order: a profile can never arrive
-// ahead of the MapPlayer that entitles the connection to it, because both are numbered from the
+// ahead of the MapActor that entitles the connection to it, because both are numbered from the
 // same counter as they are sent.
 //
 // best effort by design: a client whose outbox is full is CUT, not waited on. the alternatives are
@@ -387,7 +420,12 @@ pub fn push_profiles(conn: &mut ConnHandle, update: ProfileUpdate) {
 // later change would leave every existing player nameless on arrival.
 fn actors_introduced_by(commands: &[CommandPayload]) -> impl Iterator<Item = ActorKey> + '_ {
     commands.iter().filter_map(|payload| match &payload.cmd {
-        Command::MapPlayer { player_id } => Some(*player_id),
+        // Players only. An org is an actor and gets mapped like one, but it has no profile: its
+        // name is engine state that rides the command itself.
+        Command::MapActor {
+            actor_id,
+            kind: ActorKind::Player,
+        } => Some(*actor_id),
         _ => None,
     })
 }
@@ -481,7 +519,7 @@ pub fn broadcast(
         }
 
         push_batch(conn, Batch { commands, response });
-        // after the batch, never before: the MapPlayer that entitles this connection to the profile
+        // after the batch, never before: the MapActor that entitles this connection to the profile
         // is in the batch we just sent.
         if let Some(update) = introduced {
             push(conn, OutputData::Profiles(update));
@@ -689,8 +727,15 @@ mod delivery_tests {
             Command::EnterViewport {
                 viewport: vp,
                 actor: who,
-                kind: lawliet_types::viewport::ViewportKind::Channel,
             },
+        )
+    }
+
+    // What the engine emits when it allocates a viewport, addressed to the viewport itself.
+    fn map(vp: ViewportKey, kind: ViewportKind) -> CommandPayload {
+        payload(
+            CommandRecipient::Viewport(vp),
+            Command::MapViewport { viewport: vp, kind },
         )
     }
 
@@ -944,6 +989,25 @@ mod delivery_tests {
         assert_eq!(tags(&replay(&omniscient, &log)), ["before", "after"]);
     }
 
+    // ...but never the record. Admin is the only key that could reach a log viewport at all, since
+    // nobody is ever granted one, and the copy it would receive is a message it already has.
+    #[test]
+    fn the_record_reaches_nobody() {
+        let (channel, record) = (viewport(1), viewport(2));
+        let log = vec![
+            map(record, ViewportKind::Log),
+            map(channel, ViewportKind::Channel),
+            content(channel, "said"),
+            content(record, "said"),
+        ];
+        let omniscient = Privileges {
+            actors: ActorScope::All,
+            capabilities: Capability::Administer.into(),
+        };
+
+        assert_eq!(tags(&replay(&omniscient, &log)), ["said"]);
+    }
+
     // Walk the whole log onto a cursor and keep the cursor, as a live connection has one.
     fn connect(privileges: &Privileges, log: &[CommandPayload]) -> (ViewportCursor, Vec<String>) {
         let mut cursor = ViewportCursor::default();
@@ -1100,13 +1164,16 @@ mod delivery_tests {
 
     // ---- the profile gate --------------------------------------------------------------------
     //
-    // A profile may only follow a MapPlayer the connection was actually delivered. Otherwise naming
+    // A profile may only follow a MapActor the connection was actually delivered. Otherwise naming
     // someone announces their existence to viewers the command stream deliberately kept them from.
 
     fn map_player(who: ActorKey) -> CommandPayload {
         payload(
             CommandRecipient::Viewport(viewport(9)),
-            Command::MapPlayer { player_id: who },
+            Command::MapActor {
+                actor_id: who,
+                kind: ActorKind::Player,
+            },
         )
     }
 
@@ -1142,7 +1209,7 @@ mod delivery_tests {
     }
 
     // Entering late must hand over the roster, not just future arrivals — the backfill delivers the
-    // earlier MapPlayers, so the gate has to open for them too.
+    // earlier MapActors, so the gate has to open for them too.
     #[test]
     fn backfilled_map_players_open_the_gate() {
         let (a, watcher, vp) = (actor(1), actor(2), viewport(9));

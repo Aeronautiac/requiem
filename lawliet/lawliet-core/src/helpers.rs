@@ -36,6 +36,7 @@ use crate::{
     passive::{ContactLog, Passive, PassiveType},
     poll::Poll,
     prosecution::Prosecution,
+    viewport::ViewportKind,
 };
 
 pub fn get_actor(eng: &Engine, actor_id: ActorKey) -> Result<&Actor, ActionError> {
@@ -676,6 +677,29 @@ pub fn owner_view_recipient(eng: &Engine, owner_id: ActorKey) -> CommandRecipien
     }
 }
 
+// Bring a viewport into existence: allocate it and announce what it belongs to, on itself.
+//
+// Every viewport an action owns is opened here, so the announcement cannot be forgotten and cannot
+// name a kind other than the one it was allocated with. It heads that viewport's history, which is
+// what lets it be the first thing anyone entering later is handed.
+//
+// Callers are the actions that own the object, per the lifetime rule in the viewport module, and
+// they call this on the mutate pass only — a validate pass allocates nothing, and the key it hands
+// back would be a real slot in a world that is about to be thrown away.
+pub fn open_viewport(
+    eng: &mut Engine,
+    ctx: &mut ActionContext,
+    kind: ViewportKind,
+) -> ViewportKey {
+    let viewport = eng.world.add_viewport(kind);
+    ctx.push_cmd(
+        Command::MapViewport { viewport, kind },
+        CommandRecipient::Viewport(viewport),
+        eng.time,
+    );
+    viewport
+}
+
 // Grant an actor access to a viewport and announce it. No-ops if they already had access, so
 // callers may be as liberal as they like about calling it — but panics if the viewport is gone
 // (see World::viewport_grant). "Already a member" and "the viewport no longer exists" are
@@ -690,15 +714,11 @@ pub fn grant_viewport(
     if !mutate {
         return;
     }
-    let Some(kind) = eng.world.viewport_grant(viewport, actor) else {
+    if !eng.world.viewport_grant(viewport, actor) {
         return;
-    };
+    }
     ctx.push_cmd(
-        Command::EnterViewport {
-            viewport,
-            actor,
-            kind,
-        },
+        Command::EnterViewport { viewport, actor },
         CommandRecipient::Actor(actor),
         eng.time,
     );
@@ -740,11 +760,6 @@ pub fn sync_viewport(
     if !mutate {
         return;
     }
-    let kind = eng
-        .world
-        .get_viewport(viewport)
-        .expect("viewport does not exist: engine invariant violated")
-        .kind;
     let diff = eng.world.viewport_set_members(viewport, members);
     let time = eng.time;
     for actor in diff.exited {
@@ -756,11 +771,7 @@ pub fn sync_viewport(
     }
     for actor in diff.entered {
         ctx.push_cmd(
-            Command::EnterViewport {
-                viewport,
-                actor,
-                kind,
-            },
+            Command::EnterViewport { viewport, actor },
             CommandRecipient::Actor(actor),
             time,
         );

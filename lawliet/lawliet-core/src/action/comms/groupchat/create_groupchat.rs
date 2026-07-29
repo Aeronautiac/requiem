@@ -5,6 +5,7 @@
 
 use crate::{
     action::{Action, ActionInterface, ActionResponse, CreateChannel},
+    channel::ChannelKind,
     command::Command,
     common::GroupchatKey,
     groupchat::Groupchat,
@@ -46,10 +47,12 @@ impl ActionInterface for CreateGroupchat {
         cmd_channel(
             eng,
             ctx,
-            Command::MapGc {
-                gc_id: id,
+            Command::MapChannel {
                 channel_id,
-                contact_id,
+                kind: ChannelKind::Groupchat {
+                    gc_id: id,
+                    contact_id,
+                },
             },
             channel_id,
             false,

@@ -99,7 +99,6 @@ mod presence_tests {
         common::ActorKey,
         engine::Engine,
         test_helpers::{add_player, add_state, remove_state},
-        viewport::ViewportKind,
     };
 
     fn has_presence(eng: &Engine, id: ActorKey) -> bool {
@@ -167,12 +166,13 @@ mod presence_tests {
         assert!(has_presence(&eng, absent));
         // Re-entry is what replays the world events missed while away: everything addressed to
         // the presence viewport since the exit is delivered, in order, on this one command.
+        let presence = eng.world.presence_viewport;
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(absent)
                 && matches!(
                     &p.cmd,
-                    Command::EnterViewport { actor, kind: ViewportKind::Presence, .. }
-                        if *actor == absent
+                    Command::EnterViewport { viewport, actor }
+                        if *viewport == presence && *actor == absent
                 )
         }));
     }

@@ -12,7 +12,11 @@ use crate::{
         Action, ActionInterface, ActionResponse, AddChargePool, CreateAndGiveOrgAbility,
         CreateAndGivePassive,
     },
-    actor::organization::{LeadershipStruct, OrgAbility},
+    actor::{
+        ActorKind,
+        organization::{LeadershipStruct, OrgAbility},
+    },
+    channel::ChannelKind,
     common::ActorKey,
     helpers::{cmd_channel, get_actor_mut, get_charge_pool_mut},
 };
@@ -67,13 +71,26 @@ impl ActionInterface for CreateOrg {
             ActorKey::default()
         };
 
+        // The org first, then the channel that names it: both ride the org channel's viewport, and
+        // the link only means something once the org it points at exists.
         cmd_channel(
             eng,
             ctx,
-            Command::MapOrg {
-                org_id: id,
+            Command::MapActor {
+                actor_id: id,
+                kind: ActorKind::Org(self.name),
+            },
+            channel_id,
+            false,
+            None,
+        );
+
+        cmd_channel(
+            eng,
+            ctx,
+            Command::MapChannel {
                 channel_id,
-                org_name: self.name,
+                kind: ChannelKind::Org(id),
             },
             channel_id,
             false,

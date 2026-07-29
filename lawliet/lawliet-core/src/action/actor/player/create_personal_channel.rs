@@ -10,6 +10,7 @@ use lawliet_types::{
 
 use crate::{
     action::ActionInterface,
+    channel::ChannelKind,
     command::Command,
     helpers::{actor_id, cmd_channel, get_player, get_player_mut},
 };
@@ -43,14 +44,15 @@ impl ActionInterface for CreatePersonalChannel {
         };
         let channel_id = data.id;
 
-        // Tag the freshly-created channel as a personal channel on the frontend. Must precede
-        // the SetMember below (whose UpdateChannelView references the channel), and mirrors how
-        // the other channel kinds announce themselves (MapGc, MapLounge, …), addressed to the
-        // channel's own viewport so only the owner ever sees it.
+        // Must precede the SetMember below, whose UpdateChannelView references the channel.
+        // Addressed to the channel's own viewport, so only the owner ever sees it.
         cmd_channel(
             eng,
             ctx,
-            Command::MapPersonalChannel { channel_id },
+            Command::MapChannel {
+                channel_id,
+                kind: ChannelKind::Personal,
+            },
             channel_id,
             false,
             None,

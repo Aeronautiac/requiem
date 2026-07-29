@@ -16,7 +16,7 @@ use crate::{
         Action, ActionInterface, ActionResponse, CreateChannel, SetMember, UpdateContactChannels,
     },
     actor::ActorDisplay,
-    channel::{ChannelMember, ChannelPermissions},
+    channel::{ChannelKind, ChannelMember, ChannelPermissions},
     command::Command,
     common::{ActorKey, LoungeKey},
     helpers::{cmd_channel, cmd_contact_log, get_player, get_player_mut},
@@ -172,10 +172,12 @@ impl ActionInterface for CreateLounge {
                 cmd_channel(
                     eng,
                     ctx,
-                    Command::MapLounge {
-                        lounge_id,
+                    Command::MapChannel {
                         channel_id,
-                        contact_id,
+                        kind: ChannelKind::Lounge {
+                            lounge_id,
+                            contact_id,
+                        },
                     },
                     channel_id,
                     false,

@@ -53,12 +53,12 @@ pub struct GameHandle {
     pub tickets: HashMap<Ticket, Key>,
     pub connections: HashMap<Ticket, ConnHandle>,
     pub keys: HashMap<Key, KeyData>,
-    // actor -> what the SERVER knows about whoever is playing that slot. The engine's MapPlayer says
+    // actor -> what the SERVER knows about whoever is playing that slot. The engine's MapActor says
     // the slot exists; this says who is on it, and the two have different lifetimes -- a name can be
     // set long after the slot, and changed again later. Runtime-only like the rest of this file.
     //
     // An entry here is NOT permission to see it: a profile only ever goes to a connection that has
-    // already been delivered that actor's MapPlayer. See wire::ProfileUpdate.
+    // already been delivered that actor's MapActor. See wire::ProfileUpdate.
     pub profiles: HashMap<ActorKey, Profile>,
 }
 

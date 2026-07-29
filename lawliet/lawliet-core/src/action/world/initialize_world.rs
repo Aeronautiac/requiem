@@ -3,14 +3,16 @@
 * Initialize any necessary world state
 */
 
-use lawliet_types::command::Command;
+use lawliet_types::command::{Command, CommandRecipient};
 
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
         AddChargePool, CreateChannel, CreateOrgs,
     },
+    channel::ChannelKind,
     helpers::{cmd_channel, get_charge_pool_mut},
+    viewport::ViewportKind,
 };
 
 pub use crate::action::{InitializeWorld, InitializeWorldResponse};
@@ -25,6 +27,19 @@ impl ActionInterface for InitializeWorld {
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
+
+        // Presence is the one viewport no action opens: it comes into existence with the world and
+        // outlives everything in it, so it is announced here instead. Pushed before anything else
+        // so it heads that viewport's history, exactly as open_viewport arranges for the rest.
+        let presence = eng.world.presence_viewport;
+        ctx.push_cmd(
+            Command::MapViewport {
+                viewport: presence,
+                kind: ViewportKind::Presence,
+            },
+            CommandRecipient::Viewport(presence),
+            eng.time,
+        );
 
         let pool_config = eng.config.world_config.charge_pools.clone();
         for (name, specifier) in pool_config {
@@ -63,9 +78,9 @@ impl ActionInterface for InitializeWorld {
                 cmd_channel(
                     eng,
                     ctx,
-                    Command::MapWorldChannel {
+                    Command::MapChannel {
                         channel_id,
-                        channel_name: name,
+                        kind: ChannelKind::World(name),
                     },
                     channel_id,
                     false,

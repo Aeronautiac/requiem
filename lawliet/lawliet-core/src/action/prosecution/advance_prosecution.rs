@@ -64,10 +64,11 @@ use crate::{
         ActionResult, CreateChannel, CreatePoll, DestroyChannel, ProsecutionVoteRes, SetMember,
     },
     actor::ActorDisplay,
-    channel::{ChannelMember, ChannelPermissions},
+    channel::{ChannelKind, ChannelMember, ChannelPermissions},
     common::{JobID, ProsecutionKey, Version},
     engine::Engine,
-    helpers::{get_prosecution, get_prosecution_mut},
+    command::Command,
+    helpers::{cmd_channel, get_prosecution, get_prosecution_mut},
     poll::{PollPolicy, PollSubject, PollVisibility, VoterPolicy},
     prosecution::{ProsecutionPhase, TrialPhase, TrialSubphase},
 };
@@ -184,6 +185,21 @@ impl ActionInterface for AdvanceProsecution {
                 let channel_id = data.id;
 
                 if mutate {
+                    // Before the seed_members below, which sync the viewport and then address the
+                    // roster to it: a Map emitted afterwards would arrive behind history the
+                    // newcomers already hold. Same ordering rule as the lawyer channel.
+                    cmd_channel(
+                        eng,
+                        ctx,
+                        Command::MapChannel {
+                            channel_id,
+                            kind: ChannelKind::Trial(self.prosecution_id),
+                        },
+                        channel_id,
+                        false,
+                        None,
+                    );
+
                     eng.jobs.cancel_id(job_id);
                     let job_id = schedule_advance(
                         eng,

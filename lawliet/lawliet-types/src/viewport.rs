@@ -12,9 +12,13 @@ use serde::{Deserialize, Serialize};
 // NewBug). Since gaining access backfills everything previously addressed there, a client
 // always learns which object a viewport belongs to from the content it receives through it.
 
-// What kind of object a viewport belongs to. Display only — it exists so an opaque key is
-// legible in a log. NEITHER the server nor the client may branch on it; if either needs to,
-// something upstream has gone wrong.
+// What kind of object a viewport belongs to, stated on MapViewport when the viewport is
+// allocated.
+//
+// A fact about the viewport, and one a recipient may act on. It reaches a client only on
+// admission, like everything else addressed there. The frontend server acts on exactly one
+// variant — it never forwards a Log viewport to a client — and that is the only branch anyone is
+// expected to need: every other kind of object announces itself through the content it sends.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ViewportKind {
     Channel,

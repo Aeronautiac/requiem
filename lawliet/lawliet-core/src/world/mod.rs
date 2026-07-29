@@ -132,17 +132,19 @@ impl World {
         self.viewports.get(id)
     }
 
-    // Grant access. Returns the viewport's kind on a real transition and None if the actor
-    // already had access, so callers emit exactly one command per genuine change.
+    // Grant access. Returns true only on a real transition, so callers emit exactly one command
+    // per genuine change.
     //
     // Panics if the viewport is gone. An object holding a key to a viewport that no longer
     // exists is an inconsistent world, not a condition to route around: the engine's contract is
     // to die on that and be rebuilt by replaying the action log. Silently doing nothing would
     // instead drop the command and leave every client permanently short of state, with no
     // symptom at the point of failure.
-    pub fn viewport_grant(&mut self, id: ViewportKey, actor: ActorKey) -> Option<ViewportKind> {
-        let viewport = self.viewports.get_mut(id).expect(MISSING_VIEWPORT);
-        viewport.grant(actor).then_some(viewport.kind)
+    pub fn viewport_grant(&mut self, id: ViewportKey, actor: ActorKey) -> bool {
+        self.viewports
+            .get_mut(id)
+            .expect(MISSING_VIEWPORT)
+            .grant(actor)
     }
 
     // Revoke access. Returns true only on a real transition. Panics on a missing viewport, as

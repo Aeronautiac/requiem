@@ -10,6 +10,7 @@ use crate::{
     channel::Channel,
     command::Command,
     common::{ChannelKey, ViewportKey},
+    helpers::open_viewport,
     viewport::ViewportKind,
 };
 
@@ -31,8 +32,8 @@ impl ActionInterface for CreateChannel {
         // in actions rather than World::add_channel/remove_channel so the allocation sits next
         // to the `mutate` gate that governs it instead of inheriting it invisibly.
         let (id, viewport) = if mutate {
-            let viewport = eng.world.add_viewport(ViewportKind::Channel);
-            let log_viewport = eng.world.add_viewport(ViewportKind::Log);
+            let viewport = open_viewport(eng, ctx, ViewportKind::Channel);
+            let log_viewport = open_viewport(eng, ctx, ViewportKind::Log);
             (
                 eng.world
                     .add_channel(Channel::new(self.loggable, viewport, log_viewport)),

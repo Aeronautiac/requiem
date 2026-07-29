@@ -89,7 +89,7 @@ pub struct Batch {
 
 // What the SERVER knows about whoever occupies an actor slot.
 //
-// The engine emits MapPlayer to say a slot exists, and that is the whole of what it knows. Who is
+// The engine emits MapActor to say a slot exists, and that is the whole of what it knows. Who is
 // playing it is a different fact with a different lifetime: it can be set after the slot exists,
 // changed later, and it survives nothing the engine would call an event. So it rides its own
 // channel rather than a synthetic Command, which would make lawliet declare a variant its engine
@@ -108,7 +108,7 @@ pub struct Profile {
 // complete profile for that actor, so there is no read-modify-write to get wrong. Actors not
 // mentioned are untouched.
 //
-// A profile may only ever be sent for an actor whose MapPlayer this connection has ALREADY been
+// A profile may only ever be sent for an actor whose MapActor this connection has ALREADY been
 // delivered. Otherwise this channel becomes a second, ungated way to learn that a player exists,
 // and it would announce people to viewers the command stream deliberately kept them from. See
 // ViewportCursor::known_actors, which is the record of what a connection has been told.
@@ -173,7 +173,7 @@ pub enum GameControl {
     //
     // Replaces, like the two above -- one control for the whole profile rather than one per field,
     // because every part of a profile has identical semantics (server-level, replaced wholesale,
-    // and gated on the same MapPlayer). Adding a field to Profile must not add a control.
+    // and gated on the same MapActor). Adding a field to Profile must not add a control.
     SetProfile {
         actor: ActorKey,
         profile: Profile,

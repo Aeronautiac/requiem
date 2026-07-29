@@ -1,0 +1,22 @@
+{
+  "name": "amane-webhost",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Browser host for amane-core, talking to yagami over REST + websocket. The reference host: a packaged desktop client would use this same transport.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "amane-core": "*",
+    "svelte": "^5"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5",
+    "@tailwindcss/vite": "^4",
+    "tailwindcss": "^4",
+    "vite": "^6"
+  }
+}

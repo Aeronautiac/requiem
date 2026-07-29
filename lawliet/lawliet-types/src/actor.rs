@@ -2,7 +2,23 @@ use enumflags2::{BitFlags, bitflags};
 use serde::{Deserialize, Serialize};
 
 use crate::common::{ActorKey, ID};
+use crate::organization::OrganizationName;
 use crate::role::Role;
+
+// What kind of actor a slot holds, stated on MapActor when the slot is registered.
+//
+// A player carries nothing: the raw slot existing is the whole of what the engine has to say about
+// it. No presentation rides here — a display name is a server-level fact about WHO is playing the
+// slot, with a different lifetime, and it arrives on its own channel. (`true_name` is deliberately
+// not it either: that is a MECHANIC, secret, and the thing written in a notebook.)
+//
+// An org carries its name, because unlike a player's that IS engine state. Which channel backs it
+// is not here — MapChannel states that, on the channel.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActorKind {
+    Player,
+    Org(OrganizationName),
+}
 
 #[derive(Hash, PartialEq, Eq, Debug, Ord, PartialOrd, Clone, Copy, Serialize, Deserialize)]
 pub enum ActorLinkType {

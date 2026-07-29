@@ -6,6 +6,7 @@
 use crate::{
     action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
     common::PassiveKey,
+    helpers::open_viewport,
     ownership::OwnershipStruct,
     passive::Passive,
     viewport::ViewportKind,
@@ -17,7 +18,7 @@ impl ActionInterface for AddPassive {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        _ctx: &mut ActionContext,
+        ctx: &mut ActionContext,
         actor: &ActionActor,
         _version: crate::common::Version,
         mutate: bool,
@@ -33,7 +34,7 @@ impl ActionInterface for AddPassive {
                     volatile: false,
                 },
                 passive_type: self.passive_type,
-                viewport: eng.world.add_viewport(ViewportKind::Passive),
+                viewport: open_viewport(eng, ctx, ViewportKind::Passive),
             };
             eng.world.add_passive(passive)
         } else {

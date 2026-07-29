@@ -3,21 +3,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ability::AbilityName,
-    actor::{ActorDisplay, States},
+    actor::{ActorDisplay, ActorKind, States},
     bug::BugContext,
-    channel::ChannelPermissions,
+    channel::{ChannelKind, ChannelPermissions},
     common::{
         AbilityKey, ActorKey, AttemptCount, BugKey, ChannelKey, ChargeCount, GroupchatKey, ID,
-        IncarcerationKey, IterationCount, KidnappingKey, LoungeKey, NotebookKey, PassiveKey,
-        PollKey, PollWeight, ProsecutionKey, Time, ViewportKey,
+        IncarcerationKey, IterationCount, KidnappingKey, NotebookKey, PassiveKey, PollKey,
+        PollWeight, ProsecutionKey, Time, ViewportKey,
     },
-    organization::OrganizationName,
     passive::{ContactLog, PassiveType},
     poll::{PollOutcome, PollSubject, PollVisibility},
     prosecution::ProsecutionPhaseView,
     role::Role,
     viewport::ViewportKind,
-    world::WorldChannelName,
 };
 
 // Every command is addressed. There is no "no recipient" case: a command that appears to be
@@ -83,18 +81,32 @@ pub enum Command {
     //
     // Gaining access delivers everything previously addressed to the viewport, in order.
     // Losing access only stops further delivery — nothing already received is ever retracted.
-    /// The actor may now read this viewport. `kind` is a display aid only; nothing may
-    /// branch on it.
+    /// The actor may now read this viewport.
     EnterViewport {
         viewport: ViewportKey,
         actor: ActorKey,
-        kind: ViewportKind,
     },
 
     /// The actor may no longer read this viewport. Their existing state stands.
     ExitViewport {
         viewport: ViewportKey,
         actor: ActorKey,
+    },
+
+    /// What kind of object this viewport belongs to, emitted when it is allocated and addressed
+    /// to the viewport itself -- which is what makes an opaque key self-describing, and puts this
+    /// at the head of every backfill, before any content can arrive on a viewport the recipient
+    /// cannot yet name.
+    ///
+    /// Being addressed to the viewport, a client learns the kind exactly when it is admitted, and
+    /// that is the intended gate: the kind is information, and knowing a viewport of some kind
+    /// exists without being in it is a leak. It rides the viewport rather than an access grant so
+    /// that the fact exists in the log for a reader that sees everything -- nobody is ever granted
+    /// a Log viewport, so on a grant the frontend server could never recognise the one kind it
+    /// must not forward.
+    MapViewport {
+        viewport: ViewportKey,
+        kind: ViewportKind,
     },
 
     ////////////////////////////////////////////////
@@ -209,57 +221,30 @@ pub enum Command {
         sender_display: ActorDisplay,
     },
 
-    // register a player: the raw actor slot exists, and that is the whole of what the engine has
-    // to say about it. No presentation rides here — a display name is a server-level fact about
-    // WHO is playing the slot, with a different lifetime, and it arrives on its own channel.
-    // (`true_name` is deliberately not it: that is a MECHANIC, secret, and the thing written in a
-    // notebook.)
+    // register an actor slot and say what holds it. See ActorKind for what each carries.
     //
-    // Addressed to the presence viewport like a world event, and emitted after the new player has
-    // entered it. Their watermark starts at zero, so entry backfills every prior MapPlayer — a
-    // player joining late is handed the whole roster, and an absent one learns of arrivals when
-    // presence returns. No new visibility rule.
-    MapPlayer {
-        player_id: ActorKey,
+    // A player is addressed to the presence viewport like a world event, and emitted after the new
+    // player has entered it. Their watermark starts at zero, so entry backfills every prior
+    // MapActor — a player joining late is handed the whole roster, and an absent one learns of
+    // arrivals when presence returns. No new visibility rule.
+    //
+    // An org is addressed to its own channel's viewport instead, so it reaches its members and
+    // nobody else.
+    MapActor {
+        actor_id: ActorKey,
+        kind: ActorKind,
     },
 
-    // map a lounge id to a channel id. contact_id is the lounge's strictly-increasing
-    // contact-channel id, used for display (e.g. "lounge-<contact_id>") and to reference the
-    // contact channel (tap-ins, contact logs).
-    MapLounge {
-        lounge_id: LoungeKey,
+    // register a channel and say what it belongs to. See ChannelKind for the kinds and what each
+    // carries.
+    //
+    // Always addressed to the channel's own membership viewport, which is what makes it the head
+    // of that channel's history: a frontend learns the channel exists from the same place its
+    // content will arrive, so nothing can be mis-filed against a viewport that merely mentioned
+    // it. (UpdateProsecution names a trial channel, for instance, but rides presence.)
+    MapChannel {
         channel_id: ChannelKey,
-        contact_id: ID,
-    },
-
-    // map a gc id to a channel id. contact_id as in MapLounge (rendered like "<name> [<contact_id>]";
-    // no custom names yet, so a default name for now).
-    MapGc {
-        gc_id: GroupchatKey,
-        channel_id: ChannelKey,
-        contact_id: ID,
-    },
-
-    // register an org on the frontend: its actor id, name, and backing channel (and any
-    // future org-level data). one unified command, addressed like the other channel maps.
-    MapOrg {
-        org_id: ActorKey,
-        channel_id: ChannelKey,
-        org_name: OrganizationName,
-    },
-
-    // there is only one instance of every world channel. a frontend must keep this in mind.
-    MapWorldChannel {
-        channel_id: ChannelKey,
-        channel_name: WorldChannelName,
-    },
-
-    // register a personal channel: a plain engine channel a player created for themselves
-    // (a notepad / a private line to whoever bugged them). Addressed to the channel's own
-    // viewport like the other channel maps, so only the owner ever sees it. Sent so the
-    // frontend can tag it as a personal channel.
-    MapPersonalChannel {
-        channel_id: ChannelKey,
+        kind: ChannelKind,
     },
 
     // the channel is finished: no further content will ever be addressed here. Everything
@@ -378,14 +363,6 @@ pub enum Command {
     // true name and leads to actual state modification. the player must be explicitly notified, and
     // the usage must be logged. The viewability of writes is governed by the same rules as channel
     // messages.
-
-    // map a notebook id to its channel id
-    // the state of the display for a given player should depend on that player's permissions in the
-    // notebook's channel
-    MapNotebook {
-        notebook_id: NotebookKey,
-        channel_id: ChannelKey,
-    },
 
     // notebook writes encompass everything the frontend could possibly need
     // the frontend should display all info when relevant
@@ -590,16 +567,8 @@ pub enum Command {
         // not a hidden fact, and it is the same kind of thing as the two displays above.
         //
         // NOT accompanied by the lawyer's private channel, which is addressed to its own viewport
-        // and reaches only the two of them -- see MapLawyerChannel.
+        // and reaches only the two of them -- see ChannelKind::Lawyer.
         lawyer_display: Option<ActorDisplay>,
-    },
-
-    // The private channel a defendant and their chosen lawyer share, addressed to its own viewport
-    // so only those two ever learn it exists. Carries the prosecution so the frontend can tie it to
-    // the trial rather than render an unexplained channel.
-    MapLawyerChannel {
-        channel_id: ChannelKey,
-        prosecution_id: ProsecutionKey,
     },
 
     // The prosecution ended (verdict reached, terminated, etc.). Addressed the same way as

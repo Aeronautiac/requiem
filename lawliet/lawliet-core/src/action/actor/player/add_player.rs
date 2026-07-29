@@ -9,10 +9,11 @@ use crate::{
         ActionResult, AddChargePool, AddToWorldChannels, CreateAndGiveAbility, GiveRole,
         SetTrueName,
     },
+    actor::ActorKind,
     command::Command,
     common::{ActorKey, Version},
     engine::Engine,
-    helpers::{cmd_world_event, get_actor_mut, get_charge_pool_mut, sync_presence},
+    helpers::{cmd_world_event, get_actor_mut, get_charge_pool_mut, open_viewport, sync_presence},
     viewport::ViewportKind,
 };
 
@@ -48,7 +49,7 @@ impl ActionInterface for AddPlayer {
             // Allocated here rather than in Player::new because viewport lifetime belongs to
             // actions. Nothing is ever granted access to it: it names the player as a sender, and
             // is only ever addressed to.
-            let log_viewport = eng.world.add_viewport(ViewportKind::Log);
+            let log_viewport = open_viewport(eng, ctx, ViewportKind::Log);
             eng.world
                 .get_player_mut(player_id)
                 .expect("just created")
@@ -63,9 +64,16 @@ impl ActionInterface for AddPlayer {
             sync_presence(eng, ctx, mutate);
 
             // Announce the slot, AFTER the entry above so this player's own backfill of the
-            // presence viewport hands them every earlier MapPlayer — i.e. the existing roster —
+            // presence viewport hands them every earlier MapActor — i.e. the existing roster —
             // before their own arrival goes out to everyone else.
-            cmd_world_event(eng, ctx, Command::MapPlayer { player_id });
+            cmd_world_event(
+                eng,
+                ctx,
+                Command::MapActor {
+                    actor_id: player_id,
+                    kind: ActorKind::Player,
+                },
+            );
 
             // add pools BEFORE giving abilities (the pools must exist beforehand)
             let pools = eng.config.player_config.charge_pools.clone();
