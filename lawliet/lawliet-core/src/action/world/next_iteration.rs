@@ -1,5 +1,8 @@
 use lawliet_types::{
-    action::{Action, ActionActor, ActionRequest, ActionResponse, ArchiveBug, NextIteration},
+    action::{
+        Action, ActionActor, ActionRequest, ActionResponse, ArchiveBug, NextIteration,
+        ReturnBorrowedNotebooks,
+    },
     actor::State,
     command::Command,
     common::BugKey,
@@ -43,6 +46,14 @@ impl ActionInterface for NextIteration {
             Action::ArchiveBug(ArchiveBug { bug_id: id })
                 .handle(eng, ctx, actor, version, mutate)?;
         }
+
+        Action::ReturnBorrowedNotebooks(ReturnBorrowedNotebooks {}).handle(
+            eng,
+            ctx,
+            &ActionActor::System,
+            version,
+            mutate,
+        )?;
 
         // Re-arm, or leave the clock alone if the host owns it.
         //

@@ -111,6 +111,9 @@ impl Notebook {
     pub fn iteration_reset(&mut self) {
         self.iteration_successes = IndexMap::new();
         self.iteration_failures = IndexMap::new();
+    }
+
+    pub fn return_borrowed(&mut self) {
         if let Some(true_owner) = self.borrowed {
             self.set_true_owner(true_owner, self.volatile);
         }

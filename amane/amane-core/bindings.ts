@@ -185,21 +185,21 @@ export type TrialPhaseView =
   | { Prosecutor: TrialSubphaseView }
   | { Defense: TrialSubphaseView }
   | {
-      Debate: {
-        prosecutor_done: boolean;
-        defense_done: boolean;
-        awaiting_host: boolean;
-      };
+    Debate: {
+      prosecutor_done: boolean;
+      defense_done: boolean;
+      awaiting_host: boolean;
     };
+  };
 
 export type ProsecutionPhaseView =
   | {
-      Custody: {
-        prosecutor_ready: boolean;
-        defense_ready: boolean;
-        awaiting_host: boolean;
-      };
-    }
+    Custody: {
+      prosecutor_ready: boolean;
+      defense_ready: boolean;
+      awaiting_host: boolean;
+    };
+  }
   | { Trial: TrialPhaseView }
   | "Voting";
 
@@ -530,11 +530,13 @@ export type UpdateContactChannels = {
 
 export type Null = Record<string, never>;
 export type Crash = Record<string, never>;
+export type NextIteration = Record<string, never>;
 
 export type ScheduleJob = {
   timestamp: number;
   payload: Action;
 };
+
 
 export type CreateIncarceration = {
   victim_id: ActorKey;
@@ -851,7 +853,8 @@ export type Action =
   | { UpdatePrisonChannel: UpdatePrisonChannel }
   | { CreateIncarceration: CreateIncarceration }
   | { ReleaseIncarceration: ReleaseIncarceration }
-  | { CullIncarcerations: CullIncarcerations };
+  | { CullIncarcerations: CullIncarcerations }
+  | { NextIteration: NextIteration };
 
 export type OrgActorInfo = {
   org_id: ActorKey;

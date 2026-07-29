@@ -50,6 +50,7 @@ impl ActionInterface for Action {
             Action::GiveNotebook(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::WriteName(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::LendNotebook(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::ReturnBorrowedNotebooks(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::ScheduleKill(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::RemoveState(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::GiveRole(a) => a.handle(eng, ctx, actor, version, mutate),

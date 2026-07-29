@@ -876,6 +876,12 @@ pub struct NotebookScheduledKill {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct ReturnBorrowedNotebooks {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct ReturnBorrowedNotebooksResponse {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct ReturnDormantBooksResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1348,6 +1354,7 @@ pub enum Action {
     ReleaseIncarceration(ReleaseIncarceration),
     CullIncarcerations(CullIncarcerations),
     CreatePersonalChannel(CreatePersonalChannel),
+    ReturnBorrowedNotebooks(ReturnBorrowedNotebooks),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1460,6 +1467,7 @@ pub enum ActionResponse {
     CreateIncarceration(CreateIncarcerationResponse),
     ReleaseIncarceration(ReleaseIncarcerationResponse),
     CullIncarcerations(CullIncarceratationsResponse),
+    ReturnBorrowedNotebooks(ReturnBorrowedNotebooksResponse),
 }
 
 impl ActionActor {

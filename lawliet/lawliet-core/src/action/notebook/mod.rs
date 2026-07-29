@@ -4,6 +4,7 @@ pub mod destroy_notebook;
 pub mod give_notebook;
 pub mod lend_notebook;
 pub mod notebook_scheduled_kill;
+pub mod return_borrowed_notebooks;
 pub mod return_dormant_books;
 pub mod set_books_dormant;
 pub mod set_borrowers_to_owners;

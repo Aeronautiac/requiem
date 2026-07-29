@@ -163,34 +163,12 @@ pub use common::{
 // theres no point in changing it at this point.
 
 // TODO:
-// - Finish non-autonomous prosecutions
-// - Go through everything and implement frontend commands. Refine the command protocol.
-// - Implement every ability and write tests for them
-// - Integration tests
-// - yagami
+// - Rulesets & live config editing
+// - Prosecution disruption
+// - Blackout
 // - Add destroy actions for the different kinds of objects (actors will be the final destroyable objects. they may get very messy.)
 // - Optimize by going through and caching what can be cached, adding indirection for very large
 // enums, and using smallvec when possible
-
-// TODO:
-// - Test prosecution system
-// - Test org channels
-//  * orgs get their own private channel
-//  * members are added to the channel when they join the org, and are removed when they leave
-//  * their access to the channel should be determined by the same rules as contact channels (will
-//  be evaluated in the same action)
-//  * org membership should be cached within the player
-// - Test world progression
-//  * notebooks are progressed
-//  * charge pools are progressed
-//  * iteration counter is incremented
-//  * bugs are ended
-//  * ipp is ended
-// - Add command outputs for strictly increasing contact channel ids used for ui display and abilities like tap in. The frontend
-// can't reasonably expect players to enter slotmap keys. Sharing the ids will allow for things like
-// tapping into group chats without being too easy as well.
-// * the world holds the counter and maintains a map of ids to lounges/gcs
-// * ensure that they are unmapped when the objects are destroyed
 
 #[cfg(test)]
 mod tests {

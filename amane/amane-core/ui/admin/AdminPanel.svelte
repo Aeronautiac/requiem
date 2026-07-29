@@ -46,5 +46,17 @@
     }}>Crash</Button
   >
 
+  <Button
+    onclick={async () => {
+      const reply = await session.submit_action({
+        actor: "Admin",
+        timestamp: now(),
+        payload: { NextIteration: {} },
+      });
+      if (!reply.ok) flash.set_error(execErrorText(reply.error));
+      else flash.set_success("Day progressed.");
+    }}>Next Day</Button
+  >
+
   <FlashDisplay {flash} />
 </div>
