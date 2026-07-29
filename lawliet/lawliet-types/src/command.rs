@@ -11,6 +11,7 @@ use crate::{
         IncarcerationKey, IterationCount, KidnappingKey, NotebookKey, PassiveKey, PollKey,
         PollWeight, ProsecutionKey, Time, ViewportKey,
     },
+    organization::OrganizationName,
     passive::{ContactLog, PassiveType},
     poll::{PollOutcome, PollSubject, PollVisibility},
     prosecution::ProsecutionPhaseView,
@@ -167,6 +168,22 @@ pub enum Command {
 
     AnonymousAnnouncement {
         content: String,
+    },
+
+    // A silent prosecution named somebody who was not wanted, and the accuser is burned for it:
+    // their true name is read out and the organization that has just barred them is named with it.
+    //
+    // Who they accused is deliberately absent. The world learns that an accusation was made and was
+    // wrong, never who it was made against — being quietly cleared by somebody else's mistake is not
+    // a thing you get handed in public.
+    //
+    // The org is carried by NAME rather than by key. An announcement everyone present receives has
+    // to be readable by everyone present, and an org's actor key only resolves for a client that can
+    // see that org's channel — which is to say, for its own members.
+    FailedSilentProsecution {
+        accuser_id: ActorKey,
+        true_name: String,
+        org: OrganizationName,
     },
 
     ////////////////////////////////////////////////

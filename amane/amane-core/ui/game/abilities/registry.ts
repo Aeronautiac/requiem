@@ -31,6 +31,7 @@ import ShinigamiSacrificeAbility from "./ShinigamiSacrificeAbility.svelte";
 import KiraConnectionAbility from "./KiraConnectionAbility.svelte";
 import TrueNameRerollAbility from "./TrueNameRerollAbility.svelte";
 import TapInAbility from "./TapInAbility.svelte";
+import SilentProsecuteAbility from "./SilentProsecuteAbility.svelte";
 
 // `orgId`, when set, means the ability belongs to that org: the same form is reused, so an org
 // ability looks identical to a personal one, but the request is dispatched as UseOrgAbility —
@@ -73,6 +74,7 @@ export const ABILITY_UIS: Partial<
   KiraConnection: KiraConnectionAbility,
   TrueNameReroll: TrueNameRerollAbility,
   TapIn: TapInAbility,
+  SilentProsecute: SilentProsecuteAbility,
 };
 
 // "AnonymousContact" -> "Anonymous Contact"

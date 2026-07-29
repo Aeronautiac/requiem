@@ -27,6 +27,19 @@ export const worldHandlers: Handlers = {
     });
   },
 
+  FailedSilentProsecution(ctx: CmdCtx, p) {
+    ctx.view.events.push({
+      timestamp: ctx.timestamp,
+      data: {
+        FailedSilentProsecution: {
+          accuser_id: slotKeyToString(p.accuser_id),
+          true_name: p.true_name,
+          org: p.org,
+        },
+      },
+    });
+  },
+
   PseudocideRevival(ctx: CmdCtx, p) {
     ctx.view.events.push({
       timestamp: ctx.timestamp,

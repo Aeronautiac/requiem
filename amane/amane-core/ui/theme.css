@@ -23,4 +23,21 @@
 
   --color-danger: #dc2626; /* destructive action fill */
   --color-danger-ink: #ffffff; /* text on top of danger */
+
+  /* Announcement accents. Named for what the event MEANS, not what happened in it, so several
+   * events share one: a kidnapping and a new day are both the same kind of "sit up" as far as the
+   * eye is concerned. Read as inline `var(--color-event-*)` rather than as utilities, because an
+   * Announcement takes a colour string and tints itself with it. */
+  --color-event-death: #ef4444; /* somebody died, or is about to */
+  --color-event-alarm: #f59e0b; /* something happened TO a player, and the day turning */
+  --color-event-nothing: #6b7280; /* the attempt found nothing */
+  --color-event-anonymous: #a855f7; /* said by someone unnamed */
+  --color-event-reveal: #3b82f6; /* an answer you went looking for */
+  --color-event-surveillance: #eab308; /* you are being listened to */
+  --color-event-personal: #8b5cf6; /* your own identity changed */
+  --color-event-vote: #6366f1;
+  --color-event-revival: #10b981;
+  --color-event-custody: #64748b; /* held, and released */
+  --color-event-tap: #14b8a6; /* a record was read */
+  --color-event-prosecution: #e11d48;
 }

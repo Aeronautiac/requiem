@@ -71,6 +71,21 @@ pub enum AbilityBehaviour {
     KiraConnection(KiraConnection),
     TrueNameReroll(TrueNameReroll),
     TapIn(TapIn),
+    SilentProsecute(SilentProsecute),
+}
+
+// Org ability. Accuse a player of being wanted, with no trial, no vote, and no announcement that
+// anybody was accused at all.
+//
+// Right, and the target dies on the spot. Nothing rations it — the ability draws no charge pool —
+// because an org that keeps being right about who is wanted is not the thing this needs to limit.
+//
+// Wrong, and the cost falls entirely on the accuser: they are thrown out of the org that sent them
+// and barred from ever rejoining it, and the world is told who they are, true name and all, next to
+// the name of the org that has just disowned them. Who they accused is never said.
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct SilentProsecute {
+    pub target: ActorKey,
 }
 
 // Peer into a contact channel's record by GUESSING which one.

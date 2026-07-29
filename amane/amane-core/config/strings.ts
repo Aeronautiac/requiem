@@ -67,6 +67,8 @@ export const STRINGS = {
   toast_role_body: "Your role is now {role}.",
   toast_true_name_title: "True Name",
   toast_true_name_body: "Your true name is now {name}.",
+  toast_false_accusation_title: "False Accusation",
+  toast_false_accusation_body: "{name} named an innocent person as wanted. {org} has expelled and barred them.",
   toast_prosecution_title: "Prosecution",
   toast_prosecution_ended_title: "Prosecution Ended",
 

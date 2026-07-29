@@ -172,11 +172,23 @@ export function displayKey(d: ActorDisplay): string {
   return `Role:${d.Role}`;
 }
 
+// A name as it should be READ: every word capitalised, nothing else touched.
+//
+// Names reach the client in whatever shape they were stored. True names are folded to lowercase by
+// the engine so that guessing one is not a spelling contest, and a display name is whatever somebody
+// typed into a box. Neither is a presentation decision, and both render as a name.
+//
+// PRESENTATION ONLY. Nothing derived from this may be sent back or compared against anything — the
+// stored copy is the name, and this is a rendering of it.
+export function nameLabel(name: string): string {
+  return name.replace(/\S+/g, (word) => word[0].toUpperCase() + word.slice(1));
+}
+
 // Falls back to a generated label rather than a bare key, matching how every other unnamed object
 // in the UI reads ("lounge-3", "trial-1v0").
 export function playerLabel(id: string, players: ReadonlyMap<string, Player>): string {
   const name = players.get(id)?.display_name;
-  if (name) return name;
+  if (name) return nameLabel(name);
   const key = slotKeyFromString(id);
   return t("player_unnamed", { idx: key.idx, version: key.version });
 }

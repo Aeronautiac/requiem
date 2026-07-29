@@ -1,6 +1,6 @@
 <script lang="ts">
   // Everything here dispatches as the Admin actor, which the engine accepts for these.
-  import { execErrorText } from "../../game/helpers.svelte";
+  import { execErrorText, nameLabel } from "../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
@@ -107,7 +107,10 @@
 <div class="flex flex-col gap-1.5 px-2 py-1 text-xs">
   <div class="text-neutral-500">
     <div><span class="text-neutral-600">Role:</span> {info?.role ?? "—"}</div>
-    <div><span class="text-neutral-600">True name:</span> {info?.true_name ?? "—"}</div>
+    <div>
+      <span class="text-neutral-600">True name:</span>
+      {info?.true_name ? nameLabel(info.true_name) : "—"}
+    </div>
   </div>
 
   <div class="flex items-center gap-1">

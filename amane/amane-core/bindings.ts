@@ -254,6 +254,7 @@ export type AbilityBehaviour =
   | { KiraConnection: { lounge: LoungeKey } }
   | { TrueNameReroll: { target: ActorKey; true_name: string } }
   | { TapIn: { contact_id: number } }
+  | { SilentProsecute: { target: ActorKey } }
   | { PublicKidnap: { target: ActorKey; performer: ActorKey | null } }
   | { AnonymousKidnap: { target: ActorKey } }
   | { Bug: { target: ActorKey } };
@@ -971,6 +972,9 @@ export type Command =
   | { IncarcerationReleased: { incarceration_id: IncarcerationKey } }
   | { PseudocideRevival: { target_id: ActorKey } }
   | { AnonymousAnnouncement: { content: string } }
+  // The org is a NAME, not a key: this reaches everyone present, and an org's key only resolves for
+  // a client that can see that org's channel. Who was accused is deliberately not carried.
+  | { FailedSilentProsecution: { accuser_id: ActorKey; true_name: string; org: OrganizationName } }
   | { ActorState: { state: States; actor_id: ActorKey } }
   | { AddOrgMember: { player_id: ActorKey; org_id: ActorKey } }
   | { RemoveOrgMember: { player_id: ActorKey; org_id: ActorKey } }

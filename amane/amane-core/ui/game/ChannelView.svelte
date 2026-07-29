@@ -6,6 +6,8 @@
     actorLabel,
     displayKey,
     isReadOnlyKind,
+    nameLabel,
+    orgDisplayName,
     phaseAnnouncement,
     playerLabel,
   } from "../../game/helpers.svelte";
@@ -184,7 +186,7 @@
   // success = the name matched a real player; target_saved = the kill didn't land (write
   // immunity, or an earlier pending death on that target was cancelled by this write).
   function write_event_text(w: WriteEvent): string {
-    const lines = [`${player_name(w.user_id)} wrote the name "${w.true_name}".`];
+    const lines = [`${player_name(w.user_id)} wrote the name "${nameLabel(w.true_name)}".`];
     if (!w.success) {
       lines.push("Outcome: the name matched no one — no effect.");
     } else if (w.target_saved) {
@@ -205,9 +207,9 @@
 
   // Red = lethal, amber = valid-but-saved, grey = no match.
   function write_event_color(w: WriteEvent): string {
-    if (!w.success) return "#6b7280";
-    if (w.target_saved) return "#f59e0b";
-    return "#ef4444";
+    if (!w.success) return "var(--color-event-nothing)";
+    if (w.target_saved) return "var(--color-event-alarm)";
+    return "var(--color-event-death)";
   }
 
   // A miss says WHICH miss on purpose: a contact channel is loggable unless an admin turned it
@@ -386,34 +388,41 @@
           {:else if "Death" in event.data}
             {@const d = event.data.Death}
             <Announcement
-              color="#ef4444"
+              color="var(--color-event-death)"
               description="Death"
-              content={`${player_name(d.target_id)} has died.\nReal name: ${d.true_name}\nRole: ${d.role}${d.death_message ? `\n\n${d.death_message}` : ""}`}
+              content={`${player_name(d.target_id)} has died.\nReal name: ${nameLabel(d.true_name)}\nRole: ${d.role}${d.death_message ? `\n\n${d.death_message}` : ""}`}
             />
           {:else if "AnonymousAnnouncement" in event.data}
             <Announcement
-              color="#a855f7"
+              color="var(--color-event-anonymous)"
               description="Anonymous Announcement"
               content={event.data.AnonymousAnnouncement.content}
+            />
+          {:else if "FailedSilentProsecution" in event.data}
+            {@const f = event.data.FailedSilentProsecution}
+            <Announcement
+              color="var(--color-event-prosecution)"
+              description="False Accusation"
+              content={`${player_name(f.accuser_id)} named an innocent person as wanted.\nReal name: ${nameLabel(f.true_name)}\n\n${orgDisplayName(f.org)} has expelled them and barred them from returning.`}
             />
           {:else if "RevealTrueName" in event.data}
             {@const r = event.data.RevealTrueName}
             <Announcement
-              color="#3b82f6"
+              color="var(--color-event-reveal)"
               description="Name Reveal"
-              content={`${player_name(r.target_id)}'s true name is ${r.true_name}.`}
+              content={`${player_name(r.target_id)}'s true name is ${nameLabel(r.true_name)}.`}
             />
           {:else if "RevealNotebookHolding" in event.data}
             {@const r = event.data.RevealNotebookHolding}
             <Announcement
-              color="#3b82f6"
+              color="var(--color-event-reveal)"
               description="Notebook Check"
               content={`${player_name(r.target_id)} is ${r.holding ? "" : "not "}currently holding a notebook.`}
             />
           {:else if "Bugged" in event.data}
             {@const b = event.data.Bugged}
             <Announcement
-              color="#eab308"
+              color="var(--color-event-surveillance)"
               description="Surveillance"
               content={b.context === "Custody"
                 ? "You are bugged: your messages are being monitored while you are in custody."
@@ -421,26 +430,26 @@
             />
           {:else if "RoleUpdate" in event.data}
             <Announcement
-              color="#8b5cf6"
+              color="var(--color-event-personal)"
               description="Role"
               content={`Your role is now ${event.data.RoleUpdate.role}.`}
             />
           {:else if "TrueNameUpdate" in event.data}
             <Announcement
-              color="#8b5cf6"
+              color="var(--color-event-personal)"
               description="True Name"
-              content={`Your true name is now ${event.data.TrueNameUpdate.true_name}.`}
+              content={`Your true name is now ${nameLabel(event.data.TrueNameUpdate.true_name)}.`}
             />
           {:else if "NotebookReceived" in event.data}
             <Announcement
-              color="#ef4444"
+              color="var(--color-event-death)"
               description="Notebook"
               content="A notebook has come into your possession."
             />
           {:else if "PollNotice" in event.data}
             {@const pn = event.data.PollNotice}
             <Announcement
-              color="#6366f1"
+              color="var(--color-event-vote)"
               description={pn.outcome ? `Vote ${pn.outcome}` : "Vote started"}
               content={pn.opener
                 ? `${poll_notice_text(pn.subject)}\nStarted by ${view.actor_name(pn.opener)}`
@@ -449,7 +458,7 @@
           {:else if "PseudocideRevival" in event.data}
             {@const r = event.data.PseudocideRevival}
             <Announcement
-              color="#10b981"
+              color="var(--color-event-revival)"
               description="Revival"
               content={`${player_name(r.target_id)} is alive.`}
             />
@@ -457,7 +466,7 @@
             {@const kr = event.data.KidnapReveal}
             {@const victim = kr.victim ? player_name(kr.victim) : "the victim"}
             <Announcement
-              color="#f59e0b"
+              color="var(--color-event-alarm)"
               description="Kidnap Reveal"
               content={kr.kidnapper
                 ? `Authorities have recovered ${victim}, and ${player_name(kr.kidnapper)} was revealed as the kidnapper.`
@@ -466,14 +475,14 @@
           {:else if "Kidnapping" in event.data}
             {@const k = event.data.Kidnapping}
             <Announcement
-              color="#f59e0b"
+              color="var(--color-event-alarm)"
               description="Kidnapping"
               content={`${player_name(k.target_id)} has been kidnapped.`}
             />
           {:else if "Incarceration" in event.data}
             {@const inc = event.data.Incarceration}
             <Announcement
-              color="#64748b"
+              color="var(--color-event-custody)"
               description="Imprisonment"
               content={inc.duration
                 ? `${player_name(inc.victim_id)} has been imprisoned for ${formatDuration(inc.duration)}.`
@@ -482,14 +491,14 @@
           {:else if "IncarcerationReleased" in event.data}
             {@const rel = event.data.IncarcerationReleased}
             <Announcement
-              color="#64748b"
+              color="var(--color-event-custody)"
               description="Release"
               content={`${rel.victim ? player_name(rel.victim) : "A prisoner"} has been released.`}
             />
           {:else if "NewIteration" in event.data}
             {@const it = event.data.NewIteration.iteration}
             <Announcement
-              color="#f59e0b"
+              color="var(--color-event-alarm)"
               description={it === 1 ? "The Game Begins" : "New Day"}
               content={it === 1
                 ? "Day 1. Abilities and notebooks are live."
@@ -497,21 +506,21 @@
             />
           {:else if "ChannelTapped" in event.data}
             <Announcement
-              color="#eab308"
+              color="var(--color-event-surveillance)"
               description="Tapped"
               content="Someone outside this conversation read what was said here. There is no way to tell who."
             />
           {:else if "TapInResult" in event.data}
             {@const tr = event.data.TapInResult}
             <Announcement
-              color={typeof tr.outcome === "string" ? "#6b7280" : "#14b8a6"}
+              color={typeof tr.outcome === "string" ? "var(--color-event-nothing)" : "var(--color-event-tap)"}
               description="Tap In"
               content={tap_in_text(tr.contact_id, tr.outcome)}
             />
           {:else if "KiraConnectionAttempt" in event.data}
             {@const ka = event.data.KiraConnectionAttempt}
             <Announcement
-              color={ka.success ? "#ef4444" : "#6b7280"}
+              color={ka.success ? "var(--color-event-death)" : "var(--color-event-nothing)"}
               description="Kira Connection"
               content={ka.success
                 ? `${player_name(ka.user)} reached for Kira through this line — and Kira answered.`
@@ -528,7 +537,7 @@
           {:else if "ProsecutionEvent" in event.data}
             {@const pe = event.data.ProsecutionEvent}
             <Announcement
-              color="#e11d48"
+              color="var(--color-event-prosecution)"
               description={pe.ended ? "Prosecution Ended" : "Prosecution"}
               content={prosecution_event_text(pe)}
             />

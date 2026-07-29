@@ -63,6 +63,14 @@ export type WorldEvent = {
     content: string,
   }
 } | {
+  // A silent prosecution named somebody who was not wanted. The accuser is the only person in it —
+  // who they accused is never carried, so there is nothing here to resolve against `players`.
+  FailedSilentProsecution: {
+    accuser_id: string,
+    true_name: string,
+    org: OrganizationName,
+  }
+} | {
   // Derived by diffing the view's own prosecution snapshot, or from CloseProsecution. `phase` is
   // the one being entered; on `ended` it's the last phase seen. `verdict` is only set on `ended`:
   // true guilty, false acquitted, null for a prosecution that ended some other way.

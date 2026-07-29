@@ -441,6 +441,88 @@ mod org_tests {
         );
     }
 
+    // An org's abilities belong to the org, and reaching for one is something only its members may
+    // do. Nothing else in the chain says so: the ability is owned by the ORG, so UseAbility's
+    // ownership check passes for anyone who names it, and the presence and member-count gates are
+    // about the org's condition rather than about who is asking.
+    #[test]
+    fn non_member_cannot_use_ability() {
+        let mut eng = started_engine();
+        let member = add_player(&mut eng, 0, Role::Civilian, "member");
+        let outsider = add_player(&mut eng, 0, Role::Civilian, "outsider");
+        let o1 = add_org(&mut eng, 0, OrganizationName::NULL);
+
+        let a1 = quick_org_ability(
+            &mut eng,
+            0,
+            CreateAndGiveOrgAbility {
+                ability_name: AbilityName::Gun,
+                variant: 0,
+                org_id: o1,
+                settings: OrgAbility {
+                    require_roles: IndexSet::new(),
+                    require_members: 0,
+                    usage_policies: OrgAbilityPolicies::EMPTY,
+                },
+            },
+        );
+        force_charges(&mut eng, 0, a1, 100);
+        add_to_org(&mut eng, 0, o1, member, false, true).unwrap();
+
+        assert!(
+            use_org_ability(
+                &mut eng,
+                0,
+                outsider,
+                o1,
+                a1,
+                AbilityBehaviour::Gun(Gun { target_id: member }),
+            )
+            .is_err()
+        );
+        assert!(!get_actor(&eng, member).unwrap().has_state(State::Dead));
+    }
+
+    // The vote path is the same question asked earlier: opening one is itself a use, so an outsider
+    // must not be able to put the org's ability to a vote of its members either.
+    #[test]
+    fn non_member_cannot_open_an_ability_vote() {
+        let mut eng = started_engine();
+        let member = add_player(&mut eng, 0, Role::Civilian, "member");
+        let outsider = add_player(&mut eng, 0, Role::Civilian, "outsider");
+        let o1 = add_org(&mut eng, 0, OrganizationName::NULL);
+
+        let a1 = quick_org_ability(
+            &mut eng,
+            0,
+            CreateAndGiveOrgAbility {
+                ability_name: AbilityName::Gun,
+                variant: 0,
+                org_id: o1,
+                settings: OrgAbility {
+                    require_roles: IndexSet::new(),
+                    require_members: 0,
+                    usage_policies: OrgAbilityPolicy::RequireVote.into(),
+                },
+            },
+        );
+        force_charges(&mut eng, 0, a1, 100);
+        add_to_org(&mut eng, 0, o1, member, false, true).unwrap();
+
+        assert!(
+            use_org_ability(
+                &mut eng,
+                0,
+                outsider,
+                o1,
+                a1,
+                AbilityBehaviour::Gun(Gun { target_id: member }),
+            )
+            .is_err()
+        );
+        assert!(eng.world.polls.is_empty());
+    }
+
     #[test]
     fn role_requirements_has_role() {
         let mut eng = started_engine();

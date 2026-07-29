@@ -33,6 +33,7 @@ pub mod prosecute;
 pub mod pseudocide;
 pub mod public_kidnap;
 pub mod shinigami_sacrifice;
+pub mod silent_prosecute;
 pub mod tap_in;
 pub mod true_name_invite;
 pub mod true_name_reroll;
@@ -85,6 +86,7 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::KiraConnection(a) => a.ability_name(),
             AbilityBehaviour::TrueNameReroll(a) => a.ability_name(),
             AbilityBehaviour::TapIn(a) => a.ability_name(),
+            AbilityBehaviour::SilentProsecute(a) => a.ability_name(),
         }
     }
 
@@ -165,6 +167,9 @@ impl AbilityInterface for AbilityBehaviour {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
             AbilityBehaviour::TapIn(a) => a.handle(eng, ctx, actor, ability, version, mutate),
+            AbilityBehaviour::SilentProsecute(a) => {
+                a.handle(eng, ctx, actor, ability, version, mutate)
+            }
         }
     }
 }

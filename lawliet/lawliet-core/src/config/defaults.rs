@@ -16,6 +16,7 @@ pub struct DefaultConfig {
     pub life_link_death_message: String,
     pub execution_death_message: String,
     pub sacrifice_death_message: String,
+    pub silent_prosecution_death_message: String,
     pub pseudocide_duration: Time,                   // milliseconds
     pub universal_abilities: Vec<AbilityIdentifier>, // the abilities that everyone gets regardless
     // of role
@@ -61,6 +62,9 @@ pub fn default_defaults() -> DefaultConfig {
         execution_death_message: "They were found guilty and subsequently executed.".into(),
         sacrifice_death_message: "They were sacrificed to a shinigami in exchange for a true name."
             .into(),
+        silent_prosecution_death_message:
+            "They were executed without a trial. The paperwork was filed the following morning."
+                .into(),
         pseudocide_duration: hrs(24),
         notebook_successes_per_day: 1,
         notebook_failures_per_day: 3,

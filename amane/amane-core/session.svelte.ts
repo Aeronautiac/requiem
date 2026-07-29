@@ -28,7 +28,7 @@ import type {
 import { slotKeyToString } from "./bindings";
 import { formatDuration } from "./lib/utils";
 import { GameState } from "./game/state.svelte";
-import { actorLabel, phaseAnnouncement, phaseViewEqual, playerLabel, t } from "./game/helpers.svelte";
+import { actorLabel, nameLabel, orgDisplayName, phaseAnnouncement, phaseViewEqual, playerLabel, t } from "./game/helpers.svelte";
 import type { GameView } from "./game/view.svelte";
 import { UiState } from "./ui_state.svelte";
 
@@ -278,6 +278,14 @@ export class SessionState {
       this.#notify(recipient, t("toast_release_title"), t("toast_release_body", {
         name: tracked ? this.#name(view, tracked.victim) : t("toast_release_unknown"),
       }));
+    } else if ("FailedSilentProsecution" in cmd) {
+      // The true name is left out of the toast. It is in the news feed, which is where a leak of
+      // that size should be read deliberately rather than glanced at on a lock screen.
+      const f = cmd.FailedSilentProsecution;
+      this.#notify(recipient, t("toast_false_accusation_title"), t("toast_false_accusation_body", {
+        name: this.#name(view, slotKeyToString(f.accuser_id)),
+        org: orgDisplayName(f.org),
+      }));
     } else if ("PseudocideRevival" in cmd) {
       this.#notify(recipient, t("toast_revival_title"), t("toast_revival_body", {
         name: this.#name(view, slotKeyToString(cmd.PseudocideRevival.target_id)),
@@ -289,7 +297,7 @@ export class SessionState {
       }));
     } else if ("TrueNameUpdate" in cmd && typeof recipient !== "string") {
       this.#notify(recipient, t("toast_true_name_title"), t("toast_true_name_body", {
-        name: cmd.TrueNameUpdate.true_name,
+        name: nameLabel(cmd.TrueNameUpdate.true_name),
       }));
     } else if ("UpdateProsecution" in cmd) {
       // Toast on the same condition the prosecution handler emits a news event: a new prosecution
