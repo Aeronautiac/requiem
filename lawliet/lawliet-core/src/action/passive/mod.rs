@@ -201,7 +201,10 @@ mod contact_log_tests {
             .collect();
 
         assert!(members.contains(&watari), "the owner reads their own log");
-        assert!(members.contains(&l), "and so does whoever is linked to them");
+        assert!(
+            members.contains(&l),
+            "and so does whoever is linked to them"
+        );
     }
 
     // DisablePassiveLinks on the OWNER cuts the link, so the reader loses the log while the owner

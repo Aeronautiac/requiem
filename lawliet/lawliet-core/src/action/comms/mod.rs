@@ -2,30 +2,31 @@ pub mod bug;
 pub mod channel;
 pub mod groupchat;
 pub mod lounge;
-pub mod update_contact_channels;
 
 #[cfg(test)]
 mod comms_tests {
-    use indexmap::indexset;
-    use lawliet_types::command::CommandRecipient;
+    use lawliet_types::{channel::FixedPolicy, command::CommandRecipient};
 
     use crate::{
         action::{
-            Action, ActionActor, ActionRequest, ActionResponse,
+            Action, ActionActor, ActionError, ActionRequest, ActionResponse,
             ability::{add_ability::AddAbility, create_and_give_ability::CreateAndGiveAbility},
             actor::add_state::AddState,
             comms::{
                 bug::{archive_bug::ArchiveBug, create_bug::CreateBug, destroy_bug::DestroyBug},
-                channel::set_loggable::SetLoggable,
+                channel::{
+                    create_and_give_profile::CreateAndGiveProfile, send_message::SendMessage,
+                    set_loggable::SetLoggable, set_profile_access::SetProfileAccess,
+                },
                 groupchat::create_groupchat::CreateGroupchat,
                 lounge::create_lounge::CreateLounge,
             },
         },
         actor::{ActorDisplay, state::State},
         bug::BugSource,
-        channel::{ChannelKind, ChannelMember, ChannelPermission},
+        channel::{ChannelKind, ChannelPerm, ChannelPermSet, PermUpdatePolicy},
         command::Command,
-        common::{AbilityKey, ActorKey, BugKey, ViewportKey},
+        common::{AbilityKey, ActorKey, BugKey, ChannelKey, ViewportKey},
         config::{ability::AbilityName, role::Role},
         engine::Engine,
         helpers::{get_bug, get_channel, get_gc, get_player},
@@ -36,93 +37,257 @@ mod comms_tests {
 
     // ---- channel ----
 
+    // Everything an actor may do in a channel, under any name they hold there.
+    fn perms(eng: &Engine, channel: ChannelKey, who: ActorKey) -> ChannelPermSet {
+        get_channel(eng, channel)
+            .unwrap()
+            .owned_profiles(who)
+            .fold(ChannelPermSet::EMPTY, |acc, profile| acc | profile.perms)
+    }
+
+    // Membership is not a thing granted on its own. Holding a name here IS being in the channel,
+    // and there is no being in one under no name at all.
     #[test]
-    fn set_member_adds_player() {
+    fn a_name_is_what_makes_you_a_member() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
 
-        set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
+        assert!(!get_channel(&eng, ch).unwrap().is_member(p1));
 
-        assert!(get_channel(&eng, ch).unwrap().get_member(p1).is_some());
+        join_channel(&mut eng, 0, p1, ch);
+
+        assert!(get_channel(&eng, ch).unwrap().is_member(p1));
+        assert!(perms(&eng, ch, p1).contains(ChannelPerm::Send));
     }
 
     #[test]
-    fn set_member_removes_player() {
+    fn losing_your_last_name_ends_the_membership() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
+        join_channel(&mut eng, 0, p1, ch);
 
-        set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
-        set_member(&mut eng, 0, p1, ch, None).unwrap();
+        remove_from_channel(&mut eng, 0, p1, ch).unwrap();
 
-        assert!(get_channel(&eng, ch).unwrap().get_member(p1).is_none());
+        assert!(!get_channel(&eng, ch).unwrap().is_member(p1));
     }
 
+    // A name is announced twice over, to two different audiences answering two different
+    // questions: the room is shown what it can see, and the holder is told what is theirs to use.
     #[test]
-    fn set_member_emits_update_channel_view() {
+    fn a_granted_name_reaches_the_room_and_its_holder() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
 
-        let (_, ctx) = set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
+        let (_, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                    channel_id: ch,
+                    player_id: p1,
+                    display: ActorDisplay::Raw(p1),
+                    visible: true,
+                    shared: false,
+                    transferrable: false,
+                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                        perms: ChannelPerm::Send | ChannelPerm::View,
+                    }),
+                }),
+            })
+            .unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(p1)
-                && matches!(&p.cmd, Command::UpdateChannelView { channel_id, .. } if *channel_id == ch)
+                && matches!(&p.cmd, Command::ProfileAccess { channel_id, profiles }
+                    if *channel_id == ch
+                        && profiles.iter().any(|v| v.display == ActorDisplay::Raw(p1)))
+        }));
+        assert!(ctx.commands.iter().any(|p| {
+            p.recipient == CommandRecipient::Actor(p1)
+                && matches!(&p.cmd, Command::ChannelRoster { channel_id, profiles }
+                    if *channel_id == ch
+                        && profiles.iter().any(|v| v.display == ActorDisplay::Raw(p1)))
         }));
     }
 
+    // The roster is current state rather than a sequence of events, so it is addressed to each
+    // viewer by name. Addressed to the viewport it would be replayed to every later arrival, and
+    // every name the channel ever held would come with it.
     #[test]
-    fn set_member_removal_exits_the_channel_viewport() {
+    fn the_roster_is_never_addressed_to_the_viewport() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
 
-        set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
+        let (_, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                    channel_id: ch,
+                    player_id: p1,
+                    display: ActorDisplay::Raw(p1),
+                    visible: true,
+                    shared: false,
+                    transferrable: false,
+                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                        perms: ChannelPerm::Send | ChannelPerm::View,
+                    }),
+                }),
+            })
+            .unwrap();
 
-        let viewport = eng.world.get_channel(ch).unwrap().membership_viewport;
-        let (_, ctx) = set_member(&mut eng, 0, p1, ch, None).unwrap();
+        assert!(!ctx.commands.iter().any(|p| {
+            matches!(&p.cmd, Command::ChannelRoster { .. })
+                && matches!(p.recipient, CommandRecipient::Viewport(_))
+        }));
+    }
+
+    // A name the room has not been told about is genuinely absent from the roster. Its existence
+    // is the thing being kept, so an anonymous holder is not exposed by the shape of the traffic.
+    #[test]
+    fn an_invisible_name_is_off_the_roster_until_it_speaks() {
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
+        let ch = create_channel(&mut eng, 0, false);
+        join_channel(&mut eng, 0, p2, ch);
+
+        let (response, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                    channel_id: ch,
+                    player_id: p1,
+                    display: ActorDisplay::Mysterious,
+                    visible: false,
+                    shared: false,
+                    transferrable: false,
+                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                        perms: ChannelPerm::Send | ChannelPerm::View,
+                    }),
+                }),
+            })
+            .unwrap();
+        let ActionResponse::CreateAndGiveProfile(data) = response else {
+            unreachable!()
+        };
+
+        // p1 is told about their own name — that is what they will speak as. p2 is not.
+        assert!(!ctx.commands.iter().any(|p| {
+            matches!(&p.cmd, Command::ChannelRoster { profiles, .. }
+                if profiles.iter().any(|v| v.display == ActorDisplay::Mysterious))
+        }));
+        assert!(
+            !get_channel(&eng, ch)
+                .unwrap()
+                .visible_profiles()
+                .iter()
+                .any(|v| v.display == ActorDisplay::Mysterious)
+        );
+
+        let (_, ctx) = send_message(&mut eng, 0, p1, ch, data.profile_id, "hello").unwrap();
+
+        // Revealed by the message, and revealed BEFORE it, so nothing is attributed to a name the
+        // room has not been given yet.
+        let roster = ctx
+            .commands
+            .iter()
+            .position(|p| {
+                matches!(&p.cmd, Command::ChannelRoster { profiles, .. }
+                    if profiles.iter().any(|v| v.display == ActorDisplay::Mysterious))
+            })
+            .expect("sending reveals the name");
+        let message = ctx
+            .commands
+            .iter()
+            .position(|p| matches!(&p.cmd, Command::AddMessage { .. }))
+            .expect("the message itself");
+        assert!(roster < message);
+    }
+
+    // A name only one person can be wearing is the whole reason wearing it means anything, so
+    // handing it to a second one is refused rather than quietly ignored.
+    #[test]
+    fn an_exclusive_name_is_refused_to_a_second_holder() {
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
+        let ch = create_channel(&mut eng, 0, false);
+        let seat = join_channel(&mut eng, 0, p1, ch);
+
+        let result = eng.execute(ActionRequest {
+            actor: ActionActor::System,
+            timestamp: 0,
+            payload: Action::SetProfileAccess(SetProfileAccess {
+                channel_id: ch,
+                profile_id: seat,
+                player_id: p2,
+                granted: true,
+            }),
+        });
+
+        assert!(matches!(
+            result,
+            Err((ActionError::ProfileNotShareable, _))
+        ));
+    }
+
+    // A name that could never have belonged to anybody else has no life without its holder, so
+    // leaving destroys it. One that could is merely taken off them and left behind.
+    #[test]
+    fn leaving_destroys_only_the_names_bound_to_you() {
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let ch = create_channel(&mut eng, 0, false);
+
+        let bound = join_channel(&mut eng, 0, p1, ch);
+        let passed = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                    channel_id: ch,
+                    player_id: p1,
+                    display: ActorDisplay::Mysterious,
+                    visible: true,
+                    shared: false,
+                    transferrable: true,
+                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                        perms: ChannelPerm::Send | ChannelPerm::View,
+                    }),
+                }),
+            })
+            .unwrap()
+            .0;
+        let ActionResponse::CreateAndGiveProfile(passed) = passed else {
+            unreachable!()
+        };
+
+        remove_from_channel(&mut eng, 1, p1, ch).unwrap();
+
+        let channel = get_channel(&eng, ch).unwrap();
+        assert!(!channel.is_member(p1));
+        assert!(channel.get_profile(bound).is_none());
+        let left_behind = channel
+            .get_profile(passed.profile_id)
+            .expect("a name somebody else could wear stays in the channel");
+        assert!(left_behind.ownership.owners().is_empty());
+    }
+
+    #[test]
+    fn removal_exits_the_channel_viewport() {
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let ch = create_channel(&mut eng, 0, false);
+        join_channel(&mut eng, 0, p1, ch);
+
+        let viewport = get_channel(&eng, ch).unwrap().viewport;
+        let (_, ctx) = remove_from_channel(&mut eng, 0, p1, ch).unwrap();
 
         // Losing membership is an exit, not a retraction: p1 keeps everything the channel
         // already told them, they just stop receiving more.
@@ -157,20 +322,9 @@ mod comms_tests {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
+        let seat = join_channel(&mut eng, 0, p1, ch);
 
-        set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
-
-        let (_, ctx) = send_message(&mut eng, 0, p1, ch, ActorDisplay::Raw(p1), "hello").unwrap();
+        let (_, ctx) = send_message(&mut eng, 0, p1, ch, seat, "hello").unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
             matches!(&p.cmd, Command::AddMessage { channel_id, content, sender_display }
@@ -181,75 +335,116 @@ mod comms_tests {
     }
 
     #[test]
-    fn send_message_not_a_member() {
-        let mut eng = Engine::new();
-        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
-        let ch = create_channel(&mut eng, 0, false);
-
-        assert!(send_message(&mut eng, 0, p1, ch, ActorDisplay::Raw(p1), "hello").is_err());
-    }
-
-    #[test]
     fn send_message_no_send_perm() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
-
-        set_member(
+        let seat = give_profile(
             &mut eng,
             0,
             p1,
             ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::View.into(),
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
+            ActorDisplay::Raw(p1),
+            ChannelPerm::View.into(),
+        );
 
-        assert!(send_message(&mut eng, 0, p1, ch, ActorDisplay::Raw(p1), "hello").is_err());
+        assert!(matches!(
+            send_message(&mut eng, 0, p1, ch, seat, "hello"),
+            Err((ActionError::InsufficientPermissions, _))
+        ));
+    }
+
+    // Send belongs to the NAME, not to the person. Holding one name that may talk here does not
+    // let you talk through another one that may not.
+    #[test]
+    fn send_asks_the_name_and_not_the_person() {
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let ch = create_channel(&mut eng, 0, false);
+        join_channel(&mut eng, 0, p1, ch);
+        let muted = give_profile(
+            &mut eng,
+            0,
+            p1,
+            ch,
+            ActorDisplay::Mysterious,
+            ChannelPerm::View.into(),
+        );
+
+        assert!(matches!(
+            send_message(&mut eng, 0, p1, ch, muted, "hello"),
+            Err((ActionError::InsufficientPermissions, _))
+        ));
     }
 
     #[test]
-    fn send_message_display_not_owned() {
+    fn send_message_profile_not_owned() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
         let ch = create_channel(&mut eng, 0, false);
+        let theirs = join_channel(&mut eng, 0, p2, ch);
 
-        set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
+        assert!(matches!(
+            send_message(&mut eng, 0, p1, ch, theirs, "hello"),
+            Err((ActionError::ProfileNotOwned, _))
+        ));
+    }
+
+    // The host speaks as nobody, holding no name anywhere, and the room is shown System rather
+    // than a player. A player has no such option: they are always somebody here.
+    #[test]
+    fn only_the_host_may_speak_as_nobody() {
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let ch = create_channel(&mut eng, 0, false);
+        join_channel(&mut eng, 0, p1, ch);
+
+        let nameless = |actor| ActionRequest {
+            actor,
+            timestamp: 0,
+            payload: Action::SendMessage(SendMessage {
+                channel_id: ch,
+                profile_id: None,
+                content: "an announcement".into(),
             }),
-        )
-        .unwrap();
+        };
 
-        // p1 tries to send as p2 which they do not own
-        assert!(send_message(&mut eng, 0, p1, ch, ActorDisplay::Raw(p2), "hello").is_err());
+        assert!(matches!(
+            eng.execute(nameless(ActionActor::Player(p1))),
+            Err((ActionError::ProfileRequired, _))
+        ));
+
+        let (_, ctx) = eng.execute(nameless(ActionActor::System)).unwrap();
+        assert!(ctx.commands.iter().any(|p| {
+            matches!(&p.cmd, Command::AddMessage { sender_display, .. }
+                if *sender_display == ActorDisplay::System)
+        }));
     }
 
     #[test]
-    fn set_member_add_does_not_exit_the_channel_viewport() {
+    fn joining_does_not_exit_the_channel_viewport() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
 
-        let (_, ctx) = set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
+        let (_, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                    channel_id: ch,
+                    player_id: p1,
+                    display: ActorDisplay::Raw(p1),
+                    visible: true,
+                    shared: false,
+                    transferrable: false,
+                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                        perms: ChannelPerm::Send | ChannelPerm::View,
+                    }),
+                }),
+            })
+            .unwrap();
 
         assert!(
             !ctx.commands
@@ -258,30 +453,18 @@ mod comms_tests {
         );
     }
 
-    // A removal must tell the LEAVER, directed. This asserted the opposite until 2026-07-27, on the
-    // assumption that exiting the viewport said everything a removal needed to. It does not: an
-    // exit means "no more content is coming", which is indistinguishable from a quiet channel. The
-    // frontend keys membership on perms, so with no directed update the leaver keeps a channel it
-    // believes it can still read and send in — which is exactly how this was found, live.
+    // A removal must tell the LEAVER, directed. An exit means "no more content is coming", which
+    // is indistinguishable from a quiet channel; without a directed update the leaver keeps a
+    // channel it believes it can still read and send in. An empty set is how holding nothing here
+    // is stated rather than left to be noticed.
     #[test]
-    fn set_member_remove_tells_the_leaver_their_perms_are_gone() {
+    fn removal_tells_the_leaver_they_hold_nothing() {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
+        join_channel(&mut eng, 0, p1, ch);
 
-        set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
-
-        let (_, ctx) = set_member(&mut eng, 0, p1, ch, None).unwrap();
+        let (_, ctx) = remove_from_channel(&mut eng, 0, p1, ch).unwrap();
 
         // Addressed to the leaver, not to the viewport they just left — anything sent there is by
         // design something they never receive.
@@ -289,9 +472,9 @@ mod comms_tests {
             matches!(
                 (&p.cmd, &p.recipient),
                 (
-                    Command::UpdateChannelView { channel_id, perms, .. },
+                    Command::ProfileAccess { channel_id, profiles },
                     CommandRecipient::Actor(target),
-                ) if *channel_id == ch && perms.is_empty() && *target == p1
+                ) if *channel_id == ch && profiles.is_empty() && *target == p1
             )
         }));
     }
@@ -314,7 +497,7 @@ mod comms_tests {
             unreachable!()
         };
         let channel_id = get_gc(&eng, data.id).unwrap().channel_id;
-        let viewport = eng.world.get_channel(channel_id).unwrap().membership_viewport;
+        let viewport = get_channel(&eng, channel_id).unwrap().viewport;
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Viewport(viewport)
@@ -491,11 +674,7 @@ mod comms_tests {
             unreachable!()
         };
 
-        let viewport = eng
-            .world
-            .get_channel(data.channel_id)
-            .unwrap()
-            .membership_viewport;
+        let viewport = get_channel(&eng, data.channel_id).unwrap().viewport;
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Viewport(viewport)
@@ -957,17 +1136,7 @@ mod comms_tests {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, true);
-        set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
+        let seat = join_channel(&mut eng, 0, p1, ch);
 
         let (response, _) = eng
             .execute(ActionRequest {
@@ -983,7 +1152,7 @@ mod comms_tests {
             unreachable!()
         };
 
-        let (_, ctx) = send_message(&mut eng, 0, p1, ch, ActorDisplay::Raw(p1), "hello").unwrap();
+        let (_, ctx) = send_message(&mut eng, 0, p1, ch, seat, "hello").unwrap();
 
         let viewport = eng.world.get_bug(bug_data.id).unwrap().viewport;
 
@@ -998,17 +1167,7 @@ mod comms_tests {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, false);
-        set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
+        let seat = join_channel(&mut eng, 0, p1, ch);
 
         eng.execute(ActionRequest {
             actor: ActionActor::System,
@@ -1020,7 +1179,7 @@ mod comms_tests {
         })
         .unwrap();
 
-        let (_, ctx) = send_message(&mut eng, 0, p1, ch, ActorDisplay::Raw(p1), "hello").unwrap();
+        let (_, ctx) = send_message(&mut eng, 0, p1, ch, seat, "hello").unwrap();
 
         assert!(
             !ctx.commands
@@ -1034,17 +1193,7 @@ mod comms_tests {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, true);
-        set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
+        let seat = join_channel(&mut eng, 0, p1, ch);
 
         let (response, _) = eng
             .execute(ActionRequest {
@@ -1069,7 +1218,7 @@ mod comms_tests {
         })
         .unwrap();
 
-        let (_, ctx) = send_message(&mut eng, 0, p1, ch, ActorDisplay::Raw(p1), "hello").unwrap();
+        let (_, ctx) = send_message(&mut eng, 0, p1, ch, seat, "hello").unwrap();
 
         assert!(
             !ctx.commands
@@ -1083,17 +1232,7 @@ mod comms_tests {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let ch = create_channel(&mut eng, 0, true);
-        set_member(
-            &mut eng,
-            0,
-            p1,
-            ch,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
+        let seat = join_channel(&mut eng, 0, p1, ch);
 
         let (response, _) = eng
             .execute(ActionRequest {
@@ -1109,8 +1248,7 @@ mod comms_tests {
             unreachable!()
         };
 
-        let (_, ctx) =
-            send_message(&mut eng, 0, p1, ch, ActorDisplay::Raw(p1), "secret message").unwrap();
+        let (_, ctx) = send_message(&mut eng, 0, p1, ch, seat, "secret message").unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
             matches!(&p.cmd, Command::AddBugMessage { bug_key, display, content }
@@ -1305,9 +1443,9 @@ mod comms_tests {
         // viewport IS from the first things in it — first that it is a bug's, then which bug.
         let bug_viewport = only_bug_viewport(&eng);
         let position = |find: &dyn Fn(&Command) -> bool| {
-            ctx.commands
-                .iter()
-                .position(|p| p.recipient == CommandRecipient::Viewport(bug_viewport) && find(&p.cmd))
+            ctx.commands.iter().position(|p| {
+                p.recipient == CommandRecipient::Viewport(bug_viewport) && find(&p.cmd)
+            })
         };
 
         let map_pos = position(&|cmd| matches!(cmd, Command::MapViewport { .. })).unwrap();
@@ -1343,14 +1481,7 @@ mod comms_tests {
 
         add_state(&mut eng, 0, p1, State::Dead);
 
-        assert!(
-            get_channel(&eng, ch)
-                .unwrap()
-                .get_member(p1)
-                .unwrap()
-                .perms
-                .is_empty()
-        );
+        assert!(perms(&eng, ch, p1).is_empty());
     }
 
     #[test]
@@ -1371,12 +1502,8 @@ mod comms_tests {
         add_state(&mut eng, 0, p1, State::Dead);
         remove_state(&mut eng, 0, p1, State::Dead);
 
-        let member = get_channel(&eng, ch)
-            .unwrap()
-            .get_member(p1)
-            .unwrap()
-            .clone();
-        assert!(member.perms.contains(ChannelPermission::Send));
-        assert!(member.perms.contains(ChannelPermission::View));
+        let restored = perms(&eng, ch, p1);
+        assert!(restored.contains(ChannelPerm::Send));
+        assert!(restored.contains(ChannelPerm::View));
     }
 }

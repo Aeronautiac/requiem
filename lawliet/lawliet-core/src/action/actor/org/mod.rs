@@ -1,13 +1,13 @@
 pub mod add_to_org;
-pub mod set_blacklist_status;
-pub mod set_og_status;
 pub mod change_org_leader;
 pub mod create_and_give_org_ability;
 pub mod create_org;
 pub mod give_org_ability;
 pub mod remove_from_org;
 pub mod resign_leadership;
+pub mod set_blacklist_status;
 pub mod set_leadership;
+pub mod set_og_status;
 pub mod system_use_org_ability;
 pub mod use_org_ability;
 
@@ -154,7 +154,7 @@ mod org_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let o1 = add_org(&mut eng, 0, OrganizationName::NULL);
         let org_channel = get_org(&eng, o1).unwrap().channel_id;
-        let org_viewport = get_channel(&eng, org_channel).unwrap().membership_viewport;
+        let org_viewport = get_channel(&eng, org_channel).unwrap().viewport;
 
         let ctx = add_to_org(&mut eng, 0, o1, p1, false, true).unwrap().1;
 
@@ -394,9 +394,9 @@ mod org_tests {
         let p1_data = get_actor(&eng, p1).unwrap();
         assert!(!p1_data.has_state(State::Dead));
 
-        add_vote(&mut eng, 0, poll_id, p1, false).unwrap();
-        add_vote(&mut eng, 0, poll_id, p2, true).unwrap();
-        add_vote(&mut eng, 0, poll_id, p3, true).unwrap();
+        add_vote(&mut eng, 0, poll_id, p1, REJECT).unwrap();
+        add_vote(&mut eng, 0, poll_id, p2, ACCEPT).unwrap();
+        add_vote(&mut eng, 0, poll_id, p3, ACCEPT).unwrap();
 
         let p1_data = get_actor(&eng, p1).unwrap();
         assert!(p1_data.has_state(State::Dead));

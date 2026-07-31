@@ -6,13 +6,11 @@
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        UpdateBugVisibilities, UpdateContactChannels, UpdateKidnapChannels,
-        UpdatePassiveVisibilities, UpdatePrisonChannel,
-        UpdateWorldChannelPerms,
+        UpdateBugVisibilities, UpdatePassiveVisibilities, UpdateWorldViewports,
     },
     common::Version,
     engine::Engine,
-    helpers::{cmd_actor_state, get_actor_mut, get_player, sync_presence},
+    helpers::{cmd_actor_state, get_actor_mut},
 };
 
 pub use crate::action::{RemoveState, RemoveStateResponse};
@@ -39,22 +37,10 @@ impl ActionInterface for RemoveState {
             cmd_actor_state(eng, ctx, self.actor_id);
         }
 
-        if get_player(eng, self.actor_id).is_ok() {
-            Action::UpdateContactChannels(UpdateContactChannels {
-                player_id: self.actor_id,
-            })
+        // See AddState. Regaining presence enters the world-events viewport, and entry backfills
+        // every event that happened while the player was gone, in order.
+        Action::UpdateWorldViewports(UpdateWorldViewports {})
             .handle(eng, ctx, actor, version, mutate)?;
-
-            Action::UpdateWorldChannelPerms(UpdateWorldChannelPerms {
-                player_id: self.actor_id,
-            })
-            .handle(eng, ctx, actor, version, mutate)?;
-        }
-
-        // See AddState. Regaining presence enters the viewport, and entry backfills every world
-        // event that happened while the player was gone, in order — which is what the deferred
-        // queue used to replay on release.
-        sync_presence(eng, ctx, mutate);
 
         Action::UpdateBugVisibilities(UpdateBugVisibilities {})
             .handle(eng, ctx, actor, version, mutate)?;
@@ -62,14 +48,6 @@ impl ActionInterface for RemoveState {
         // See AddState: DisablePassiveLinks coming off restores reach to a linked passive's log.
         Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
             .handle(eng, ctx, actor, version, mutate)?;
-
-        Action::UpdateKidnapChannels(UpdateKidnapChannels {})
-            .handle(eng, ctx, actor, version, mutate)?;
-
-        Action::UpdatePrisonChannel(UpdatePrisonChannel {
-            actor_id: self.actor_id,
-        })
-        .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::RemoveState(RemoveStateResponse {}))
     }

@@ -3,13 +3,16 @@
   import Input from "../kit/Input.svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import {
+    PERM_SEND,
     actorLabel,
     displayKey,
     isReadOnlyKind,
     nameLabel,
     orgDisplayName,
+    ownPerms,
     phaseAnnouncement,
     playerLabel,
+    t,
   } from "../../game/helpers.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
@@ -17,7 +20,7 @@
   import type { GameState } from "../../game/state.svelte";
   import type { GameEvent, WriteEvent } from "../../game/types";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import type { ActionRequest, ActorDisplay, PollSubject, ProsecutionPhaseView, TapInOutcome } from "../../bindings";
+  import type { ActionRequest, ActorDisplay, PollOutcome, PollSubject, ProfileKey, ProsecutionPhaseView, TapInOutcome } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
   import { formatDuration } from "../../lib/utils";
@@ -57,8 +60,12 @@
       ? view.channel(backing_channel_id)
       : undefined,
   );
+  // What this view may do here at all, folded over every name it holds. The composer asks the
+  // chosen name instead; this is only "is there a send box".
   const current_perms = $derived(
-    backing_channel_id ? view.channel_views.get(backing_channel_id)?.perms : undefined,
+    backing_channel_id
+      ? ownPerms(view.channel_views.get(backing_channel_id)?.own ?? [])
+      : undefined,
   );
   const is_info = $derived(current_channel?.kind === "Info");
   const is_bug = $derived(current_channel?.kind === "Bug");
@@ -90,10 +97,11 @@
   const frozen = $derived(
     backing_channel_id != null && view.frozen(view.viewport_of(backing_channel_id)),
   );
-  // News is not a channel, so it goes stale on its own terms: world events ride the presence
+  // News is not a channel, so it goes stale on its own terms: world events ride the world-events
   // viewport, and a viewer who has left it keeps every event they were given while receiving no
-  // more. Without this the feed just stops, which reads as "nothing has happened".
-  const news_frozen = $derived(is_news && view.frozen(view.presence_viewport()));
+  // more. Without this the feed just stops, which reads as "nothing has happened" — whether the
+  // viewer lost presence or the world went dark.
+  const news_frozen = $derived(is_news && view.frozen(view.world_events_viewport()));
   // Notebook-ness isn't a channel kind. A non-undefined notebook_id both identifies the channel
   // as a notebook and gives the Write affordance its target.
   const notebook_id = $derived(
@@ -116,19 +124,23 @@
   let write_open = $state(false);
   let pass_open = $state(false);
 
-  // Empty for System, which holds no membership anywhere and always sends as itself.
-  const available_displays = $derived(
+  // The names this view may speak as here. Send belongs to the name rather than to the person, so
+  // holding a name that cannot talk is not an option to offer. Empty for System, which holds no
+  // name anywhere and speaks as nobody.
+  const sendable_profiles = $derived(
     backing_channel_id
-      ? (view.channel_views.get(backing_channel_id)?.displays ?? [])
+      ? (view.channel_views.get(backing_channel_id)?.own ?? []).filter(
+          (profile) => (profile.perms & PERM_SEND) !== 0,
+        )
       : [],
   );
-  let selected_display_key = $state<string | null>(null);
+  let selected_profile_key = $state<string | null>(null);
 
   // Keep the selection valid as the channel, and thus the options, changes.
   $effect(() => {
-    const keys = available_displays.map(displayKey);
-    if (!selected_display_key || !keys.includes(selected_display_key)) {
-      selected_display_key = keys[0] ?? null;
+    const keys = sendable_profiles.map((p) => slotKeyToString(p.profile_id));
+    if (!selected_profile_key || !keys.includes(selected_profile_key)) {
+      selected_profile_key = keys[0] ?? null;
     }
   });
 
@@ -155,12 +167,24 @@
     return name.replace(/([a-z])([A-Z])/g, "$1 $2");
   }
 
-  function sender_display(): ActorDisplay {
-    if (ui.viewer === "Admin") return "System";
-    const chosen = available_displays.find(
-      (d) => displayKey(d) === selected_display_key,
+  // A resolved poll names the option that won, so the label comes from the poll itself. The entry
+  // is never deleted, so it is still there however long ago the vote closed.
+  function poll_outcome_text(poll_id: string, outcome: PollOutcome): string {
+    if (outcome === "Inconclusive" || outcome === "Cancelled") return outcome;
+    const label = view.polls.get(poll_id)?.options[outcome.Resolved]?.label;
+    if (label === undefined) return "resolved";
+    return typeof label === "string" ? label : label.Generic;
+  }
+
+  // The name to speak as, or null for the host speaking as nobody — which shows as System and is
+  // the one case that needs no name in the channel at all.
+  function sender_profile(): ProfileKey | null {
+    if (ui.viewer === "Admin") return null;
+    return (
+      sendable_profiles.find(
+        (p) => slotKeyToString(p.profile_id) === selected_profile_key,
+      )?.profile_id ?? null
     );
-    return chosen ?? { Raw: slotKeyFromString(ui.viewer) };
   }
 
   function display_string(display: ActorDisplay): string {
@@ -254,7 +278,7 @@
       payload: {
         SendMessage: {
           channel_id: slotKeyFromString(backing_channel_id),
-          display: sender_display(),
+          profile_id: sender_profile(),
           content: message_content.trim(),
         },
       },
@@ -450,7 +474,9 @@
             {@const pn = event.data.PollNotice}
             <Announcement
               color="var(--color-event-vote)"
-              description={pn.outcome ? `Vote ${pn.outcome}` : "Vote started"}
+              description={pn.outcome
+                ? `Vote: ${poll_outcome_text(pn.poll_id, pn.outcome)}`
+                : "Vote started"}
               content={pn.opener
                 ? `${poll_notice_text(pn.subject)}\nStarted by ${view.actor_name(pn.opener)}`
                 : poll_notice_text(pn.subject)}
@@ -503,6 +529,13 @@
               content={it === 1
                 ? "Day 1. Abilities and notebooks are live."
                 : `Day ${it}.`}
+            />
+          {:else if "Blackout" in event.data}
+            {@const on = event.data.Blackout.active}
+            <Announcement
+              color="var(--color-event-blackout)"
+              description={on ? t("blackout_begun_label") : t("blackout_over_label")}
+              content={on ? t("blackout_begun") : t("blackout_over")}
             />
           {:else if "ChannelTapped" in event.data}
             <Announcement
@@ -571,13 +604,15 @@
 
       <footer class="shrink-0 px-4 pb-6 pt-1">
         <div class="flex items-center gap-2">
-          {#if can_send && available_displays.length > 1}
+          {#if can_send && sendable_profiles.length > 1}
             <select
-              bind:value={selected_display_key}
+              bind:value={selected_profile_key}
               class="rounded-lg bg-neutral-800 px-2 py-2 text-sm text-neutral-200"
             >
-              {#each available_displays as d (displayKey(d))}
-                <option value={displayKey(d)}>{display_string(d)}</option>
+              {#each sendable_profiles as p (slotKeyToString(p.profile_id))}
+                <option value={slotKeyToString(p.profile_id)}>
+                  {display_string(p.display)}
+                </option>
               {/each}
             </select>
           {/if}

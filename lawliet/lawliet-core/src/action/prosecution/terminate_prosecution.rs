@@ -3,7 +3,7 @@
 * Terminate a prosecution and clean up all associated state.
 *
 * On execution:
-* - cancel the active timeout job (Custody or Trial phase)
+* - free the active countdown (Custody or Trial phase), which cancels its job
 * - if Trial: archive the trial channel
 * - if Voting: cancel the poll
 * - if lawyer selected: archive the lawyer channel
@@ -49,11 +49,7 @@ impl ActionInterface for TerminateProsecution {
             .as_ref()
             .and_then(|l| l.channel_id);
 
-        let timeout_job_id = match &prosecution.phase {
-            ProsecutionPhase::Custody { timeout_job_id, .. }
-            | ProsecutionPhase::Trial { timeout_job_id, .. } => Some(*timeout_job_id),
-            ProsecutionPhase::Voting { .. } => None,
-        };
+        let timer = prosecution.timer();
         let trial_channel = match &prosecution.phase {
             ProsecutionPhase::Trial { channel_id, .. }
             | ProsecutionPhase::Voting { channel_id, .. } => Some(*channel_id),
@@ -64,10 +60,11 @@ impl ActionInterface for TerminateProsecution {
             _ => None,
         };
 
-        if let Some(job_id) = timeout_job_id
+        if let Some(timer) = timer
             && mutate
         {
-            eng.jobs.cancel_id(job_id);
+            let Engine { world, jobs, .. } = eng;
+            world.remove_timer(timer, jobs);
         }
 
         if let Some(poll_id) = voting_poll

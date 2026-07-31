@@ -38,10 +38,22 @@
 *   owning organization during the custody or trial phase.
 * - Voting: defendant dies → immediate termination.
 *
-* Disruption rules (not yet implemented):
-* - If trial visibility is lost (e.g. blackout), the trial restarts when it returns.
-* - If poll visibility is lost during voting, the voting period is extended by the
-*   duration of the disruption.
+* Disruption. Losing visibility — a blackout is one cause, not the only one — FREEZES the
+* prosecution, in every phase. Nothing is restarted and no channel is replaced or hidden; the
+* prosecution simply stops moving and resumes where it left off.
+*
+* A frozen prosecution does three things. It holds its advances — both sides signalling ready is
+* not enough to leave a phase — which is a second and independent reason to hold alongside
+* pending_advance, so a frozen non-autonomous trial is waiting on both. It stops its timers, which
+* is UpdateTimers' doing: the phases carry a TimerKey gated on the same viewport `frozen` reads,
+* so a frozen prosecution's clock is stopped by the same sweep that stops every other one. And it
+* closes the floor, the same way a held debate does — UpdateProsecutionChannels reads the floor off
+* prosecution state, so this is one more input to it rather than anything new.
+*
+* A trial channel is a world channel in spirit, and is only kept out of WorldChannelConfig because
+* that is keyed by a singleton name while trials are many and come and go. The closure is derived
+* per prosecution because that is where the state is, not because a trial channel is a different
+* kind of thing from News.
 *
 * Other rules:
 * - Custody wiretaps the defendant (a custody bug is created by SetCustody).
@@ -58,10 +70,15 @@
 // visible. Deferred commands handle the case where a player receives a visibility grant
 // for an already-archived object — the frontend should label it archived and block interaction.
 
-use crate::{ActorKey, ChannelKey, PollKey, actor::ActorDisplay, common::JobID};
+use crate::{
+    ActorKey, ChannelKey, PollKey,
+    actor::ActorDisplay,
+    common::{TimerKey, ViewportKey},
+    engine::Engine,
+};
 
 pub use lawliet_types::prosecution::{
-    ProsecutionPhaseView, ProsecutionSource, TrialPhaseView, TrialSubphaseView,
+    ProsecutionPhaseView, ProsecutionSide, ProsecutionSource, TrialPhaseView, TrialSubphaseView,
 };
 
 #[derive(Debug)]
@@ -123,10 +140,10 @@ pub enum ProsecutionPhase {
     Custody {
         prosecutor_ready: bool,
         defense_ready: bool,
-        timeout_job_id: JobID,
+        timer: TimerKey,
     },
 
-    // timeout_job_id tracks the current active timer and is replaced on every subphase transition.
+    // timer tracks the current active countdown and is replaced on every subphase transition.
     //
     // Grace → Presentation: first message from the active side OR grace timeout fires;
     //   cancel the grace job and schedule the presentation timer.
@@ -137,7 +154,7 @@ pub enum ProsecutionPhase {
     Trial {
         phase: TrialPhase,
         channel_id: ChannelKey,
-        timeout_job_id: JobID,
+        timer: TimerKey,
     },
 
     Voting {
@@ -166,6 +183,58 @@ pub struct Prosecution {
 }
 
 impl Prosecution {
+    // The audience a prosecution plays to. A trial is a public spectacle, so that is the world's
+    // events viewport — the same one its snapshot is broadcast on, which is what makes the two
+    // agree by construction: whoever cannot be told the trial moved is not watching it move.
+    pub fn viewport(&self, eng: &Engine) -> ViewportKey {
+        eng.world.events_viewport
+    }
+
+    // Nobody is watching, so nothing happens. Derived rather than stored: a freeze is not a state
+    // the prosecution enters and has to be let out of again, it is the absence of an audience, and
+    // storing it would mean every way an audience can come and go needing to remember to say so.
+    //
+    // The timer on this prosecution's phase is gated on this same viewport, so its clock stops on
+    // exactly the terms this does, without either being told about the other.
+    pub fn frozen(&self, eng: &Engine) -> bool {
+        eng.world
+            .get_viewport(self.viewport(eng))
+            .is_none_or(|viewport| viewport.is_empty())
+    }
+
+    // The countdown driving this phase, if it has one. Voting has none: the verdict poll runs its
+    // own, and the prosecution is waiting on the poll rather than on the clock.
+    pub fn timer(&self) -> Option<TimerKey> {
+        match &self.phase {
+            ProsecutionPhase::Custody { timer, .. } | ProsecutionPhase::Trial { timer, .. } => {
+                Some(*timer)
+            }
+            ProsecutionPhase::Voting { .. } => None,
+        }
+    }
+
+    // Both sides have said they are finished with the phase they are in. A standing fact about the
+    // phase rather than a moment, which is what lets a prosecution that could not act on it when it
+    // was set — frozen, or already waiting on a host — act on it as soon as that clears.
+    pub fn both_signalled(&self) -> bool {
+        match &self.phase {
+            ProsecutionPhase::Custody {
+                prosecutor_ready,
+                defense_ready,
+                ..
+            } => *prosecutor_ready && *defense_ready,
+            ProsecutionPhase::Trial {
+                phase:
+                    TrialPhase::Debate {
+                        prosecutor_done,
+                        defense_done,
+                    },
+                ..
+            } => *prosecutor_done && *defense_done,
+            _ => false,
+        }
+    }
+
     // Map the internal phase to the client-facing view and locate the trial channel (None during
     // custody, before the channel exists).
     pub fn phase_view(&self) -> (ProsecutionPhaseView, Option<ChannelKey>) {

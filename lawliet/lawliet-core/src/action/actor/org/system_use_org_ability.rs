@@ -13,7 +13,7 @@ use crate::{
     actor::{modifier::Modifier, organization::OrgAbilityPolicy},
     config::role::Role,
     helpers::{get_actor, get_org},
-    poll::{PollPolicy, PollSubject, PollVisibility, VoterPolicy},
+    poll::{PollOption, PollParent, PollPolicy, PollSubject, VoterPolicy},
 };
 
 pub use crate::action::{SystemUseOrgAbility, SystemUseOrgAbilityResponse};
@@ -74,20 +74,21 @@ impl ActionInterface for SystemUseOrgAbility {
             if !self.dont_vote && ability_policies.contains(OrgAbilityPolicy::RequireVote) {
                 let response = Action::CreatePoll(CreatePoll {
                     voter_policy: VoterPolicy::Present,
-                    visibility: PollVisibility::Org(self.org_id),
+                    parent: PollParent::Org(self.org_id),
                     subject: PollSubject::OrgAbility(self.ability_args.clone()),
                     update_policy: PollPolicy::Majority,
                     timeout_policy: PollPolicy::Majority,
-                    accept_payload: Box::new(Some(Action::SystemUseOrgAbility(
-                        SystemUseOrgAbility {
+                    options: PollOption::accept_reject(
+                        Some(Action::SystemUseOrgAbility(SystemUseOrgAbility {
                             org_id: self.org_id,
                             user_id: self.user_id,
                             ability_id: self.ability_id,
                             ability_args: self.ability_args.clone(),
                             dont_vote: true,
-                        },
-                    ))),
-                    reject_payload: Box::new(None),
+                        })),
+                        None,
+                    ),
+                    ignore_amplification: false,
                     duration: Some(eng.config.defaults.org_vote_time),
                     // the member who invoked the org ability is the vote's opener
                     opener: Some(self.user_id),

@@ -1,11 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    channel::ChannelPermissions,
-    common::{ActorKey, ID},
-    role::Role,
-};
-
 // Where the world is in its life. A world exists well before anyone is playing in it: the host
 // builds the roster, hands out roles, makes organizations and keys, and none of that is play.
 //
@@ -32,16 +26,3 @@ pub enum WorldChannelName {
     LAndWatari,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct WorldChannelOverride {
-    pub default_perms: ChannelPermissions,
-    pub force_perms: ChannelPermissions,
-}
-
-#[derive(PartialEq, Eq, Clone, Debug, Hash, Serialize, Deserialize)]
-pub enum OverrideSource {
-    Role(Role),
-    Manual(ID),
-    PressConference(ActorKey),
-    Incarceration,
-}

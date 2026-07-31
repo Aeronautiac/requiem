@@ -13,6 +13,7 @@ pub mod notebook;
 pub mod passive;
 pub mod poll;
 pub mod prosecution;
+pub mod timer;
 pub mod update;
 pub mod world;
 
@@ -107,11 +108,16 @@ impl ActionInterface for Action {
             Action::SendMessage(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CreateChannel(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::DestroyChannel(a) => a.handle(eng, ctx, actor, version, mutate),
-            Action::SetMember(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::AddProfile(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::CreateAndGiveProfile(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::DeleteProfile(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::RemoveFromChannel(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::SetProfileAccess(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::SetProfilePolicy(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::UpdateChannels(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::SetLoggable(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::SetTrueName(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CreateLounge(a) => a.handle(eng, ctx, actor, version, mutate),
-            Action::UpdateContactChannels(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::LeaveLounge(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::RemoveFromLounge(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::AddToGroupchat(a) => a.handle(eng, ctx, actor, version, mutate),
@@ -128,11 +134,10 @@ impl ActionInterface for Action {
             Action::SelectLawyer(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CullProsecutions(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::TerminateProsecution(a) => a.handle(eng, ctx, actor, version, mutate),
-            Action::UpdateProsecutionChannels(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::UpdateProsecutions(a) => a.handle(eng, ctx, actor, version, mutate),
-            Action::AddToWorldChannels(a) => a.handle(eng, ctx, actor, version, mutate),
-            Action::UpdateWorldChannelPerms(a) => a.handle(eng, ctx, actor, version, mutate),
-            Action::SetWorldChannelOverride(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::UpdateWorldViewports(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::UpdateTimers(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::SetBlackout(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::InitializeEngine(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::SetRandomSeed(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::UpdateBugVisibilities(a) => a.handle(eng, ctx, actor, version, mutate),
@@ -141,7 +146,7 @@ impl ActionInterface for Action {
             Action::CreateKidnapping(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::ReleaseKidnapping(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CullKidnappings(a) => a.handle(eng, ctx, actor, version, mutate),
-            Action::UpdateKidnapChannels(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::UpdateKidnappings(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::UpdatePrisonChannel(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::CreateIncarceration(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::ReleaseIncarceration(a) => a.handle(eng, ctx, actor, version, mutate),

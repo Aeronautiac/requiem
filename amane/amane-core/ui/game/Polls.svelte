@@ -9,7 +9,13 @@
   import type { GameState } from "../../game/state.svelte";
   import type { PollData, PollView } from "../../game/types";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import type { Action, PollSubject, PollVisibility } from "../../bindings";
+  import type {
+    Action,
+    PollOptionIndex,
+    PollOptionLabel,
+    PollParent,
+    PollSubject,
+  } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
   import { Flash } from "../../flash.svelte.ts";
@@ -61,13 +67,17 @@
   }
 
   // Shown because the panel lists polls regardless of which channel you are in.
-  function scopeLabel(scope: PollVisibility): string {
-    if (scope === "AllPresent") return "Everyone";
-    if ("Org" in scope) {
-      const org = view.orgs.get(slotKeyToString(scope.Org));
+  function parentLabel(parent: PollParent): string {
+    if (parent === "World") return "Everyone";
+    if ("Org" in parent) {
+      const org = view.orgs.get(slotKeyToString(parent.Org));
       return org ? orgDisplayName(org.name) : "Org";
     }
-    return view.channels.get(slotKeyToString(scope.Channel))?.name ?? "Channel";
+    return view.channels.get(slotKeyToString(parent.Channel))?.name ?? "Channel";
+  }
+
+  function optionLabel(label: PollOptionLabel): string {
+    return typeof label === "string" ? label : label.Generic;
   }
 
   // "true_name" -> "True name", "target_id" -> "Target" (the _id suffix is noise here).
@@ -109,12 +119,8 @@
     else flash.set_success(ok);
   }
 
-  function vote(id: string, accept: boolean) {
-    send(
-      id,
-      { AddVote: { poll_id: slotKeyFromString(id), accept } },
-      accept ? "Voted yes." : "Voted no.",
-    );
+  function vote(id: string, option: PollOptionIndex, label: string) {
+    send(id, { AddVote: { poll_id: slotKeyFromString(id), option } }, `Voted ${label}.`);
   }
 
   function retract(id: string) {
@@ -158,16 +164,20 @@
 
           <div class="flex flex-wrap items-center gap-x-2 text-[0.65rem] text-neutral-500">
             <span class="rounded bg-neutral-800 px-1.5 py-0.5 text-neutral-400">
-              {scopeLabel(p.data.scope)}
+              {parentLabel(p.data.parent)}
             </span>
             {#if p.data.opener}
               <span>started by {view.actor_name(p.data.opener)}</span>
             {/if}
           </div>
 
-          <div class="flex gap-2 text-[0.7rem] text-neutral-500">
-            <span class="text-emerald-400/80">yes {p.data.accept}</span>
-            <span class="text-red-400/80">no {p.data.reject}</span>
+          <div class="flex flex-col gap-0.5 text-[0.7rem] text-neutral-500">
+            {#each p.data.options as option, i (i)}
+              <span class:text-neutral-300={p.view?.own_vote === i}>
+                {optionLabel(option.label)}
+                {option.weight}
+              </span>
+            {/each}
             <span>· of {p.data.potential}</span>
           </div>
 
@@ -182,24 +192,22 @@
               you can't vote in this poll
             </span>
           {:else if p.view.own_vote === null}
-            <div class="flex gap-1">
-              <button
-                class="flex-1 rounded bg-emerald-700/80 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-600"
-                onclick={() => vote(p.id, true)}
-              >
-                Yes
-              </button>
-              <button
-                class="flex-1 rounded bg-red-700/80 px-2 py-1 text-xs font-medium text-white hover:bg-red-600"
-                onclick={() => vote(p.id, false)}
-              >
-                No
-              </button>
+            <div class="flex flex-wrap gap-1">
+              {#each p.data.options as option, i (i)}
+                <button
+                  class="flex-1 rounded bg-neutral-700/80 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-600"
+                  onclick={() => vote(p.id, i, optionLabel(option.label))}
+                >
+                  {optionLabel(option.label)}
+                </button>
+              {/each}
             </div>
           {:else}
             <div class="flex items-center justify-between gap-2">
               <span class="text-xs text-neutral-300">
-                you voted {p.view.own_vote ? "Yes" : "No"}
+                you voted {optionLabel(p.data.options[p.view.own_vote]?.label ?? {
+                  Generic: "?",
+                })}
               </span>
               <button
                 class="rounded px-1.5 py-0.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"

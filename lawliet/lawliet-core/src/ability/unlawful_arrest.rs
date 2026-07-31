@@ -94,10 +94,11 @@ mod tests {
                 .has_state(State::Incarcerated)
         );
         // No poll stands between the use and the cell.
-        assert!(!ctx.commands.iter().any(|p| matches!(
-            &p.cmd,
-            Command::UpdatePoll { .. }
-        )));
+        assert!(
+            !ctx.commands
+                .iter()
+                .any(|p| matches!(&p.cmd, Command::UpdatePoll { .. }))
+        );
     }
 
     // An incarceration never discloses its source, so nothing on the wire names the arrester.

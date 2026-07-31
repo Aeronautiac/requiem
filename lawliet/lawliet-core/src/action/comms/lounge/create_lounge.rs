@@ -11,12 +11,12 @@ use indexmap::{IndexSet, indexset};
 use lawliet_types::lounge::AnonymousLoungeRoleDisplay;
 use smallvec::{SmallVec, smallvec};
 
+use lawliet_types::channel::{ContactPolicy, PermUpdatePolicy};
+
 use crate::{
-    action::{
-        Action, ActionInterface, ActionResponse, CreateChannel, SetMember, UpdateContactChannels,
-    },
+    action::{Action, ActionInterface, ActionResponse, CreateAndGiveProfile, CreateChannel},
     actor::ActorDisplay,
-    channel::{ChannelKind, ChannelMember, ChannelPermissions},
+    channel::ChannelKind,
     command::Command,
     common::{ActorKey, LoungeKey},
     helpers::{cmd_channel, cmd_contact_log, get_player, get_player_mut},
@@ -119,8 +119,11 @@ impl ActionInterface for CreateLounge {
             get_player(eng, participant.id)?;
         }
 
-        let channel_response = Action::CreateChannel(CreateChannel { loggable: true })
-            .handle(eng, ctx, actor, version, mutate)?;
+        let channel_response = Action::CreateChannel(CreateChannel {
+            loggable: true,
+            base_profile: None,
+        })
+        .handle(eng, ctx, actor, version, mutate)?;
         let ActionResponse::CreateChannel(data) = channel_response else {
             unreachable!();
         };
@@ -150,24 +153,25 @@ impl ActionInterface for CreateLounge {
             );
 
             for participant in participants {
-                Action::SetMember(SetMember {
-                    channel_id,
-                    player_id: participant.id,
-                    settings: Some(ChannelMember {
-                        perms: ChannelPermissions::EMPTY,
-                        displays: participant.displays,
-                    }),
-                })
-                .handle(eng, ctx, actor, version, mutate)?;
+                // One name per display, which is how a fabricated lounge works at all: its creator
+                // holds both sides of a conversation that never happened, and each side is a name
+                // they can speak as.
+                for display in participant.displays {
+                    Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                        channel_id,
+                        player_id: participant.id,
+                        display,
+                        visible: true,
+                        shared: false,
+                        transferrable: false,
+                        perm_policy: PermUpdatePolicy::Contact(ContactPolicy {}),
+                    })
+                    .handle(eng, ctx, actor, version, mutate)?;
+                }
 
                 let player_data = get_player_mut(eng, participant.id)
                     .expect("expected lounge participant to be a valid player");
                 player_data.add_lounge(lounge_id);
-
-                Action::UpdateContactChannels(UpdateContactChannels {
-                    player_id: participant.id,
-                })
-                .handle(eng, ctx, actor, version, mutate)?;
 
                 cmd_channel(
                     eng,

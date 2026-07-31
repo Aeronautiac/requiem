@@ -1,31 +1,38 @@
 use crate::{
     engine::Engine,
-    poll::{PolicyResult, Poll},
+    poll::{PolicyResult, Poll, PollOptionIndex},
 };
 
-// if the percentage of one side is > 50% of the total vote weight, that side wins
+// an option holding more than half of the weight that could possibly be cast wins
 // otherwise, inconclusive
+//
+// Only one option can ever clear that bar, so the first match is the only match.
 pub fn majority(poll: &Poll, eng: &Engine) -> PolicyResult {
     let query = poll.weights(eng);
-    if 2 * query.accept > query.potential_total {
-        return PolicyResult::Accept;
-    }
-    if 2 * query.reject > query.potential_total {
-        return PolicyResult::Reject;
+    for (index, weight) in query.options.iter().enumerate() {
+        if 2 * weight > query.potential_total {
+            return PolicyResult::Resolved(index as PollOptionIndex);
+        }
     }
     PolicyResult::Inconclusive
 }
 
-// if the weight of one side > the other, that side wins
-// if the weights are equal, inconclusive pub fn winning_vote(poll: &Poll, eng: &Engine) -> PolicyResult {
-pub fn winning_vote(poll: &Poll, eng: &Engine) -> PolicyResult {
+// the option with the most weight behind it wins
+// if two options are level, inconclusive — and so is a poll nobody has voted in, which would
+// otherwise hand a single-option ballot to the option nobody chose
+pub fn most_voted(poll: &Poll, eng: &Engine) -> PolicyResult {
     let query = poll.weights(eng);
-    dbg!(&query);
-    if query.accept > query.reject {
-        PolicyResult::Accept
-    } else if query.reject > query.accept {
-        PolicyResult::Reject
-    } else {
-        PolicyResult::Inconclusive
+    let Some(most) = query.options.iter().copied().max().filter(|most| *most > 0) else {
+        return PolicyResult::Inconclusive;
+    };
+    let mut winners = query
+        .options
+        .iter()
+        .enumerate()
+        .filter(|(_, w)| **w == most);
+    let (index, _) = winners.next().expect("the max is one of the options");
+    if winners.next().is_some() {
+        return PolicyResult::Inconclusive;
     }
+    PolicyResult::Resolved(index as PollOptionIndex)
 }

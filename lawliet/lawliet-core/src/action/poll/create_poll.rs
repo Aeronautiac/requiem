@@ -7,13 +7,14 @@
 
 use crate::{
     action::{
-        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        PollTimeout, ScheduleJob,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, PollTimeout,
     },
     common::PollKey,
-    helpers::open_viewport,
+    engine::Engine,
+    helpers::get_poll,
     poll::Poll,
-    viewport::ViewportKind,
+    timer::Timer,
 };
 
 pub use crate::action::{CreatePoll, CreatePollReponse};
@@ -24,38 +25,41 @@ impl ActionInterface for CreatePoll {
         eng: &mut crate::engine::Engine,
         ctx: &mut ActionContext,
         actor: &ActionActor,
-        version: crate::common::Version,
+        _version: crate::common::Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
+        // A ballot with nothing on it can only ever time out inconclusively.
+        if self.options.is_empty() {
+            return Err(ActionError::PollHasNoOptions);
+        }
 
         let id = if mutate {
-            // The poll owns its viewport for its whole life; PollCleanup frees it.
-            let viewport = open_viewport(eng, ctx, ViewportKind::Poll);
-            eng.world.add_poll(Poll::new(
-                *(self.accept_payload.clone()),
-                *(self.reject_payload.clone()),
-                self.visibility,
-                self.subject.clone(),
-                self.update_policy,
-                self.timeout_policy,
-                self.voter_policy,
-                self.opener,
-                viewport,
-            ))
+            eng.world.add_poll(Poll::new(self))
         } else {
             PollKey::default()
         };
 
-        // poll only exists in the mutate path
+        // The timer fires at the poll, so it cannot exist until the poll has a key — and neither
+        // exists off the mutate path. A poll with no duration simply has no timer: it runs until
+        // its update policy resolves it or something tears it down.
         if let Some(duration) = self.duration
             && mutate
         {
-            Action::ScheduleJob(ScheduleJob {
-                timestamp: eng.time + duration,
-                payload: Box::new(Action::PollTimeout(PollTimeout { poll_id: id })),
-            })
-            .handle(eng, ctx, actor, version, mutate)?;
+            let now = eng.time;
+            // The clock is gated on the same audience the ballot is: whoever cannot reach the
+            // poll is not watching its deadline approach either.
+            let gate = get_poll(eng, id).expect("just created").viewport(eng);
+            let Engine { world, jobs, .. } = eng;
+            let timer = Timer::start(
+                jobs,
+                now,
+                duration,
+                gate,
+                Action::PollTimeout(PollTimeout { poll_id: id }),
+            );
+            let timer_id = world.add_timer(timer);
+            world.get_poll_mut(id).expect("just created").timer = Some(timer_id);
         }
 
         super::broadcast_poll(eng, ctx, id, mutate);

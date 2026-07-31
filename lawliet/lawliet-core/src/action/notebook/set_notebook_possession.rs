@@ -4,16 +4,17 @@
 * Does not modify the notebook's ownership fields — callers handle that themselves.
 */
 
-use indexmap::indexset;
-use lawliet_types::command::CommandRecipient;
+use lawliet_types::{
+    channel::{AlivePolicy, PermUpdatePolicy},
+    command::CommandRecipient,
+};
 
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        SetMember,
+        CreateAndGiveProfile, RemoveFromChannel,
     },
     actor::ActorDisplay,
-    channel::{ChannelMember, ChannelPermission},
     command::Command,
     helpers::{get_actor_mut, get_notebook},
 };
@@ -56,10 +57,9 @@ impl ActionInterface for SetNotebookPossession {
                     a.remove_notebook(self.notebook_id);
                 }
             }
-            Action::SetMember(SetMember {
-                player_id: from,
+            Action::RemoveFromChannel(RemoveFromChannel {
                 channel_id,
-                settings: None,
+                player_id: from,
             })
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
@@ -68,13 +68,17 @@ impl ActionInterface for SetNotebookPossession {
             if mutate {
                 get_actor_mut(eng, to)?.add_notebook(self.notebook_id);
             }
-            Action::SetMember(SetMember {
-                player_id: to,
+            // The book is yours to read and write while you are alive to do it. What is done with
+            // it beyond that — passing it on, using it — is the notebook's own business and gated
+            // elsewhere.
+            Action::CreateAndGiveProfile(CreateAndGiveProfile {
                 channel_id,
-                settings: Some(ChannelMember {
-                    perms: ChannelPermission::Send | ChannelPermission::View,
-                    displays: indexset![ActorDisplay::Raw(to)],
-                }),
+                player_id: to,
+                display: ActorDisplay::Raw(to),
+                visible: true,
+                shared: false,
+                transferrable: false,
+                perm_policy: PermUpdatePolicy::Alive(AlivePolicy {}),
             })
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }

@@ -87,6 +87,7 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::TrueNameReroll(a) => a.ability_name(),
             AbilityBehaviour::TapIn(a) => a.ability_name(),
             AbilityBehaviour::SilentProsecute(a) => a.ability_name(),
+            AbilityBehaviour::Blackout(a) => a.ability_name(),
         }
     }
 
@@ -170,6 +171,7 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::SilentProsecute(a) => {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
+            AbilityBehaviour::Blackout(a) => a.handle(eng, ctx, actor, ability, version, mutate),
         }
     }
 }

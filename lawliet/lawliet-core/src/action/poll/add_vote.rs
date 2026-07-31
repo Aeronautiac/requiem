@@ -24,15 +24,18 @@ impl ActionInterface for AddVote {
         let player_id = actor_id(actor).unwrap();
 
         let poll = get_poll(eng, self.poll_id)?;
-        if !poll.voter_policy(eng, player_id) {
+        if !poll.can_enter(eng, player_id) {
             return Err(ActionError::InvalidVoter);
+        }
+        if !poll.is_option(self.option) {
+            return Err(ActionError::NotAPollOption);
         }
         if poll.contains_voter(player_id) {
             return Err(ActionError::AlreadyVoted);
         }
         if mutate {
             let poll = get_poll_mut(eng, self.poll_id)?;
-            poll.add_vote(player_id, self.accept);
+            poll.add_vote(player_id, self.option);
         }
 
         super::broadcast_poll(eng, ctx, self.poll_id, mutate);

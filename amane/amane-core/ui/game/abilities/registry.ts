@@ -32,6 +32,8 @@ import KiraConnectionAbility from "./KiraConnectionAbility.svelte";
 import TrueNameRerollAbility from "./TrueNameRerollAbility.svelte";
 import TapInAbility from "./TapInAbility.svelte";
 import SilentProsecuteAbility from "./SilentProsecuteAbility.svelte";
+import ForceInviteAbility from "./ForceInviteAbility.svelte";
+import BlackoutAbility from "./BlackoutAbility.svelte";
 
 // `orgId`, when set, means the ability belongs to that org: the same form is reused, so an org
 // ability looks identical to a personal one, but the request is dispatched as UseOrgAbility —
@@ -75,6 +77,8 @@ export const ABILITY_UIS: Partial<
   TrueNameReroll: TrueNameRerollAbility,
   TapIn: TapInAbility,
   SilentProsecute: SilentProsecuteAbility,
+  ForceInvite: ForceInviteAbility,
+  Blackout: BlackoutAbility,
 };
 
 // "AnonymousContact" -> "Anonymous Contact"

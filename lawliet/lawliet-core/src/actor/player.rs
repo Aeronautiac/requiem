@@ -1,27 +1,12 @@
 use std::rc::Rc;
 
-use indexmap::{IndexMap, IndexSet, indexset};
+use indexmap::{IndexSet, indexset};
 use lawliet_types::common::{ActorKey, ChannelKey};
 
 use crate::{
-    channel::ChannelPermissions,
-    common::{BugKey, GroupchatKey, LoungeKey, ViewportKey},
-    config::{role::Role, world::WorldChannelName},
+    common::{BugKey, GroupchatKey, LogID, LoungeKey},
+    config::role::Role,
 };
-
-pub use lawliet_types::world::{OverrideSource, WorldChannelOverride};
-
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub enum OverrideResolver {
-    Negative,
-    Positive,
-}
-
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub struct SourcedWorldChannelOverride {
-    pub priority: u8,
-    pub data: WorldChannelOverride,
-}
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Player {
@@ -34,15 +19,12 @@ pub struct Player {
     pub groupchats: IndexSet<GroupchatKey>,
     pub bugs: IndexSet<BugKey>, // the bugs targetting this player
     pub orgs: IndexSet<ActorKey>,
-    // Names this player as the sender of everything logged from them. Nobody is ever granted
-    // access — it is an identity, not an audience — so the engine allocates it and then only ever
-    // addresses to it. yagami keys its message store by it, which is what lets an autopsy name the
-    // real sender of something said under a borrowed display.
+    // Names this player as the sender of everything logged from them. yagami keys its message
+    // store by it, which is what lets an autopsy name the real sender of something said under a
+    // borrowed display.
     //
-    // Written by AddPlayer, since viewport lifetime belongs to actions rather than World.
-    pub log_viewport: ViewportKey,
-    pub world_channel_overrides:
-        IndexMap<WorldChannelName, IndexMap<OverrideSource, SourcedWorldChannelOverride>>,
+    // Written by AddPlayer, since claiming one belongs to actions rather than World.
+    pub log: LogID,
 }
 
 impl Player {
@@ -58,50 +40,8 @@ impl Player {
             groupchats: indexset![],
             bugs: indexset![],
             orgs: indexset![],
-            log_viewport: ViewportKey::default(),
-            world_channel_overrides: IndexMap::new(),
+            log: LogID::default(),
         }
-    }
-
-    pub fn get_world_channel_override(
-        &self,
-        name: WorldChannelName,
-        resolver: OverrideResolver,
-    ) -> Option<WorldChannelOverride> {
-        let channel_overrides = self.world_channel_overrides.get(&name)?;
-        if channel_overrides.is_empty() {
-            return None;
-        }
-
-        let max_priority = channel_overrides.values().map(|o| o.priority).max()?;
-        let top: Vec<&WorldChannelOverride> = channel_overrides
-            .values()
-            .filter(|o| o.priority == max_priority)
-            .map(|o| &o.data)
-            .collect();
-
-        if top.len() == 1 {
-            return Some(top[0].clone());
-        }
-
-        Some(match resolver {
-            OverrideResolver::Positive => WorldChannelOverride {
-                default_perms: top
-                    .iter()
-                    .fold(ChannelPermissions::EMPTY, |acc, o| acc | o.default_perms),
-                force_perms: top
-                    .iter()
-                    .fold(ChannelPermissions::EMPTY, |acc, o| acc | o.force_perms),
-            },
-            OverrideResolver::Negative => WorldChannelOverride {
-                default_perms: top
-                    .iter()
-                    .fold(ChannelPermissions::all(), |acc, o| acc & o.default_perms),
-                force_perms: top
-                    .iter()
-                    .fold(ChannelPermissions::all(), |acc, o| acc & o.force_perms),
-            },
-        })
     }
 
     pub fn add_lounge(&mut self, id: LoungeKey) {

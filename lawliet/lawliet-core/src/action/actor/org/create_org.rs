@@ -44,7 +44,10 @@ impl ActionInterface for CreateOrg {
         let passives = org_config.passives.clone();
         let charge_pools = org_config.charge_pools.clone();
 
-        let channel_response = Action::CreateChannel(CreateChannel { loggable: true })
+        let channel_response = Action::CreateChannel(CreateChannel {
+            loggable: true,
+            base_profile: None,
+        })
             .handle(eng, ctx, actor, version, mutate)?;
         let ActionResponse::CreateChannel(data) = channel_response else {
             unreachable!();

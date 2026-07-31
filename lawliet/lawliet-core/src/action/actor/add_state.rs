@@ -6,13 +6,11 @@
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        UpdateBugVisibilities, UpdateContactChannels, UpdateKidnapChannels,
-        UpdatePassiveVisibilities, UpdatePrisonChannel,
-        UpdateWorldChannelPerms,
+        UpdateBugVisibilities, UpdatePassiveVisibilities, UpdateWorldViewports,
     },
     common::Version,
     engine::Engine,
-    helpers::{cmd_actor_state, get_actor_mut, get_player, sync_presence},
+    helpers::{cmd_actor_state, get_actor_mut},
 };
 
 pub use crate::action::{AddState, AddStateResponse};
@@ -49,24 +47,13 @@ impl ActionInterface for AddState {
             cmd_actor_state(eng, ctx, self.actor_id);
         }
 
-        if get_player(eng, self.actor_id).is_ok() {
-            Action::UpdateContactChannels(UpdateContactChannels {
-                player_id: self.actor_id,
-            })
+        // Update runs this too, but not until the whole top-level action is over, and that is too
+        // late: a player who has just lost presence must already be out of the world-events
+        // viewport when the caller announces what happened to them — Kill adds State::Dead and
+        // then announces the death. Recomputing here is idempotent and silent, so the pass in
+        // Update simply finds nothing left to say.
+        Action::UpdateWorldViewports(UpdateWorldViewports {})
             .handle(eng, ctx, actor, version, mutate)?;
-
-            Action::UpdateWorldChannelPerms(UpdateWorldChannelPerms {
-                player_id: self.actor_id,
-            })
-            .handle(eng, ctx, actor, version, mutate)?;
-        }
-
-        // Presence is derived from modifiers, and modifiers are only ever written here and in
-        // RemoveState, so these two actions are the whole of where world-event visibility can
-        // change. Resync before anything downstream emits: a player who has just lost presence
-        // must already be out of the viewport when the caller announces what happened to them —
-        // Kill adds State::Dead and then announces the death.
-        sync_presence(eng, ctx, mutate);
 
         Action::UpdateBugVisibilities(UpdateBugVisibilities {})
             .handle(eng, ctx, actor, version, mutate)?;
@@ -74,14 +61,6 @@ impl ActionInterface for AddState {
         // DisablePassiveLinks rides on a state, so who reaches which passive log can change here.
         Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
             .handle(eng, ctx, actor, version, mutate)?;
-
-        Action::UpdateKidnapChannels(UpdateKidnapChannels {})
-            .handle(eng, ctx, actor, version, mutate)?;
-
-        Action::UpdatePrisonChannel(UpdatePrisonChannel {
-            actor_id: self.actor_id,
-        })
-        .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::AddState(AddStateResponse {}))
     }

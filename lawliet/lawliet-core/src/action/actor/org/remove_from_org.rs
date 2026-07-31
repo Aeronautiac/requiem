@@ -3,10 +3,10 @@
 * Remove a player from an organization
 */
 
-use lawliet_types::{action::SetMember, command::Command};
+use lawliet_types::{action::RemoveFromChannel, command::Command};
 
 use crate::{
-    action::{Action, ActionError, ActionInterface, ActionResponse, UpdateKidnapChannels},
+    action::{Action, ActionError, ActionInterface, ActionResponse},
     actor::{ActorLink, ActorLinkType},
     helpers::{cmd_channel, get_actor_mut, get_org, get_org_mut, get_player, get_player_mut},
 };
@@ -58,15 +58,11 @@ impl ActionInterface for RemoveFromOrg {
             None,
         );
 
-        Action::SetMember(SetMember {
-            player_id: self.actor_id,
-            settings: None,
+        Action::RemoveFromChannel(RemoveFromChannel {
             channel_id,
+            player_id: self.actor_id,
         })
         .handle(eng, ctx, actor, version, mutate)?;
-
-        Action::UpdateKidnapChannels(UpdateKidnapChannels {})
-            .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::RemoveFromOrg(RemoveFromOrgResponse {}))
     }

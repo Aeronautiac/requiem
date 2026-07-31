@@ -94,10 +94,11 @@ impl AbilityInterface for TapIn {
             Some(user_id),
         );
 
+        let log = get_channel(eng, channel_id)?.log;
         ctx.push_cmd(
             Command::TapInResult {
                 contact_id: self.contact_id,
-                outcome: TapInOutcome::Found { channel_id, range },
+                outcome: TapInOutcome::Found { log, range },
             },
             recipient,
             eng.time,
@@ -112,7 +113,6 @@ mod tests {
     use lawliet_types::{
         ability::{AbilityBehaviour, AbilityName, TapIn},
         action::CreateAndGiveAbility,
-        actor::ActorDisplay,
         command::{Command, CommandRecipient, TapInOutcome},
     };
 
@@ -207,14 +207,8 @@ mod tests {
 
         let ctx = tap(&mut eng, 1, tapper, ability, contact_id);
 
-        let channel_id = channel_of(&eng, contact_id);
-        assert_eq!(
-            outcome(&ctx),
-            TapInOutcome::Found {
-                channel_id,
-                range: None
-            }
-        );
+        let log = get_channel(&eng, channel_of(&eng, contact_id)).unwrap().log;
+        assert_eq!(outcome(&ctx), TapInOutcome::Found { log, range: None });
     }
 
     // The nerfed variant differs from the full one in exactly one way, and this is it.
@@ -273,17 +267,17 @@ mod tests {
         let mut eng = Engine::new();
         let (tapper, ability, contact_id) = world(&mut eng, 0);
         let channel_id = channel_of(&eng, contact_id);
-        let membership = get_channel(&eng, channel_id).unwrap().membership_viewport;
+        let viewport = get_channel(&eng, channel_id).unwrap().viewport;
 
         let ctx = tap(&mut eng, 1, tapper, ability, contact_id);
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == CommandRecipient::Viewport(membership)
+            p.recipient == CommandRecipient::Viewport(viewport)
                 && matches!(&p.cmd, Command::ChannelTapped { .. })
         }));
         // Nothing addressed to the room names the tapper.
         assert!(!ctx.commands.iter().any(|p| {
-            p.recipient == CommandRecipient::Viewport(membership)
+            p.recipient == CommandRecipient::Viewport(viewport)
                 && matches!(&p.cmd, Command::TapInResult { .. })
         }));
     }
@@ -294,12 +288,12 @@ mod tests {
         let mut eng = Engine::new();
         let (tapper, ability, contact_id) = world(&mut eng, 0);
         let channel_id = channel_of(&eng, contact_id);
-        let log = get_channel(&eng, channel_id).unwrap().log_viewport;
+        let log = get_channel(&eng, channel_id).unwrap().log;
 
         let ctx = tap(&mut eng, 1, tapper, ability, contact_id);
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == CommandRecipient::Viewport(log)
+            p.recipient == CommandRecipient::Log(log)
                 && matches!(&p.cmd, Command::ChannelTapped { .. })
         }));
     }
@@ -311,26 +305,23 @@ mod tests {
         let mut eng = Engine::new();
         let (_, _, contact_id) = world(&mut eng, 0);
         let channel_id = channel_of(&eng, contact_id);
-        let log = get_channel(&eng, channel_id).unwrap().log_viewport;
-        let speaker = *get_channel(&eng, channel_id)
-            .unwrap()
-            .members
-            .keys()
-            .next()
-            .unwrap();
+        let channel = get_channel(&eng, channel_id).unwrap();
+        let log = channel.log;
+        let speaker = *channel.members.keys().next().unwrap();
+        let profile = channel.accessible_profiles(speaker)[0].profile_id;
 
         let (_, ctx) = send_message(
             &mut eng,
             1,
             speaker,
             channel_id,
-            ActorDisplay::Raw(speaker),
+            profile,
             "something worth tapping for",
         )
         .unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == CommandRecipient::Viewport(log)
+            p.recipient == CommandRecipient::Log(log)
                 && matches!(&p.cmd, Command::AddMessage { .. })
         }));
     }

@@ -6,6 +6,7 @@ import type {
   AbilityName,
   ActorDisplay,
   BugKey,
+  ChannelProfileView,
   CommandRecipient,
   OrganizationName,
   PassiveKey,
@@ -20,6 +21,7 @@ import type {
   Channel,
   ChannelCategory,
   ChannelKind,
+  ChannelPerms,
   Org,
   Player,
 } from "./types";
@@ -56,7 +58,8 @@ export function t(key: StringKey, vars?: Record<string, string | number>): strin
 // ---- recipients ----
 
 // The key of the single view a recipient targets. Undefined for a Viewport recipient, which names
-// no one view — the router fans those out instead.
+// no one view — the router fans those out instead — and for a Log, which names no audience at all
+// and is filtered out by the server before a client ever sees it.
 export function recipientToView(rec: CommandRecipient): string | undefined {
   if (rec === "System") return "System";
   if (typeof rec !== "string" && "Actor" in rec) return slotKeyToString(rec.Actor);
@@ -153,13 +156,32 @@ export function upsert_ability(
 
 // ---- permissions ----
 
-// Channel permission bits, mirroring ChannelPermission in the engine.
+// Channel permission bits, mirroring ChannelPerm in the engine.
 export const PERM_SEND = 1;
 export const PERM_VIEW = 2;
 export const PERM_LOGGABILITY = 4;
 
-export function hasPositivePerms(perms: number): boolean {
-  return (perms & (PERM_SEND | PERM_VIEW | PERM_LOGGABILITY)) !== 0;
+// What this view may do in a channel, folded over every name it holds there.
+//
+// Permissions belong to the PROFILE, not to the person: the same viewer may be able to talk under
+// one of their names and not another. This is the question "can I do X here at all", which is what
+// the sidebar and the composer's enabled state ask; sending itself asks the chosen name.
+// What one name may do, for display beside it. Loggability control is deliberately absent: it is
+// about the channel rather than about standing in it, and it belongs to the toggle it drives.
+export function permsLabel(perms: number): string {
+  const parts: string[] = [];
+  if (perms & PERM_VIEW) parts.push("read");
+  if (perms & PERM_SEND) parts.push("send");
+  return parts.join(" · ");
+}
+
+export function ownPerms(own: ChannelProfileView[]): ChannelPerms {
+  const all = own.reduce((acc, profile) => acc | profile.perms, 0);
+  return {
+    read: (all & PERM_VIEW) !== 0,
+    send: (all & PERM_SEND) !== 0,
+    loggability_control: (all & PERM_LOGGABILITY) !== 0,
+  };
 }
 
 // ---- naming ----

@@ -28,7 +28,10 @@ impl ActionInterface for AddNotebook {
     ) -> ActionResult {
         actor.admin_or_system()?;
 
-        let channel_response = Action::CreateChannel(CreateChannel { loggable: false })
+        let channel_response = Action::CreateChannel(CreateChannel {
+            loggable: false,
+            base_profile: None,
+        })
             .handle(eng, ctx, actor, version, mutate)?;
         let ActionResponse::CreateChannel(data) = channel_response else {
             unreachable!();

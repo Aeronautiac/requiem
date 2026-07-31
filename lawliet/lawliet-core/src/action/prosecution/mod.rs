@@ -6,19 +6,58 @@ pub mod set_custody;
 pub mod signal_ready;
 pub mod start_prosecution;
 pub mod terminate_prosecution;
-pub mod update_prosecution_channels;
 pub mod update_prosecutions;
 
 use lawliet_types::command::Command;
 
 use crate::{
-    action::ActionContext,
+    Time,
+    action::{Action, ActionContext, AdvanceProsecution},
     actor::ActorDisplay,
-    common::{ActorKey, ChannelKey, ProsecutionKey},
+    common::{ActorKey, ChannelKey, ProsecutionKey, TimerKey},
     engine::Engine,
     helpers::{cmd_world_event, get_prosecution},
     prosecution::{ProsecutionPhase, TrialPhase, TrialSubphase},
+    timer::Timer,
 };
+
+// Put a prosecution's next deadline on the clock. Gated on the audience the trial plays to, so a
+// phase nobody can watch expiring does not expire — UpdateTimers stops it on exactly the terms
+// Prosecution::frozen holds its advances on.
+//
+// The prosecution must already exist: the countdown fires at it by key.
+pub(crate) fn schedule_advance(
+    eng: &mut Engine,
+    prosecution_id: ProsecutionKey,
+    delay: Time,
+) -> TimerKey {
+    let gate = get_prosecution(eng, prosecution_id)
+        .expect("prosecution was already validated")
+        .viewport(eng);
+    let now = eng.time;
+    let Engine { world, jobs, .. } = eng;
+    let timer = Timer::start(
+        jobs,
+        now,
+        delay,
+        Some(gate),
+        Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }),
+    );
+    world.add_timer(timer)
+}
+
+// Replace the deadline a prosecution is currently on. Freeing the old one cancels its job, so the
+// phase that just ended cannot still fire at the phase that replaced it.
+pub(crate) fn reschedule_advance(
+    eng: &mut Engine,
+    prosecution_id: ProsecutionKey,
+    timer: TimerKey,
+    delay: Time,
+) -> TimerKey {
+    let Engine { world, jobs, .. } = eng;
+    world.remove_timer(timer, jobs);
+    schedule_advance(eng, prosecution_id, delay)
+}
 
 // The prosecution whose trial this message belongs to, if the sender is the side holding the floor
 // and has not started their slot yet. A first message is what ends a grace subphase — the slot
@@ -139,25 +178,42 @@ pub(crate) fn broadcast_prosecution_close(
 mod prosecution_tests {
     use lawliet_types::{
         command::CommandRecipient,
-        prosecution::{ProsecutionPhaseView, TrialPhaseView, TrialSubphaseView},
+        prosecution::{ProsecutionPhaseView, ProsecutionSide, TrialPhaseView, TrialSubphaseView},
     };
 
     use crate::{
         action::{Action, ActionActor, ActionError, ActionRequest, AdvanceProsecution},
         actor::ActorDisplay,
-        channel::{ChannelKind, ChannelMember, ChannelPermission},
+        channel::{ChannelKind, ChannelPerm, ChannelPermSet},
+        common::ProfileKey,
         config::role::Role,
         engine::{Engine, ExecutionResult},
         helpers::{get_channel, get_prosecution},
         prosecution::{ProsecutionPhase, TrialPhase, TrialSubphase},
         test_helpers::{
             add_player, advance_prosecution, create_channel, host_advance_prosecution, init_engine,
-            quick_kill, select_lawyer, send_message, set_member, signal_ready, start_prosecution,
-            start_prosecution_with, terminate_prosecution, update_prosecution_channels,
+            join_channel, null_action, quick_kill, select_lawyer, send_message, set_blackout,
+            signal_ready, start_prosecution, start_prosecution_with, terminate_prosecution,
         },
     };
-    use indexmap::indexset;
     use lawliet_types::command::Command;
+
+    // The name somebody would speak through in a trial: whichever of theirs currently holds the
+    // floor, or their ordinary seat when none does. An anonymous prosecutor holds two, and only the
+    // mask is ever given Send.
+    fn speaking_profile(
+        eng: &Engine,
+        channel: crate::ChannelKey,
+        who: crate::ActorKey,
+    ) -> ProfileKey {
+        let profiles = get_channel(eng, channel).unwrap().accessible_profiles(who);
+        profiles
+            .iter()
+            .find(|p| p.perms.contains(ChannelPerm::Send))
+            .or_else(|| profiles.first())
+            .expect("expected a seat in the trial channel")
+            .profile_id
+    }
 
     // Prosecutor, defendant, a bystander, and a prosecution of the second by the first.
     fn trial(
@@ -219,14 +275,8 @@ mod prosecution_tests {
         id: crate::ProsecutionKey,
     ) -> ExecutionResult {
         let channel = trial_channel(eng, id);
-        send_message(
-            eng,
-            time,
-            speaker,
-            channel,
-            ActorDisplay::Raw(speaker),
-            "a word",
-        )
+        let profile = speaking_profile(eng, channel, speaker);
+        send_message(eng, time, speaker, channel, profile, "a word")
     }
 
     // Resolve the verdict vote directly. Driving the poll itself is the poll protocol's business,
@@ -240,12 +290,10 @@ mod prosecution_tests {
         eng.execute(crate::action::ActionRequest {
             actor: crate::action::ActionActor::System,
             timestamp: time,
-            payload: crate::action::Action::ProsecutionVoteRes(
-                crate::action::ProsecutionVoteRes {
-                    prosecution_id,
-                    success,
-                },
-            ),
+            payload: crate::action::Action::ProsecutionVoteRes(crate::action::ProsecutionVoteRes {
+                prosecution_id,
+                success,
+            }),
         })
         .unwrap()
     }
@@ -449,16 +497,14 @@ mod prosecution_tests {
             .unwrap();
 
         let sendable = |eng: &Engine, who| {
-            crate::helpers::get_channel(eng, channel)
+            get_channel(eng, channel)
                 .unwrap()
-                .members
-                .get(&who)
-                .is_some_and(|m| m.perms.contains(ChannelPermission::Send))
+                .owned_profiles(who)
+                .any(|p| p.perms.contains(ChannelPerm::Send))
         };
         assert!(sendable(&eng, bystander));
 
         quick_kill(&mut eng, 2, false, true, false, bystander);
-        update_prosecution_channels(&mut eng, 3, id);
 
         assert!(!sendable(&eng, bystander));
         // ...and the client keeps their line, since they are merely bereaved of counsel.
@@ -574,14 +620,12 @@ mod prosecution_tests {
             .execute(ActionRequest {
                 actor: ActionActor::System,
                 timestamp: 1,
-                payload: Action::AdvanceProsecution(AdvanceProsecution {
-                    prosecution_id: id,
-                }),
+                payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id: id }),
             })
             .unwrap();
 
         let channel = trial_channel(&eng, id);
-        let membership = get_channel(&eng, channel).unwrap().membership_viewport;
+        let membership = get_channel(&eng, channel).unwrap().viewport;
 
         assert!(ctx.commands.iter().any(|p| matches!(
             (&p.cmd, &p.recipient),
@@ -592,19 +636,19 @@ mod prosecution_tests {
         )));
     }
 
-    // Addressed to the presence viewport rather than broadcast, so an absent player receives it on
-    // return instead of never.
+    // Addressed to the world-events viewport rather than broadcast, so an absent player receives
+    // it on return instead of never.
     #[test]
-    fn the_close_is_addressed_to_the_presence_viewport() {
+    fn the_close_is_addressed_to_the_world_events_viewport() {
         let mut eng = Engine::new();
         let (_, _, _, id) = trial(&mut eng);
-        let presence = eng.world.presence_viewport;
+        let events = eng.world.events_viewport;
 
         let (_, ctx) = terminate_prosecution(&mut eng, 1, id).unwrap();
 
         assert!(ctx.commands.iter().any(|p| matches!(
             (&p.cmd, &p.recipient),
-            (Command::CloseProsecution { .. }, CommandRecipient::Viewport(v)) if *v == presence
+            (Command::CloseProsecution { .. }, CommandRecipient::Viewport(v)) if *v == events
         )));
     }
 
@@ -680,27 +724,9 @@ mod prosecution_tests {
         advance_prosecution(&mut eng, 2, id);
 
         let elsewhere = create_channel(&mut eng, 3, false);
-        set_member(
-            &mut eng,
-            3,
-            prosecutor,
-            elsewhere,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(prosecutor)],
-            }),
-        )
-        .unwrap();
+        let seat = join_channel(&mut eng, 3, prosecutor, elsewhere);
 
-        send_message(
-            &mut eng,
-            4,
-            prosecutor,
-            elsewhere,
-            ActorDisplay::Raw(prosecutor),
-            "a word",
-        )
-        .unwrap();
+        send_message(&mut eng, 4, prosecutor, elsewhere, seat, "a word").unwrap();
 
         assert!(matches!(
             get_prosecution(&eng, id).unwrap().phase,
@@ -831,10 +857,8 @@ mod prosecution_tests {
         for side in [prosecutor, defendant] {
             assert!(
                 !channel
-                    .get_member(side)
-                    .unwrap()
-                    .perms
-                    .contains(ChannelPermission::Send),
+                    .owned_profiles(side)
+                    .any(|p| p.perms.contains(ChannelPerm::Send)),
                 "a held debate must not leave the floor open"
             );
         }
@@ -949,5 +973,198 @@ mod prosecution_tests {
             closed < exited,
             "closed at {closed}, but the defendant had already left at {exited}"
         );
+    }
+
+    // ---- knowing your own side ----
+
+    // The whole reason this command exists: an anonymous prosecutor's snapshot reads Mysterious to
+    // them as much as to everyone else, so the only way they can know it is their trial is to be
+    // told privately. The defendant is told on the same terms so the client needs one rule.
+    #[test]
+    fn both_sides_are_told_privately_which_side_they_are() {
+        let mut eng = Engine::new();
+        init_engine(&mut eng);
+        let prosecutor = add_player(&mut eng, 0, Role::Civilian, "prosecutor");
+        let defendant = add_player(&mut eng, 0, Role::Civilian, "defendant");
+
+        let (_, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 1,
+                payload: Action::StartProsecution(crate::action::StartProsecution {
+                    source: crate::prosecution::ProsecutionSource::None,
+                    prosecutor_id: prosecutor,
+                    // The case this is for: the accuser is nameless on the public snapshot.
+                    prosecutor_display: ActorDisplay::Mysterious,
+                    defendant_id: defendant,
+                    defendant_display: ActorDisplay::Raw(defendant),
+                    autonomous: true,
+                }),
+            })
+            .unwrap();
+
+        let told: Vec<_> = ctx
+            .commands
+            .iter()
+            .filter_map(|p| match (&p.cmd, &p.recipient) {
+                (Command::InProsecution { side, .. }, CommandRecipient::Actor(who)) => {
+                    Some((*who, *side))
+                }
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            told,
+            vec![
+                (prosecutor, ProsecutionSide::Prosecutor),
+                (defendant, ProsecutionSide::Defendant),
+            ]
+        );
+
+        // ...and to nobody else. A viewport recipient here would put the accuser's identity in
+        // front of the whole world, which is the one thing this must never do.
+        assert!(
+            !ctx.commands
+                .iter()
+                .any(|p| matches!(&p.cmd, Command::InProsecution { .. })
+                    && !matches!(&p.recipient, CommandRecipient::Actor(_)))
+        );
+    }
+
+    // ---- disruption ----
+
+    // Whatever custody has left when the lights go out, it still has when they come back on — not
+    // that minus however long the world spent dark.
+    #[test]
+    fn a_blackout_stops_the_custody_clock() {
+        let mut eng = Engine::new();
+        let (_, _, _, id) = trial(&mut eng);
+
+        let custody = eng.config.defaults.custody_timeout;
+        let dark = eng.config.defaults.blackout_duration;
+
+        // How much custody has left when it is stopped. Kept under the length of a blackout so the
+        // dark outlasts it: the deadline has to pass while there is nobody to watch it pass, or
+        // there is nothing here to prove.
+        let owed = (custody.min(dark) / 2).max(1);
+        let dark_at = custody - owed;
+        // A blackout lifts itself.
+        let lit_at = dark_at + dark;
+
+        set_blackout(&mut eng, dark_at, true);
+
+        // The deadline custody was originally on, come and gone in the dark.
+        null_action(&mut eng, custody);
+        assert!(matches!(
+            get_prosecution(&eng, id).unwrap().phase,
+            ProsecutionPhase::Custody { .. }
+        ));
+
+        null_action(&mut eng, lit_at + owed - 1);
+        assert!(matches!(
+            get_prosecution(&eng, id).unwrap().phase,
+            ProsecutionPhase::Custody { .. }
+        ));
+
+        null_action(&mut eng, lit_at + owed);
+        assert!(matches!(
+            get_prosecution(&eng, id).unwrap().phase,
+            ProsecutionPhase::Trial { .. }
+        ));
+    }
+
+    // Both sides being finished is a fact about the phase, not a moment that can be missed. It is
+    // set in the dark, refused while the trial is frozen, and acted on by the sweep that follows
+    // the lights coming back.
+    #[test]
+    fn signals_given_in_the_dark_advance_when_it_lifts() {
+        let mut eng = Engine::new();
+        let (prosecutor, defendant, _, id) = trial(&mut eng);
+
+        set_blackout(&mut eng, 1, true);
+        signal_ready(&mut eng, 2, prosecutor, id).unwrap();
+        signal_ready(&mut eng, 3, defendant, id).unwrap();
+
+        assert_eq!(custody_flags(&eng, id), (true, true));
+
+        set_blackout(&mut eng, 4, false);
+        assert!(matches!(
+            get_prosecution(&eng, id).unwrap().phase,
+            ProsecutionPhase::Trial { .. }
+        ));
+    }
+
+    // A frozen prosecution refuses a system advance outright and records nothing — no
+    // pending_advance, which would leave an autonomous trial waiting on a host nobody is going to
+    // ask.
+    #[test]
+    fn a_frozen_trial_refuses_the_system_but_not_the_host() {
+        let mut eng = Engine::new();
+        let (_, _, _, id) = trial(&mut eng);
+
+        set_blackout(&mut eng, 1, true);
+        advance_prosecution(&mut eng, 2, id);
+
+        let prosecution = get_prosecution(&eng, id).unwrap();
+        assert!(matches!(
+            prosecution.phase,
+            ProsecutionPhase::Custody { .. }
+        ));
+        assert!(!prosecution.pending_advance);
+
+        // A host is outside the fiction and is not held by the dark.
+        host_advance_prosecution(&mut eng, 3, id).unwrap();
+        assert!(matches!(
+            get_prosecution(&eng, id).unwrap().phase,
+            ProsecutionPhase::Trial { .. }
+        ));
+    }
+
+    // The trial is stopped, not hidden: the channel stays and everyone keeps their view of it, but
+    // the side holding the floor cannot speak into a room the trial is not running in.
+    #[test]
+    fn a_frozen_trial_closes_the_floor() {
+        let mut eng = Engine::new();
+        let (prosecutor, defendant, _, id) = trial(&mut eng);
+        signal_ready(&mut eng, 1, prosecutor, id).unwrap();
+        signal_ready(&mut eng, 2, defendant, id).unwrap();
+
+        let channel = trial_channel(&eng, id);
+        let perms = |eng: &Engine, who| {
+            get_channel(eng, channel)
+                .unwrap()
+                .owned_profiles(who)
+                .fold(ChannelPermSet::EMPTY, |acc, p| acc | p.perms)
+        };
+        assert!(perms(&eng, prosecutor).contains(ChannelPerm::Send));
+
+        set_blackout(&mut eng, 3, true);
+        assert!(!perms(&eng, prosecutor).contains(ChannelPerm::Send));
+        assert!(perms(&eng, prosecutor).contains(ChannelPerm::View));
+
+        set_blackout(&mut eng, 4, false);
+        assert!(perms(&eng, prosecutor).contains(ChannelPerm::Send));
+    }
+
+    // The grace subphase ends when its owner starts talking, and while frozen they cannot — so the
+    // subphase cannot be walked forward in the dark either.
+    #[test]
+    fn a_frozen_grace_cannot_be_ended_by_speaking() {
+        let mut eng = Engine::new();
+        let (prosecutor, defendant, _, id) = trial(&mut eng);
+        signal_ready(&mut eng, 1, prosecutor, id).unwrap();
+        signal_ready(&mut eng, 2, defendant, id).unwrap();
+
+        set_blackout(&mut eng, 3, true);
+        speak(&mut eng, 4, prosecutor, id).unwrap_err();
+
+        assert!(matches!(
+            get_prosecution(&eng, id).unwrap().phase,
+            ProsecutionPhase::Trial {
+                phase: TrialPhase::Prosecutor(TrialSubphase::Grace),
+                ..
+            }
+        ));
     }
 }

@@ -590,11 +590,7 @@ pub fn cmd_channel(
         .world
         .get_channel(channel_id)
         .expect("channel addressed by a command does not exist: engine invariant violated");
-    let (membership, log, loggable) = (
-        channel.membership_viewport,
-        channel.log_viewport,
-        channel.loggable,
-    );
+    let (viewport, log, loggable) = (channel.viewport, channel.log, channel.loggable);
 
     // Nullification covers events and not just messages, because the modifier would be worth
     // nothing otherwise: taking yourself off the record is pointless if one Kira attempt puts you
@@ -604,9 +600,64 @@ pub fn cmd_channel(
     });
 
     if witnessed && loggable && !nullified {
-        ctx.push_cmd(cmd.clone(), CommandRecipient::Viewport(log), eng.time);
+        ctx.push_cmd(cmd.clone(), CommandRecipient::Log(log), eng.time);
     }
-    ctx.push_cmd(cmd, CommandRecipient::Viewport(membership), eng.time);
+    ctx.push_cmd(cmd, CommandRecipient::Viewport(viewport), eng.time);
+}
+
+// Tell everyone who can see a channel which names are in it.
+//
+// Synchronised rather than logged: the whole visible set, directed at each viewer, every time any
+// of it moves. Addressing it to the channel's viewport instead would be a leak rather than an
+// optimisation — a viewport hands its whole history to anyone who enters, so a late arrival would
+// be told every name the channel has ever held, including the ones that were the point of the
+// anonymity.
+//
+// Call it after anything that changes which profiles exist, what they show, what they permit, or
+// who can see them. It is idempotent, so calling it when nothing moved costs a few small commands
+// and says nothing new.
+pub fn cmd_channel_roster(eng: &mut Engine, ctx: &mut ActionContext, channel_id: ChannelKey) {
+    let Ok(channel) = get_channel(eng, channel_id) else {
+        return;
+    };
+    let profiles = channel.visible_profiles().into_vec();
+    let viewers = channel.viewers();
+
+    for viewer in viewers {
+        ctx.push_cmd(
+            Command::ChannelRoster {
+                channel_id,
+                profiles: profiles.clone(),
+            },
+            CommandRecipient::Actor(viewer),
+            eng.time,
+        );
+    }
+}
+
+// Tell an actor which names in a channel are theirs to speak as.
+//
+// Directed, because it is per-actor by nature: the room is told which names exist at all, and each
+// member is told separately which of them they hold. Whether they can READ the channel is a
+// separate matter answered by its viewport.
+pub fn cmd_profile_access(
+    eng: &mut Engine,
+    ctx: &mut ActionContext,
+    channel_id: ChannelKey,
+    actor_id: ActorKey,
+) {
+    let Ok(channel) = get_channel(eng, channel_id) else {
+        return;
+    };
+    let profiles = channel.accessible_profiles(actor_id).into_vec();
+    ctx.push_cmd(
+        Command::ProfileAccess {
+            channel_id,
+            profiles,
+        },
+        CommandRecipient::Actor(actor_id),
+        eng.time,
+    );
 }
 
 // Tell an actor what states they are currently in.
@@ -671,7 +722,7 @@ pub fn owner_view_recipient(eng: &Engine, owner_id: ActorKey) -> CommandRecipien
         Ok(org) => CommandRecipient::Viewport(
             get_channel(eng, org.channel_id)
                 .expect("org channel does not exist: engine invariant violated")
-                .membership_viewport,
+                .viewport,
         ),
         Err(_) => CommandRecipient::Actor(owner_id),
     }
@@ -686,11 +737,7 @@ pub fn owner_view_recipient(eng: &Engine, owner_id: ActorKey) -> CommandRecipien
 // Callers are the actions that own the object, per the lifetime rule in the viewport module, and
 // they call this on the mutate pass only — a validate pass allocates nothing, and the key it hands
 // back would be a real slot in a world that is about to be thrown away.
-pub fn open_viewport(
-    eng: &mut Engine,
-    ctx: &mut ActionContext,
-    kind: ViewportKind,
-) -> ViewportKey {
+pub fn open_viewport(eng: &mut Engine, ctx: &mut ActionContext, kind: ViewportKind) -> ViewportKey {
     let viewport = eng.world.add_viewport(kind);
     ctx.push_cmd(
         Command::MapViewport { viewport, kind },
@@ -778,38 +825,10 @@ pub fn sync_viewport(
     }
 }
 
-// Resync the presence viewport: every player who currently has presence, and nobody else.
-//
-// This is the whole of what the deferred-command queue used to do. That queue held a copy of
-// every world event per absent player and re-tested `blocking_modifiers` on each flush; all
-// seven of its call sites blocked on Modifier::NoPresence, so presence was the only condition it
-// ever expressed. Membership of one viewport says the same thing, and re-entry backfills the
-// backlog in order instead of a queue replaying it.
-//
-// Call it wherever presence can change. That is exactly AddState, RemoveState and player
-// creation: modifiers are only ever written by add_state/remove_state, so nothing else can move
-// an actor across this line.
-pub fn sync_presence(eng: &mut Engine, ctx: &mut ActionContext, mutate: bool) {
-    if !mutate {
-        return;
-    }
-    let present: IndexSet<ActorKey> = eng
-        .world
-        .actors
-        .iter()
-        .filter_map(|(id, actor)| {
-            (matches!(actor.actor_type, ActorType::Player(_))
-                && !actor.has_modifier(Modifier::NoPresence))
-            .then_some(id)
-        })
-        .collect();
-    let viewport = eng.world.presence_viewport;
-    sync_viewport(eng, ctx, viewport, present, mutate);
-}
-
-// A world event: something that happened in the world at large, which anyone present learns
-// about. Addressed to the presence viewport, so a player who is absent simply isn't a member
-// and receives it (in order, with everything else they missed) when presence returns.
+// A world event: something that HAPPENED in the world at large, which anyone present learns
+// about. Addressed to the world-events viewport, so a player who is absent — or a world under
+// blackout — simply isn't a member, and receives it (in order, with everything else it missed)
+// when access returns.
 //
 // There is deliberately NO separate System copy. Admin reads every viewport, so it already gets
 // this — and a mirror carrying different content would be actively worse than none: it would show
@@ -820,7 +839,22 @@ pub fn sync_presence(eng: &mut Engine, ctx: &mut ActionContext, mutate: bool) {
 pub fn cmd_world_event(eng: &mut Engine, ctx: &mut ActionContext, cmd: Command) {
     ctx.push_cmd(
         cmd,
-        CommandRecipient::Viewport(eng.world.presence_viewport),
+        CommandRecipient::Viewport(eng.world.events_viewport),
+        eng.time,
+    );
+}
+
+// A structural fact about the world rather than an announcement of something that happened: who
+// exists, what day it is, whether the lights are on. Same audience as cmd_world_event and the same
+// backfill on re-entry — the difference is that a blackout does not take this away.
+//
+// The line between the two is what a player is entitled to know while the world is dark. They may
+// work out from the rosters and the channels that somebody is gone; they are not told that they
+// died, or why, until the blackout lifts.
+pub fn cmd_world_data(eng: &mut Engine, ctx: &mut ActionContext, cmd: Command) {
+    ctx.push_cmd(
+        cmd,
+        CommandRecipient::Viewport(eng.world.data_viewport),
         eng.time,
     );
 }

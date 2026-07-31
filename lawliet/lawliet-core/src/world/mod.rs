@@ -15,13 +15,15 @@ use crate::{
     chargepool::ChargePool,
     common::{
         AbilityKey, ActorKey, BugKey, ChannelKey, ChargePoolKey, GroupchatKey, IncarcerationKey,
-        KidnappingKey, LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey, ViewportKey,
+        KidnappingKey, LogID, LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey, TimerKey,
+        ViewportKey,
     },
     config::{
         actor::organization::OrganizationName,
         role::Role,
         world::{WorldChannelName, WorldChargePoolName},
     },
+    engine::jobs::Jobs,
     groupchat::Groupchat,
     incarceration::Incarceration,
     kidnapping::Kidnapping,
@@ -30,6 +32,7 @@ use crate::{
     passive::Passive,
     poll::Poll,
     prosecution::Prosecution,
+    timer::Timer,
     viewport::{MembershipDiff, Viewport, ViewportKind},
 };
 
@@ -75,24 +78,43 @@ pub struct World {
     pub contact_channels: IndexMap<ID, ContactChannel>,
     pub contact_channel_id: ID,
     pub viewports: SlotMap<ViewportKey, Viewport>,
-    // The world-level singleton every present player has access to; world events are addressed
-    // here. Unlike every other viewport this one is not owned by an action, because it is not
-    // owned by any object — it comes into existence with the world and outlives everything in
-    // it, so there is no lifetime for an action to get wrong.
-    pub presence_viewport: ViewportKey,
+    // Every countdown in the game, held here rather than on the objects they belong to so that
+    // stopping time is one sweep over one map. See the timer module.
+    pub timers: SlotMap<TimerKey, Timer>,
+    // The two world-level singletons every present player has access to. Every other viewport is
+    // allocated by the action that creates its object and freed by the action that tears that
+    // object down; these belong to no object, so they are allocated here and never freed.
+    //
+    // Both carry the same membership except under blackout, which empties the events one and
+    // leaves the data one alone. That is the entire mechanism: nobody loses presence, the world
+    // just stops announcing. Which of the two a command belongs on is decided at the call site by
+    // reaching for cmd_world_event or cmd_world_data.
+    pub events_viewport: ViewportKey,
+    pub data_viewport: ViewportKey,
+    // The pending lift. Held so it can be cancelled: a blackout ended early has to take its timer
+    // down with it, or the world goes dark again the moment the old one fires.
+    pub blackout_job: Option<JobID>,
+    // The next record to hand out. A bare counter rather than a slotmap because a log is an
+    // identity and nothing else: it holds no state to store, nobody is ever granted one, and it is
+    // never freed — the record of what was said outlives whatever was saying it.
+    next_log: LogID,
 }
 
 impl World {
     pub fn new() -> Self {
         let mut viewports = SlotMap::with_key();
-        let presence_viewport = viewports.insert(Viewport::new(ViewportKind::Presence));
+        let events_viewport = viewports.insert(Viewport::new(ViewportKind::WorldEvents));
+        let data_viewport = viewports.insert(Viewport::new(ViewportKind::WorldData));
         World {
             viewports,
-            presence_viewport,
+            events_viewport,
+            data_viewport,
+            timers: SlotMap::with_key(),
             phase: WorldPhase::Setup,
             curr_iteration: 0,
             iteration_job: None,
             blackout: false,
+            blackout_job: None,
             actors: SlotMap::with_key(),
             abilities: SlotMap::with_key(),
             notebooks: SlotMap::with_key(),
@@ -111,7 +133,15 @@ impl World {
             world_channel_map: IndexMap::new(),
             contact_channels: IndexMap::new(),
             contact_channel_id: 0,
+            next_log: 0,
         }
+    }
+
+    // Claim a record. Whoever wants one keeps the id; there is nothing else to hold.
+    pub fn add_log(&mut self) -> LogID {
+        let id = self.next_log;
+        self.next_log += 1;
+        id
     }
 
     // Plumbing only. WHEN a viewport is allocated or freed is the owning action's decision (see
@@ -122,14 +152,27 @@ impl World {
 
     pub fn remove_viewport(&mut self, id: ViewportKey) {
         debug_assert!(
-            id != self.presence_viewport,
-            "the presence viewport outlives the world's contents and must never be freed"
+            id != self.events_viewport && id != self.data_viewport,
+            "the world viewports outlive the world's contents and must never be freed"
         );
         self.viewports.remove(id);
     }
 
     pub fn get_viewport(&self, id: ViewportKey) -> Option<&Viewport> {
         self.viewports.get(id)
+    }
+
+    // Timers, on the same terms as viewports: the object that wants a countdown allocates one and
+    // frees it when it is torn down. Freeing cancels — a job outliving the thing it was counting
+    // down for is exactly the bug this replaces.
+    pub fn add_timer(&mut self, timer: Timer) -> TimerKey {
+        self.timers.insert(timer)
+    }
+
+    pub fn remove_timer(&mut self, id: TimerKey, jobs: &mut Jobs) {
+        if let Some(mut timer) = self.timers.remove(id) {
+            timer.cancel(jobs);
+        }
     }
 
     // Grant access. Returns true only on a real transition, so callers emit exactly one command

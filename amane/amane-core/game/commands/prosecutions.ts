@@ -36,11 +36,19 @@ export const prosecutionHandlers: Handlers = {
     }
   },
 
+  // Directed: you are a party to this one. Nothing is looked up — the snapshot may not have
+  // arrived yet, and a view that never receives one still knows this much.
+  InProsecution(ctx: CmdCtx, p) {
+    ctx.view.own_prosecutions.set(slotKeyToString(p.prosecution_id), p.side);
+  },
+
   // If this view knew the prosecution, drop a terminal news event using the displays it last held.
   // A view absent for the whole thing receives the ordered timeline on entry and reaches the same
   // place.
   CloseProsecution(ctx: CmdCtx, p) {
     const key = slotKeyToString(p.prosecution_id);
+    ctx.view.own_prosecutions.delete(key);
+
     const prev = ctx.view.prosecutions.get(key);
     if (!prev) return;
     ctx.view.events.push({

@@ -3,18 +3,15 @@
 * Add a player to an organization
 */
 
-use indexmap::indexset;
 use lawliet_types::{
-    action::{SetMember, UpdateContactChannels},
+    action::CreateAndGiveProfile,
     actor::ActorDisplay,
-    channel::{ChannelMember, ChannelPermissions},
+    channel::{ContactPolicy, PermUpdatePolicy},
     command::Command,
 };
 
 use crate::{
-    action::{
-        Action, ActionError, ActionInterface, ActionResponse, ChangeOrgLeader, UpdateKidnapChannels,
-    },
+    action::{Action, ActionError, ActionInterface, ActionResponse, ChangeOrgLeader},
     actor::{ActorLink, ActorLinkType},
     helpers::{
         cmd_channel, cmd_og_status, get_actor_mut, get_org, get_org_mut, get_player, get_player_mut,
@@ -92,26 +89,19 @@ impl ActionInterface for AddToOrg {
             None,
         );
 
-        Action::SetMember(SetMember {
-            player_id: self.actor_id,
-            settings: Some(ChannelMember {
-                perms: ChannelPermissions::EMPTY,
-                displays: indexset! { ActorDisplay::Raw(self.actor_id) },
-            }),
+        Action::CreateAndGiveProfile(CreateAndGiveProfile {
             channel_id,
-        })
-        .handle(eng, ctx, actor, version, mutate)?;
-
-        Action::UpdateContactChannels(UpdateContactChannels {
             player_id: self.actor_id,
+            display: ActorDisplay::Raw(self.actor_id),
+            visible: true,
+            shared: false,
+            transferrable: false,
+            perm_policy: PermUpdatePolicy::Contact(ContactPolicy {}),
         })
         .handle(eng, ctx, actor, version, mutate)?;
 
         // TODO:
         // Notify member of leadership change and membership
-
-        Action::UpdateKidnapChannels(UpdateKidnapChannels {})
-            .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::AddToOrg(AddToOrgResponse {}))
     }

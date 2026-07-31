@@ -1,5 +1,11 @@
+pub mod add_profile;
+pub mod create_and_give_profile;
 pub mod create_channel;
+pub mod delete_profile;
 pub mod destroy_channel;
+pub mod remove_from_channel;
 pub mod send_message;
 pub mod set_loggable;
-pub mod set_member;
+pub mod set_profile_access;
+pub mod set_profile_policy;
+pub mod update_channels;

@@ -50,40 +50,28 @@ mod tests {
     use lawliet_types::{
         ability::{AbilityBehaviour, AbilityName, UnderTheRadar},
         action::CreateAndGiveAbility,
-        actor::{ActorDisplay, State},
+        actor::State,
         command::{Command, CommandRecipient},
     };
 
     use crate::{
         action::ActionContext,
-        channel::{ChannelMember, ChannelPermission},
-        common::{ActorKey, ChannelKey, ViewportKey},
+        common::{ActorKey, ChannelKey, LogID, ProfileKey, ViewportKey},
         config::role::Role,
         engine::Engine,
         helpers::{get_actor, get_channel, get_player},
         test_helpers::{
-            add_player, create_channel, init_engine, next_iteration, quick_ability, send_message,
-            set_member, use_ability,
+            add_player, create_channel, init_engine, join_channel, next_iteration, quick_ability,
+            send_message, use_ability,
         },
     };
-    use indexmap::indexset;
 
     // A user holding the ability, and a loggable channel they can speak in.
-    fn world(eng: &mut Engine) -> (ActorKey, ChannelKey, crate::AbilityKey) {
+    fn world(eng: &mut Engine) -> (ActorKey, ChannelKey, ProfileKey, crate::AbilityKey) {
         init_engine(eng);
         let user = add_player(eng, 0, Role::Civilian, "user");
         let channel = create_channel(eng, 0, true);
-        set_member(
-            eng,
-            0,
-            user,
-            channel,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(user)],
-            }),
-        )
-        .unwrap();
+        let profile = join_channel(eng, 0, user, channel);
         let ability = quick_ability(
             eng,
             0,
@@ -95,11 +83,18 @@ mod tests {
                 transferrable: false,
             },
         );
-        (user, channel, ability)
+        (user, channel, profile, ability)
     }
 
-    fn log_viewport(eng: &Engine, user: ActorKey) -> ViewportKey {
-        get_player(eng, user).unwrap().log_viewport
+    fn player_log(eng: &Engine, user: ActorKey) -> LogID {
+        get_player(eng, user).unwrap().log
+    }
+
+    fn logged_to(ctx: &ActionContext, log: LogID) -> usize {
+        ctx.commands
+            .iter()
+            .filter(|p| p.recipient == CommandRecipient::Log(log))
+            .count()
     }
 
     fn addressed_to(ctx: &ActionContext, viewport: ViewportKey) -> usize {
@@ -151,29 +146,21 @@ mod tests {
 
     // The channel always hears it; only the record stops.
     #[test]
-    fn speaking_normally_writes_to_the_log_viewport() {
+    fn speaking_normally_writes_to_the_senders_log() {
         let mut eng = Engine::new();
-        let (user, channel, _) = world(&mut eng);
-        let log = log_viewport(&eng, user);
+        let (user, channel, profile, _) = world(&mut eng);
+        let log = player_log(&eng, user);
 
-        let (_, ctx) = send_message(
-            &mut eng,
-            1,
-            user,
-            channel,
-            ActorDisplay::Raw(user),
-            "on the record",
-        )
-        .unwrap();
+        let (_, ctx) = send_message(&mut eng, 1, user, channel, profile, "on the record").unwrap();
 
-        assert_eq!(addressed_to(&ctx, log), 1);
+        assert_eq!(logged_to(&ctx, log), 1);
     }
 
     #[test]
     fn under_the_radar_leaves_no_log_entry() {
         let mut eng = Engine::new();
-        let (user, channel, ability) = world(&mut eng);
-        let log = log_viewport(&eng, user);
+        let (user, channel, profile, ability) = world(&mut eng);
+        let log = player_log(&eng, user);
 
         use_ability(
             &mut eng,
@@ -184,19 +171,11 @@ mod tests {
         )
         .unwrap();
 
-        let (_, ctx) = send_message(
-            &mut eng,
-            2,
-            user,
-            channel,
-            ActorDisplay::Raw(user),
-            "off the record",
-        )
-        .unwrap();
+        let (_, ctx) = send_message(&mut eng, 2, user, channel, profile, "off the record").unwrap();
 
-        assert_eq!(addressed_to(&ctx, log), 0);
+        assert_eq!(logged_to(&ctx, log), 0);
         // ...but the room still heard it.
-        let channel_viewport = get_channel(&eng, channel).unwrap().membership_viewport;
+        let channel_viewport = get_channel(&eng, channel).unwrap().viewport;
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Viewport(channel_viewport)
                 && matches!(&p.cmd, Command::AddMessage { .. })
@@ -209,19 +188,12 @@ mod tests {
     #[test]
     fn the_channels_record_omits_it_too() {
         let mut eng = Engine::new();
-        let (user, channel, ability) = world(&mut eng);
-        let channel_log = get_channel(&eng, channel).unwrap().log_viewport;
+        let (user, channel, profile, ability) = world(&mut eng);
+        let channel_log = get_channel(&eng, channel).unwrap().log;
 
-        let (_, before) = send_message(
-            &mut eng,
-            1,
-            user,
-            channel,
-            ActorDisplay::Raw(user),
-            "on the record",
-        )
-        .unwrap();
-        assert_eq!(addressed_to(&before, channel_log), 1);
+        let (_, before) =
+            send_message(&mut eng, 1, user, channel, profile, "on the record").unwrap();
+        assert_eq!(logged_to(&before, channel_log), 1);
 
         use_ability(
             &mut eng,
@@ -232,22 +204,15 @@ mod tests {
         )
         .unwrap();
 
-        let (_, after) = send_message(
-            &mut eng,
-            3,
-            user,
-            channel,
-            ActorDisplay::Raw(user),
-            "off the record",
-        )
-        .unwrap();
-        assert_eq!(addressed_to(&after, channel_log), 0);
+        let (_, after) =
+            send_message(&mut eng, 3, user, channel, profile, "off the record").unwrap();
+        assert_eq!(logged_to(&after, channel_log), 0);
     }
 
     #[test]
     fn the_state_carries_log_nullification() {
         let mut eng = Engine::new();
-        let (user, _, ability) = world(&mut eng);
+        let (user, _, _, ability) = world(&mut eng);
 
         use_ability(
             &mut eng,
@@ -268,7 +233,7 @@ mod tests {
     #[test]
     fn a_bug_watching_them_relays_nothing() {
         let mut eng = Engine::new();
-        let (user, channel, ability) = world(&mut eng);
+        let (user, channel, profile, ability) = world(&mut eng);
         let bug_viewport = bug_on(&mut eng, 1, user);
 
         use_ability(
@@ -280,15 +245,7 @@ mod tests {
         )
         .unwrap();
 
-        let (_, ctx) = send_message(
-            &mut eng,
-            3,
-            user,
-            channel,
-            ActorDisplay::Raw(user),
-            "off the record",
-        )
-        .unwrap();
+        let (_, ctx) = send_message(&mut eng, 3, user, channel, profile, "off the record").unwrap();
 
         assert_eq!(addressed_to(&ctx, bug_viewport), 0);
     }
@@ -296,7 +253,7 @@ mod tests {
     #[test]
     fn their_contacts_are_not_logged() {
         let mut eng = Engine::new();
-        let (user, _, ability) = world(&mut eng);
+        let (user, _, _, ability) = world(&mut eng);
         let other = add_player(&mut eng, 0, Role::Civilian, "other");
         // A contact-log passive exists to receive it, if anything were written.
         // Watari owns the ContactLogs passive; L only reaches it through a link.
@@ -313,10 +270,11 @@ mod tests {
 
         let ctx = basic_lounge(&mut eng, 2, user, other);
 
-        assert!(!ctx.commands.iter().any(|p| matches!(
-            &p.cmd,
-            Command::AddContactLog { .. }
-        )));
+        assert!(
+            !ctx.commands
+                .iter()
+                .any(|p| matches!(&p.cmd, Command::AddContactLog { .. }))
+        );
     }
 
     // The same contact, made by someone on the record, does land — so the test above is proving
@@ -324,25 +282,26 @@ mod tests {
     #[test]
     fn an_ordinary_contact_is_logged() {
         let mut eng = Engine::new();
-        let (user, _, _) = world(&mut eng);
+        let (user, _, _, _) = world(&mut eng);
         let other = add_player(&mut eng, 0, Role::Civilian, "other");
         // Watari owns the ContactLogs passive; L only reaches it through a link.
         add_player(&mut eng, 0, Role::Watari, "watcher");
 
         let ctx = basic_lounge(&mut eng, 1, user, other);
 
-        assert!(ctx.commands.iter().any(|p| matches!(
-            &p.cmd,
-            Command::AddContactLog { .. }
-        )));
+        assert!(
+            ctx.commands
+                .iter()
+                .any(|p| matches!(&p.cmd, Command::AddContactLog { .. }))
+        );
     }
 
     // Iteration-scoped: the boundary is what ends it, not a timer.
     #[test]
     fn it_lasts_until_the_next_iteration() {
         let mut eng = Engine::new();
-        let (user, channel, ability) = world(&mut eng);
-        let log = log_viewport(&eng, user);
+        let (user, channel, profile, ability) = world(&mut eng);
+        let log = player_log(&eng, user);
         use_ability(
             &mut eng,
             1,
@@ -354,16 +313,13 @@ mod tests {
 
         next_iteration(&mut eng, 2);
 
-        assert!(!get_actor(&eng, user).unwrap().has_state(State::UnderTheRadar));
-        let (_, ctx) = send_message(
-            &mut eng,
-            3,
-            user,
-            channel,
-            ActorDisplay::Raw(user),
-            "back on the record",
-        )
-        .unwrap();
-        assert_eq!(addressed_to(&ctx, log), 1);
+        assert!(
+            !get_actor(&eng, user)
+                .unwrap()
+                .has_state(State::UnderTheRadar)
+        );
+        let (_, ctx) =
+            send_message(&mut eng, 3, user, channel, profile, "back on the record").unwrap();
+        assert_eq!(logged_to(&ctx, log), 1);
     }
 }

@@ -1,23 +1,22 @@
 use indexmap::IndexMap;
 
-use crate::{
-    actor::modifier::{Modifier, Modifiers},
-    channel::{ChannelPermission, ChannelPermissions},
-    chargepool::PoolSpecifier,
-};
+use crate::{channel::ProfileBlueprint, chargepool::PoolSpecifier};
 
+pub use lawliet_types::channel::{
+    BlueprintDisplayKind, ChannelPerm, NewsPolicy, PermUpdatePolicy, PresencePolicy,
+};
 pub use lawliet_types::organization::OrganizationName;
 pub use lawliet_types::world::{WorldChannelName, WorldChargePoolName};
 
-pub struct WorldChannelConfig {
-    pub default_perms: ChannelPermissions,
-    pub send_blocking: Modifiers,
-    pub view_blocking: Modifiers,
-}
-
 pub struct WorldConfig {
     pub charge_pools: IndexMap<WorldChargePoolName, PoolSpecifier>,
-    pub world_channels: IndexMap<WorldChannelName, WorldChannelConfig>,
+    // What each world channel gives every player, if it gives them anything at all.
+    //
+    // A blueprint is the whole of a world channel's configuration: it says everyone belongs here
+    // and names the rule deciding what that is worth. None is a channel you are put into by
+    // something happening to you rather than by existing — the prison — and whatever does the
+    // putting owns its membership.
+    pub world_channels: IndexMap<WorldChannelName, Option<ProfileBlueprint>>,
     // Organizations spawned once on world initialization (see CreateOrgs).
     pub default_orgs: Vec<OrganizationName>,
 }
@@ -34,38 +33,37 @@ impl WorldConfig {
         );
 
         let mut channels = IndexMap::new();
+
+        // Everyone listens; the anchor talks; a blackout takes the whole thing off the air.
         channels.insert(
             WorldChannelName::News,
-            WorldChannelConfig {
-                default_perms: ChannelPermission::View.into(),
-                send_blocking: Modifier::NoContact.into(),
-                view_blocking: Modifier::NoPresence.into(),
-            },
+            Some(ProfileBlueprint {
+                start_visible: true,
+                display_kind: BlueprintDisplayKind::OwnerRaw,
+                perm_policy: PermUpdatePolicy::News(NewsPolicy {}),
+            }),
         );
+
+        // The town square: talk and listen for as long as you are present to.
         channels.insert(
             WorldChannelName::General,
-            WorldChannelConfig {
-                default_perms: ChannelPermission::Send | ChannelPermission::View,
-                send_blocking: Modifier::NoContact.into(),
-                view_blocking: Modifier::NoPresence.into(),
-            },
+            Some(ProfileBlueprint {
+                start_visible: true,
+                display_kind: BlueprintDisplayKind::OwnerRaw,
+                perm_policy: PermUpdatePolicy::Presence(PresencePolicy {
+                    perms: ChannelPerm::Send | ChannelPerm::View,
+                }),
+            }),
         );
-        channels.insert(
-            WorldChannelName::Prison,
-            WorldChannelConfig {
-                default_perms: ChannelPermissions::EMPTY,
-                send_blocking: Modifier::AbsoluteNoContact.into(),
-                view_blocking: Modifier::AbsoluteNoContact.into(),
-            },
-        );
-        channels.insert(
-            WorldChannelName::LAndWatari,
-            WorldChannelConfig {
-                default_perms: ChannelPermissions::EMPTY,
-                send_blocking: Modifier::NoContact.into(),
-                view_blocking: Modifier::NoPresence.into(),
-            },
-        );
+
+        // Neither of these is a channel you are in for existing, so neither hands out a seat.
+        //
+        // The prison is one you are put into, and the incarceration owns who is in it. L and
+        // Watari's line is one you are in because of what you are, and role config hands it out —
+        // which is why it needs no rule of its own here: it is an ordinary contact channel with an
+        // unusual guest list.
+        channels.insert(WorldChannelName::Prison, None);
+        channels.insert(WorldChannelName::LAndWatari, None);
 
         WorldConfig {
             charge_pools: pools,

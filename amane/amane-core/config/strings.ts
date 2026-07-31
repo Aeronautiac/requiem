@@ -72,6 +72,13 @@ export const STRINGS = {
   toast_prosecution_title: "Prosecution",
   toast_prosecution_ended_title: "Prosecution Ended",
 
+  // ---- blackout, which is the only world event that announces its own silence ----
+  blackout_begun_label: "Blackout",
+  blackout_begun:
+    "The world has gone dark. Nothing that happens will be announced until it lifts, and the news is off the air.",
+  blackout_over_label: "Blackout Over",
+  blackout_over: "The lights are back. Everything that happened in the dark follows.",
+
   // ---- organizations, whose config codes are terse on purpose ----
   org_name_NULL: "Null",
   org_name_KK: "Kira's Kingdom",

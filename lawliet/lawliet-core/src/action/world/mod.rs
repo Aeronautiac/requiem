@@ -1,48 +1,44 @@
-pub mod add_to_world_channels;
 pub mod create_orgs;
 pub mod initialize_engine;
 pub mod initialize_world;
 pub mod next_iteration;
+pub mod set_blackout;
 pub mod set_random_seed;
 pub mod start_game;
-pub mod set_world_channel_override;
-pub mod update_world_channel_perms;
+pub mod update_world_viewports;
 
 #[cfg(test)]
 mod world_tests {
-    use indexmap::indexset;
     use lawliet_types::{
         ability::{AbilityBehaviour, Gun},
         action::{
-            Action, ActionActor, ActionError, ActionRequest, CreateAndGiveAbility, LendNotebook,
+            Action, ActionActor, ActionError, ActionRequest, ActionResponse, AddPlayer,
+            CreateAndGiveAbility, LendNotebook,
         },
-        actor::ActorDisplay,
+        command::{Command, CommandRecipient},
         world::WorldPhase,
     };
 
     use crate::{
-        actor::{
-            player::{OverrideResolver, OverrideSource, WorldChannelOverride},
-            state::State,
-        },
-        channel::{ChannelMember, ChannelPermission, ChannelPermissions},
+        actor::state::State,
+        channel::{ChannelPerm, ChannelPermSet},
         config::{ability::AbilityName, role::Role, world::WorldChannelName},
         engine::Engine,
-        helpers::{get_channel, get_player},
+        helpers::get_channel,
         test_helpers::*,
     };
 
+    // Everything the player may do in a world channel, under any name they hold there.
     fn world_channel_perms(
         eng: &Engine,
         name: WorldChannelName,
         player_id: crate::common::ActorKey,
-    ) -> ChannelPermissions {
+    ) -> ChannelPermSet {
         let channel_id = *eng.world.world_channel_map.get(&name).unwrap();
         get_channel(eng, channel_id)
             .unwrap()
-            .get_member(player_id)
-            .unwrap()
-            .perms
+            .owned_profiles(player_id)
+            .fold(ChannelPermSet::EMPTY, |acc, profile| acc | profile.perms)
     }
 
     // ---- phases ----
@@ -56,17 +52,7 @@ mod world_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
         let channel = create_channel(&mut eng, 0, true);
-        set_member(
-            &mut eng,
-            0,
-            p1,
-            channel,
-            Some(ChannelMember {
-                perms: ChannelPermission::Send | ChannelPermission::View,
-                displays: indexset![ActorDisplay::Raw(p1)],
-            }),
-        )
-        .unwrap();
+        let seat = join_channel(&mut eng, 0, p1, channel);
         let ability = quick_ability(
             &mut eng,
             0,
@@ -101,7 +87,7 @@ mod world_tests {
         });
         assert!(matches!(lend, Err((ActionError::GameNotStarted, _))));
         assert!(
-            send_message(&mut eng, 1, p1, channel, ActorDisplay::Raw(p1), "hello").is_ok(),
+            send_message(&mut eng, 1, p1, channel, seat, "hello").is_ok(),
             "talking is not play"
         );
 
@@ -237,26 +223,84 @@ mod world_tests {
 
     // ---- membership ----
 
+    // A blueprint is the whole of it: a world channel that has one seats everybody, and one that
+    // does not seats nobody at all. There is no separate list of who belongs where.
     #[test]
-    fn player_added_to_all_world_channels() {
+    fn a_blueprint_is_what_puts_a_player_in_a_world_channel() {
         let mut eng = Engine::new();
         init_engine(&mut eng);
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
-        for channel_id in eng
+        for (name, channel_id) in eng
             .world
             .world_channel_map
-            .values()
-            .copied()
+            .iter()
+            .map(|(name, id)| (*name, *id))
             .collect::<Vec<_>>()
         {
-            assert!(
-                get_channel(&eng, channel_id)
-                    .unwrap()
-                    .get_member(p1)
-                    .is_some()
+            let expected = eng.config.world_config.world_channels[&name].is_some();
+            assert_eq!(
+                get_channel(&eng, channel_id).unwrap().is_member(p1),
+                expected,
+                "{name:?}"
             );
         }
+    }
+
+    // The seat a player is handed is announced twice — to the room as a roster entry, and to the
+    // player as their own access — and BOTH have to carry what it actually permits. The grant runs
+    // before the policy that decides that, so an access telling its owner they hold nothing is a
+    // seat they cannot use: the room can see them talk and they cannot find the send box.
+    #[test]
+    fn a_new_seat_tells_its_owner_what_it_permits() {
+        let mut eng = Engine::new();
+        init_engine(&mut eng);
+
+        let (response, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::AddPlayer(AddPlayer {
+                    true_name: "p1".into(),
+                    starting_role: Role::Civilian,
+                }),
+            })
+            .unwrap();
+        let ActionResponse::AddPlayer(data) = response else {
+            unreachable!()
+        };
+        let p1 = data.id;
+        let general = *eng
+            .world
+            .world_channel_map
+            .get(&WorldChannelName::General)
+            .unwrap();
+
+        // The last word on each channel wins; anything earlier was superseded before the client
+        // could act on it.
+        let access = ctx
+            .commands
+            .iter()
+            .rev()
+            .find_map(|p| match (&p.cmd, &p.recipient) {
+                (
+                    Command::ProfileAccess {
+                        channel_id,
+                        profiles,
+                    },
+                    CommandRecipient::Actor(target),
+                ) if *channel_id == general && *target == p1 => Some(profiles),
+                _ => None,
+            })
+            .expect("a new player is told what they hold in the town square");
+
+        assert!(
+            access
+                .iter()
+                .any(|profile| profile.perms.contains(ChannelPerm::Send)),
+            "own access says {access:?}, but the channel grants {:?}",
+            world_channel_perms(&eng, WorldChannelName::General, p1)
+        );
     }
 
     // ---- default permissions ----
@@ -268,12 +312,12 @@ mod world_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let news_perms = world_channel_perms(&eng, WorldChannelName::News, p1);
-        assert!(news_perms.contains(ChannelPermission::View));
-        assert!(!news_perms.contains(ChannelPermission::Send));
+        assert!(news_perms.contains(ChannelPerm::View));
+        assert!(!news_perms.contains(ChannelPerm::Send));
 
         let gen_perms = world_channel_perms(&eng, WorldChannelName::General, p1);
-        assert!(gen_perms.contains(ChannelPermission::Send));
-        assert!(gen_perms.contains(ChannelPermission::View));
+        assert!(gen_perms.contains(ChannelPerm::Send));
+        assert!(gen_perms.contains(ChannelPerm::View));
     }
 
     #[test]
@@ -286,7 +330,7 @@ mod world_tests {
 
         assert!(
             !world_channel_perms(&eng, WorldChannelName::General, p1)
-                .contains(ChannelPermission::Send)
+                .contains(ChannelPerm::Send)
         );
     }
 
@@ -300,7 +344,7 @@ mod world_tests {
 
         assert!(
             !world_channel_perms(&eng, WorldChannelName::News, p1)
-                .contains(ChannelPermission::View)
+                .contains(ChannelPerm::View)
         );
     }
 
@@ -314,123 +358,11 @@ mod world_tests {
         remove_state(&mut eng, 0, p1, State::Dead);
 
         let gen_perms = world_channel_perms(&eng, WorldChannelName::General, p1);
-        assert!(gen_perms.contains(ChannelPermission::Send));
-        assert!(gen_perms.contains(ChannelPermission::View));
+        assert!(gen_perms.contains(ChannelPerm::Send));
+        assert!(gen_perms.contains(ChannelPerm::View));
     }
 
-    // ---- overrides ----
-
-    #[test]
-    fn default_override_replaces_world_default() {
-        let mut eng = Engine::new();
-        init_engine(&mut eng);
-        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
-
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(0),
-            0,
-            Some(WorldChannelOverride {
-                default_perms: ChannelPermission::Send | ChannelPermission::View,
-                force_perms: ChannelPermissions::EMPTY,
-            }),
-        )
-        .unwrap();
-
-        assert!(
-            world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPermission::Send)
-        );
-    }
-
-    #[test]
-    fn default_override_still_blocked_by_modifiers() {
-        let mut eng = Engine::new();
-        init_engine(&mut eng);
-        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
-
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(0),
-            0,
-            Some(WorldChannelOverride {
-                default_perms: ChannelPermission::Send | ChannelPermission::View,
-                force_perms: ChannelPermissions::EMPTY,
-            }),
-        )
-        .unwrap();
-        add_state(&mut eng, 0, p1, State::Dead);
-
-        assert!(world_channel_perms(&eng, WorldChannelName::News, p1).is_empty());
-    }
-
-    #[test]
-    fn force_override_bypasses_blocking() {
-        let mut eng = Engine::new();
-        init_engine(&mut eng);
-        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
-
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(0),
-            0,
-            Some(WorldChannelOverride {
-                default_perms: ChannelPermissions::EMPTY,
-                force_perms: ChannelPermission::Send | ChannelPermission::View,
-            }),
-        )
-        .unwrap();
-        add_state(&mut eng, 0, p1, State::Dead);
-
-        let perms = world_channel_perms(&eng, WorldChannelName::News, p1);
-        assert!(perms.contains(ChannelPermission::Send));
-        assert!(perms.contains(ChannelPermission::View));
-    }
-
-    #[test]
-    fn clearing_override_reverts_to_world_default() {
-        let mut eng = Engine::new();
-        init_engine(&mut eng);
-        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
-
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(0),
-            0,
-            Some(WorldChannelOverride {
-                default_perms: ChannelPermission::Send | ChannelPermission::View,
-                force_perms: ChannelPermissions::EMPTY,
-            }),
-        )
-        .unwrap();
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(0),
-            0,
-            None,
-        )
-        .unwrap();
-
-        let perms = world_channel_perms(&eng, WorldChannelName::News, p1);
-        assert!(perms.contains(ChannelPermission::View));
-        assert!(!perms.contains(ChannelPermission::Send));
-    }
-
-    // ---- role overrides ----
+    // ---- roles ----
 
     #[test]
     fn news_anchor_gets_send_on_news() {
@@ -439,7 +371,7 @@ mod world_tests {
         let p1 = add_player(&mut eng, 0, Role::NewsAnchor, "p1");
 
         assert!(
-            world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPermission::Send)
+            world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send)
         );
     }
 
@@ -451,7 +383,7 @@ mod world_tests {
 
         assert!(
             !world_channel_perms(&eng, WorldChannelName::News, p1)
-                .contains(ChannelPermission::Send)
+                .contains(ChannelPerm::Send)
         );
     }
 
@@ -465,185 +397,42 @@ mod world_tests {
 
         assert!(
             !world_channel_perms(&eng, WorldChannelName::News, p1)
-                .contains(ChannelPermission::Send)
+                .contains(ChannelPerm::Send)
         );
     }
 
+    // The anchor's own standing still gates it: the role is what grants Send, and being unable to
+    // be there at all takes it back.
     #[test]
-    fn role_override_blocked_by_modifiers() {
+    fn a_dead_anchor_does_not_broadcast() {
         let mut eng = Engine::new();
         init_engine(&mut eng);
         let p1 = add_player(&mut eng, 0, Role::NewsAnchor, "p1");
 
         add_state(&mut eng, 0, p1, State::Dead);
 
-        assert!(
-            !world_channel_perms(&eng, WorldChannelName::News, p1)
-                .contains(ChannelPermission::Send)
-        );
-    }
-
-    // clearing a force override while blocking modifiers are active exposes the blocked state
-    #[test]
-    fn clearing_force_override_exposes_blocking_state() {
-        let mut eng = Engine::new();
-        init_engine(&mut eng);
-        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
-
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(0),
-            0,
-            Some(WorldChannelOverride {
-                default_perms: ChannelPermissions::EMPTY,
-                force_perms: ChannelPermission::Send | ChannelPermission::View,
-            }),
-        )
-        .unwrap();
-        add_state(&mut eng, 0, p1, State::Dead);
-
-        // force is active, blocking state has no effect
-        assert!(!world_channel_perms(&eng, WorldChannelName::News, p1).is_empty());
-
-        // clearing the override exposes the blocking state
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(0),
-            0,
-            None,
-        )
-        .unwrap();
         assert!(world_channel_perms(&eng, WorldChannelName::News, p1).is_empty());
     }
 
-    // higher-priority source wins over lower-priority source
+    // L and Watari reach their channel by being what they are, and give the seat up when they stop
+    // being it. The channel hands out nothing on its own.
     #[test]
-    fn higher_priority_override_wins() {
+    fn the_l_and_watari_line_follows_the_role() {
         let mut eng = Engine::new();
         init_engine(&mut eng);
-        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
-
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(0),
-            0,
-            Some(WorldChannelOverride {
-                default_perms: ChannelPermission::View.into(),
-                force_perms: ChannelPermissions::EMPTY,
-            }),
-        )
-        .unwrap();
-
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(1),
-            1,
-            Some(WorldChannelOverride {
-                default_perms: ChannelPermission::Send | ChannelPermission::View,
-                force_perms: ChannelPermissions::EMPTY,
-            }),
-        )
-        .unwrap();
+        let l = add_player(&mut eng, 0, Role::L, "l");
+        let civilian = add_player(&mut eng, 0, Role::Civilian, "civilian");
 
         assert!(
-            world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPermission::Send)
+            world_channel_perms(&eng, WorldChannelName::LAndWatari, l).contains(ChannelPerm::Send)
         );
-    }
-
-    // equal-priority tie with positive resolver: on wins
-    #[test]
-    fn tied_priority_positive_resolver_grants_send() {
-        let mut eng = Engine::new();
-        init_engine(&mut eng);
-        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
-
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(0),
-            1,
-            Some(WorldChannelOverride {
-                default_perms: ChannelPermission::View.into(),
-                force_perms: ChannelPermissions::EMPTY,
-            }),
-        )
-        .unwrap();
-
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(1),
-            1,
-            Some(WorldChannelOverride {
-                default_perms: ChannelPermission::Send | ChannelPermission::View,
-                force_perms: ChannelPermissions::EMPTY,
-            }),
-        )
-        .unwrap();
-
-        // positive resolver (used by UpdateWorldChannelPerms): send wins
         assert!(
-            world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPermission::Send)
+            world_channel_perms(&eng, WorldChannelName::LAndWatari, civilian).is_empty(),
+            "nobody else is even in it"
         );
-    }
 
-    // equal-priority tie with negative resolver: all must agree, so send is absent
-    #[test]
-    fn tied_priority_negative_resolver_requires_consensus() {
-        let mut eng = Engine::new();
-        init_engine(&mut eng);
-        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        give_role(&mut eng, 1, l, Role::Civilian);
 
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(0),
-            1,
-            Some(WorldChannelOverride {
-                default_perms: ChannelPermission::Send | ChannelPermission::View,
-                force_perms: ChannelPermissions::EMPTY,
-            }),
-        )
-        .unwrap();
-
-        set_world_channel_override(
-            &mut eng,
-            0,
-            p1,
-            WorldChannelName::News,
-            OverrideSource::Manual(1),
-            1,
-            Some(WorldChannelOverride {
-                default_perms: ChannelPermission::View.into(),
-                force_perms: ChannelPermissions::EMPTY,
-            }),
-        )
-        .unwrap();
-
-        let result = get_player(&eng, p1)
-            .unwrap()
-            .get_world_channel_override(WorldChannelName::News, OverrideResolver::Negative)
-            .unwrap();
-
-        assert!(!result.default_perms.contains(ChannelPermission::Send));
-        assert!(result.default_perms.contains(ChannelPermission::View));
+        assert!(world_channel_perms(&eng, WorldChannelName::LAndWatari, l).is_empty());
     }
 }

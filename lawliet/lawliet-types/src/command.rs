@@ -1,20 +1,19 @@
-use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     ability::AbilityName,
     actor::{ActorDisplay, ActorKind, States},
     bug::BugContext,
-    channel::{ChannelKind, ChannelPermissions},
+    channel::{ChannelKind, ChannelProfileView},
     common::{
         AbilityKey, ActorKey, AttemptCount, BugKey, ChannelKey, ChargeCount, GroupchatKey, ID,
-        IncarcerationKey, IterationCount, KidnappingKey, NotebookKey, PassiveKey, PollKey,
+        IncarcerationKey, IterationCount, KidnappingKey, LogID, NotebookKey, PassiveKey, PollKey,
         PollWeight, ProsecutionKey, Time, ViewportKey,
     },
     organization::OrganizationName,
     passive::{ContactLog, PassiveType},
-    poll::{PollOutcome, PollSubject, PollVisibility},
-    prosecution::ProsecutionPhaseView,
+    poll::{PollOptionIndex, PollOptionTally, PollOutcome, PollParent, PollSubject},
+    prosecution::{ProsecutionPhaseView, ProsecutionSide},
     role::Role,
     viewport::ViewportKind,
 };
@@ -37,6 +36,10 @@ pub enum CommandRecipient {
     // Everyone with access to the viewport. An actor gaining access receives everything
     // previously addressed there, so this is what carries history to a late arrival.
     Viewport(ViewportKey),
+    // The record, which is nobody. Nothing addressed here is ever delivered to any client, admin
+    // included; it is written so the server can answer an autopsy or a tap-in later, from what was
+    // actually said rather than from who happened to be listening.
+    Log(LogID),
 }
 
 impl CommandRecipient {
@@ -57,10 +60,11 @@ pub struct CommandPayload {
 // rather than a way of hiding whether the id was real.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TapInOutcome {
-    // There is a record to read. The frontend server queries this channel's log viewport; `range`
-    // is how far back from now, or None for everything it ever held.
+    // There is a record to read. The frontend server queries this log directly; `range` is how far
+    // back from now, or None for everything it ever held. The log rather than the channel, so
+    // answering a tap-in needs no model of which channel owns what.
     Found {
-        channel_id: ChannelKey,
+        log: LogID,
         range: Option<Time>,
     },
     // Nothing has ever been registered under that id.
@@ -232,6 +236,14 @@ pub enum Command {
     // further content; it does not take back what was already delivered.
 
     // add a message to a channel
+    //
+    // The display rather than the profile it was sent through. A message is a thing that was said
+    // by someone, and it goes into the record as one: the log stores these raw, and a profile key
+    // read back later names an object that may have changed hands or stopped existing. The display
+    // is what was actually shown to the room, and that cannot stop being true.
+    //
+    // It is also what lets the engine speak here at all, as ActorDisplay::System, without holding a
+    // profile of its own.
     AddMessage {
         content: String,
         channel_id: ChannelKey,
@@ -308,10 +320,22 @@ pub enum Command {
         context: BugContext,
     },
 
-    // a new day. a world event, so it reaches everyone present — and, like every world event, an
-    // absent player is handed it when they return rather than told at the time.
+    // a new day. structural rather than an announcement, so it rides the world-data viewport: it
+    // reaches everyone present, and an absent player is handed it when they return rather than
+    // told at the time. A blackout does not hide it — the clock is not news.
     NewIteration {
         iteration: IterationCount,
+    },
+
+    // The world has gone dark, or come back. Rides the world-data viewport, because a client that
+    // could not be told the news had stopped would have no way to tell silence from nothing
+    // happening — which is the one thing it must never get wrong.
+    //
+    // What was hidden is not summarised on the way out. Everything announced during the blackout
+    // was addressed to the world-events viewport and is handed over in order on re-entry, so the
+    // catch-up is the ordinary backfill and nothing has to be remembered here.
+    Blackout {
+        active: bool,
     },
 
     // update the owner status of a gc for a player
@@ -331,24 +355,33 @@ pub enum Command {
         og: bool,
     },
 
-    // display a channel member
-    ShowChannelMember {
+    // DIRECTED: every name the room can currently see, and what each may do. The whole set, every
+    // time, sent to each viewer when it changes and to anyone the moment they gain sight of the
+    // channel.
+    //
+    // Directed and whole rather than addressed to the channel's viewport, and that is the entire
+    // point. A viewport replays its history to anyone who enters, so a roster delivered that way
+    // would hand every new arrival every name the channel has ever held — the previous holder of a
+    // notebook, everyone who was ever in a lounge, every mask worn at a trial. A roster is current
+    // state and not a sequence of events, so it is synchronised rather than logged.
+    //
+    // Invisible profiles are absent from it. Their existence is the thing being kept.
+    ChannelRoster {
         channel_id: ChannelKey,
-        display: ActorDisplay,
-        channel_perms: ChannelPermissions,
+        profiles: Vec<ChannelProfileView>,
     },
 
-    // remove a channel member display
-    RemoveChannelMember {
+    // DIRECTED: which profiles in this channel the recipient may speak as, whether or not the room
+    // can see them, and what each permits.
+    //
+    // Says nothing about whether the recipient can READ the channel — that is the viewport's
+    // answer and never this one. This is about which names are yours to use.
+    //
+    // An empty set is a member who holds nothing here, which is how losing your last name is
+    // stated rather than left to be noticed.
+    ProfileAccess {
         channel_id: ChannelKey,
-        display: ActorDisplay,
-    },
-
-    // update a player's view of the channel based on their permissions
-    UpdateChannelView {
-        channel_id: ChannelKey,
-        perms: ChannelPermissions,
-        displays: IndexSet<ActorDisplay>,
+        profiles: Vec<ChannelProfileView>,
     },
 
     // Somebody reached for Kira through this lounge. Addressed to the lounge's channel, and emitted
@@ -463,10 +496,14 @@ pub enum Command {
         passive_id: PassiveKey,
     },
 
-    // tell the frontend to display autopsy messages for a specific user. the frontend server will do the
-    // querying and filtering, and the clients will handle the display of that info.
+    // tell the frontend to display autopsy messages. the frontend server will do the querying and
+    // filtering, and the clients will handle the display of that info.
+    //
+    // `log` is the target's own record, naming them as the sender of everything they said wherever
+    // they said it — which is what makes an autopsy answer for a message sent under a borrowed
+    // display.
     RevealAutopsyMessages {
-        target_id: ActorKey,
+        log: LogID,
         range: Time,
         redact_names: bool,
     },
@@ -517,20 +554,25 @@ pub enum Command {
     ////////////////////////////////////////////////
     // POLLS //
     ////////////////////////////////////////////////
-    // Poll data is split: the shared part (subject, scope, tally) is addressed to the poll's
+    // Poll data is split: the shared part (subject, parent, tally) is addressed to the parent's
     // viewport via UpdatePoll; the per-player part (can I vote, what did I vote) rides a
     // directed UpdatePollView. The per-player split exists because a fresh client rebuilds
     // purely from the command stream — a player's own vote can't be tracked client-side
     // across a reconnect.
+    //
+    // Polls own no viewport. They ride the viewport of whatever they were put to, so a client
+    // that reaches a parent's viewport replays every poll that parent ever held, concluded ones
+    // included. That is intended: a concluded vote is part of what happened there.
 
     // create or refresh a poll's shared data, keyed by poll id. Re-sent on each vote change
     // to update the tally (counts only, never who voted).
     UpdatePoll {
         poll_id: PollKey,
         subject: PollSubject,
-        scope: PollVisibility,
-        accept: PollWeight,
-        reject: PollWeight,
+        parent: PollParent,
+        // The choices and the weight behind each, in the order they are offered. Votes name an
+        // option by its position here.
+        options: Vec<PollOptionTally>,
         potential: PollWeight,
         // Who opened the vote (None = no distinct opener, e.g. a system-driven poll). Carried on
         // every update but only surfaced on the client's first-sight "vote started" notice.
@@ -538,20 +580,20 @@ pub enum Command {
     },
 
     // a poll concluded. It closes, it is not dropped — outcome drives the resolution notice
-    // rendered in the poll's scoped location, and the closed poll stays visible to whoever
+    // rendered in the poll's parent location, and the closed poll stays visible to whoever
     // could see it.
     ClosePoll {
         poll_id: PollKey,
         outcome: PollOutcome,
     },
 
-    // this player's personal view of a poll: whether they may currently vote, and the vote
-    // they've cast (None until they cast one). Paired with EnterViewport on the poll's
-    // viewport, which is what actually makes a player a viewer of the poll.
+    // this player's personal view of a poll: whether they may currently vote, and the option
+    // they've chosen (None until they cast one). Paired with membership of the parent's
+    // viewport, which is what makes a player a viewer of the poll.
     UpdatePollView {
         poll_id: PollKey,
         eligible: bool,
-        own_vote: Option<bool>,
+        own_vote: Option<PollOptionIndex>,
     },
 
     ////////////////////////////////////////////////
@@ -586,6 +628,28 @@ pub enum Command {
         // NOT accompanied by the lawyer's private channel, which is addressed to its own viewport
         // and reaches only the two of them -- see ChannelKind::Lawyer.
         lawyer_display: Option<ActorDisplay>,
+    },
+
+    // DIRECTED (to the participant named by `side`): which side of this prosecution you are on.
+    //
+    // The snapshot above cannot carry this. An anonymous prosecutor's display is Mysterious in the
+    // one UpdateProsecution everybody receives — including the copy the prosecutor themselves
+    // receives — so without this they could not tell their own trial from anyone else's, and
+    // putting their identity in the snapshot to fix that would tell the whole world. The defendant
+    // is currently always shown raw and learns nothing new from this, and is sent it anyway: one
+    // rule for both sides, so the client never has to know which displays happen to be anonymous
+    // today.
+    //
+    // Carries no identity of its own. It names a prosecution the recipient already receives the
+    // public facts about and adds exactly one private fact to it, which is why it leaks nothing
+    // even though the whole point is that it is about who someone is.
+    //
+    // Not viewport-addressed. Being a party to a prosecution is a standing fact rather than an
+    // event, so it is never revoked and never withheld — a blackout stops the trial's news from
+    // reaching you, not your knowledge of whose trial it is.
+    InProsecution {
+        prosecution_id: ProsecutionKey,
+        side: ProsecutionSide,
     },
 
     // The prosecution ended (verdict reached, terminated, etc.). Addressed the same way as

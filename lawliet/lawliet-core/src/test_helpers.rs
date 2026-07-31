@@ -6,7 +6,9 @@ use crate::{
         actor::{add_state::AddState, player::give_role::GiveRole, remove_state::RemoveState},
         comms::{
             channel::{
-                create_channel::CreateChannel, send_message::SendMessage, set_member::SetMember,
+                create_and_give_profile::CreateAndGiveProfile, create_channel::CreateChannel,
+                destroy_channel::DestroyChannel, remove_from_channel::RemoveFromChannel,
+                send_message::SendMessage, set_profile_policy::SetProfilePolicy,
             },
             groupchat::{
                 add_to_groupchat::AddToGroupchat, create_groupchat::CreateGroupchat,
@@ -25,22 +27,16 @@ use crate::{
             advance_prosecution::AdvanceProsecution, select_lawyer::SelectLawyer,
             signal_ready::SignalReady, start_prosecution::StartProsecution,
             terminate_prosecution::TerminateProsecution,
-            update_prosecution_channels::UpdateProsecutionChannels,
         },
-        world::set_world_channel_override::SetWorldChannelOverride,
     },
-    actor::{
-        ActorDisplay,
-        player::{OverrideSource, WorldChannelOverride},
-        state::State,
-    },
-    channel::ChannelMember,
-    common::{IncarcerationKey, ProsecutionKey},
-    config::world::WorldChannelName,
+    actor::{ActorDisplay, state::State},
+    common::{IncarcerationKey, ProfileKey, ProsecutionKey},
     incarceration::IncarcerationSource,
     lounge::LoungeVariant,
     prosecution::ProsecutionSource,
 };
+
+use lawliet_types::channel::{ChannelPerm, ChannelPermSet, FixedPolicy, PermUpdatePolicy};
 
 use crate::{
     Time,
@@ -81,6 +77,7 @@ use crate::{
     engine::{Engine, ExecutionResult},
     kidnapping::{KidnappingSource, KidnappingType},
     passive::PassiveType,
+    poll::PollOptionIndex,
 };
 
 pub fn add_player(
@@ -175,6 +172,15 @@ pub fn next_iteration(eng: &mut Engine, time: Time) {
     .unwrap();
 }
 
+pub fn set_blackout(eng: &mut Engine, time: Time, active: bool) {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::SetBlackout(crate::action::SetBlackout { active }),
+    })
+    .unwrap();
+}
+
 pub fn null_action(eng: &mut Engine, time: Time) {
     eng.execute(ActionRequest {
         actor: ActionActor::System,
@@ -262,17 +268,22 @@ pub fn create_poll(eng: &mut Engine, time: Time, action: CreatePoll) -> PollKey 
     response.id
 }
 
+// The two options PollOption::accept_reject lays out, named so tests read as votes rather than
+// as indices.
+pub const ACCEPT: PollOptionIndex = 0;
+pub const REJECT: PollOptionIndex = 1;
+
 pub fn add_vote(
     eng: &mut Engine,
     time: Time,
     poll_id: PollKey,
     voter_id: ActorKey,
-    accept: bool,
+    option: PollOptionIndex,
 ) -> ExecutionResult {
     eng.execute(ActionRequest {
         actor: ActionActor::Player(voter_id),
         timestamp: time,
-        payload: Action::AddVote(AddVote { poll_id, accept }),
+        payload: Action::AddVote(AddVote { poll_id, option }),
     })
 }
 
@@ -620,7 +631,10 @@ pub fn create_channel(eng: &mut Engine, time: Time, loggable: bool) -> ChannelKe
         .execute(ActionRequest {
             actor: ActionActor::System,
             timestamp: time,
-            payload: Action::CreateChannel(CreateChannel { loggable }),
+            payload: Action::CreateChannel(CreateChannel {
+                loggable,
+                base_profile: None,
+            }),
         })
         .unwrap()
         .0;
@@ -630,20 +644,95 @@ pub fn create_channel(eng: &mut Engine, time: Time, loggable: bool) -> ChannelKe
     response.id
 }
 
-pub fn set_member(
+pub fn destroy_channel(eng: &mut Engine, time: Time, channel_id: ChannelKey) -> ExecutionResult {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::DestroyChannel(DestroyChannel { channel_id }),
+    })
+}
+
+// Put a name in a channel and hand it to somebody, with permissions that will not move under the
+// test. Returns the key, which is what speaking as it needs.
+pub fn give_profile(
     eng: &mut Engine,
     time: Time,
     player_id: ActorKey,
     channel_id: ChannelKey,
-    settings: Option<ChannelMember>,
+    display: ActorDisplay,
+    perms: ChannelPermSet,
+) -> ProfileKey {
+    let data = eng
+        .execute(ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                channel_id,
+                player_id,
+                display,
+                visible: true,
+                shared: false,
+                transferrable: false,
+                perm_policy: PermUpdatePolicy::Fixed(FixedPolicy { perms }),
+            }),
+        })
+        .unwrap()
+        .0;
+    let ActionResponse::CreateAndGiveProfile(response) = data else {
+        unreachable!()
+    };
+    response.profile_id
+}
+
+// The ordinary case: a member who can talk and listen, under their own name.
+pub fn join_channel(
+    eng: &mut Engine,
+    time: Time,
+    player_id: ActorKey,
+    channel_id: ChannelKey,
+) -> ProfileKey {
+    give_profile(
+        eng,
+        time,
+        player_id,
+        channel_id,
+        ActorDisplay::Raw(player_id),
+        ChannelPerm::Send | ChannelPerm::View,
+    )
+}
+
+// Pin what a name permits to a fixed set. The sweep that trails the action settles the viewport
+// around the new answer.
+pub fn set_profile_perms(
+    eng: &mut Engine,
+    time: Time,
+    channel_id: ChannelKey,
+    profile_id: ProfileKey,
+    perms: ChannelPermSet,
 ) -> ExecutionResult {
     eng.execute(ActionRequest {
         actor: ActionActor::System,
         timestamp: time,
-        payload: Action::SetMember(SetMember {
-            player_id,
+        payload: Action::SetProfilePolicy(SetProfilePolicy {
             channel_id,
-            settings,
+            profile_id,
+            perm_policy: PermUpdatePolicy::Fixed(FixedPolicy { perms }),
+        }),
+    })
+}
+
+pub fn remove_from_channel(
+    eng: &mut Engine,
+    time: Time,
+    player_id: ActorKey,
+    channel_id: ChannelKey,
+) -> ExecutionResult {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::RemoveFromChannel(RemoveFromChannel {
+            channel_id,
+            player_id,
         }),
     })
 }
@@ -653,7 +742,7 @@ pub fn send_message(
     time: Time,
     player_id: ActorKey,
     channel_id: ChannelKey,
-    display: ActorDisplay,
+    profile_id: ProfileKey,
     content: &str,
 ) -> ExecutionResult {
     eng.execute(ActionRequest {
@@ -661,7 +750,7 @@ pub fn send_message(
         timestamp: time,
         payload: Action::SendMessage(SendMessage {
             channel_id,
-            display,
+            profile_id: Some(profile_id),
             content: content.into(),
         }),
     })
@@ -790,28 +879,6 @@ pub fn give_role(eng: &mut Engine, time: Time, target_id: ActorKey, role: Role) 
         payload: Action::GiveRole(GiveRole { target_id, role }),
     })
     .unwrap();
-}
-
-pub fn set_world_channel_override(
-    eng: &mut Engine,
-    time: Time,
-    player_id: ActorKey,
-    channel_name: WorldChannelName,
-    source: OverrideSource,
-    priority: u8,
-    override_data: Option<WorldChannelOverride>,
-) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::SetWorldChannelOverride(SetWorldChannelOverride {
-            player_id,
-            channel_name,
-            source,
-            priority,
-            override_data,
-        }),
-    })
 }
 
 pub fn create_kidnapping(
@@ -965,14 +1032,6 @@ pub fn terminate_prosecution(
     })
 }
 
-pub fn update_prosecution_channels(eng: &mut Engine, time: Time, prosecution_id: ProsecutionKey) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::UpdateProsecutionChannels(UpdateProsecutionChannels { prosecution_id }),
-    })
-    .unwrap();
-}
 
 // ---- incarcerations ----
 

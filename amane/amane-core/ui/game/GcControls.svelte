@@ -42,9 +42,8 @@
     if (!ui.selected_channel) return [];
     const entry = view.channel_views.get(ui.selected_channel);
     const out: { id: string; name: string }[] = [];
-    for (const [, m] of entry?.members ?? []) {
+    for (const m of entry?.roster ?? []) {
       const d = m.display;
-      if (!m.had_positive) continue;
       if (typeof d !== "string" && "Raw" in d) {
         const id = slotKeyToString(d.Raw);
         if (id === ui.viewer) continue;

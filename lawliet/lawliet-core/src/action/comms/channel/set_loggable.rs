@@ -3,7 +3,7 @@
 * Set the loggable status of a channel
 */
 
-use lawliet_types::{action::ActionError, channel::ChannelPermission};
+use lawliet_types::{action::ActionError, channel::ChannelPerm};
 
 use crate::{
     action::{ActionInterface, ActionResponse},
@@ -25,18 +25,15 @@ impl ActionInterface for SetLoggable {
     ) -> crate::action::ActionResult {
         actor.player_or_authoritative()?;
 
-        // only allow if they have the channel edit permission
+        // Only allow it under a name that carries the permission. Any of theirs will do: holding
+        // two names here means being able to do whatever either of them can.
         let channel = get_channel_mut(eng, self.channel_id)?;
         if actor.is_player() {
             let id = player_id(actor).expect("already validated as a player");
-            if let Some(member_data) = channel.get_member(id) {
-                if !member_data
-                    .perms
-                    .contains(ChannelPermission::LoggabilityControl)
-                {
-                    return Err(ActionError::InsufficientPermissions);
-                }
-            } else {
+            let permitted = channel
+                .owned_profiles(id)
+                .any(|profile| profile.perms.contains(ChannelPerm::LoggabilityControl));
+            if !permitted {
                 return Err(ActionError::InsufficientPermissions);
             }
         }

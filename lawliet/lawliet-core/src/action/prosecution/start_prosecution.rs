@@ -20,15 +20,21 @@
 
 use crate::{
     action::{
-        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionRequest,
-        ActionResponse, ActionResult, AdvanceProsecution, SetCustody,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, SetCustody,
     },
     actor::modifier::Modifier,
-    common::{ProsecutionKey, Version},
+    common::{ProsecutionKey, TimerKey, Version},
     engine::Engine,
     helpers::{get_actor, require_player},
-    prosecution::{Prosecution, ProsecutionDefense, ProsecutionPhase, ProsecutionProsecutor},
+    prosecution::{
+        Prosecution, ProsecutionDefense, ProsecutionPhase, ProsecutionProsecutor, ProsecutionSide,
+    },
 };
+
+use lawliet_types::command::{Command, CommandRecipient};
+
+use super::schedule_advance;
 
 pub use crate::action::{StartProsecution, StartProsecutionResponse};
 
@@ -70,8 +76,6 @@ impl ActionInterface for StartProsecution {
         .handle(eng, ctx, actor, version, mutate)?;
 
         let id = if mutate {
-            let custody_timeout = eng.time + eng.config.defaults.custody_timeout;
-
             let prosecution_id = eng.world.add_prosecution(Prosecution {
                 source: self.source,
                 prosecution: ProsecutionProsecutor {
@@ -86,28 +90,41 @@ impl ActionInterface for StartProsecution {
                 phase: ProsecutionPhase::Custody {
                     prosecutor_ready: false,
                     defense_ready: false,
-                    timeout_job_id: 0,
+                    timer: TimerKey::default(),
                 },
                 autonomous: self.autonomous,
                 pending_advance: false,
             });
 
-            let job_id = eng.jobs.push(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: custody_timeout,
-                payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }),
-            });
+            // The countdown fires at the prosecution, so it cannot exist until the prosecution has
+            // a key — hence the placeholder above and the write-back here.
+            let timer_id =
+                schedule_advance(eng, prosecution_id, eng.config.defaults.custody_timeout);
 
-            if let ProsecutionPhase::Custody {
-                ref mut timeout_job_id,
-                ..
-            } = eng
+            if let ProsecutionPhase::Custody { ref mut timer, .. } = eng
                 .world
                 .get_prosecution_mut(prosecution_id)
                 .expect("just inserted")
                 .phase
             {
-                *timeout_job_id = job_id;
+                *timer = timer_id;
+            }
+
+            // Tell each side which side they are. Before the snapshot, which the trailing Update
+            // step broadcasts — though nothing depends on that order: this names a prosecution
+            // rather than describing one, so it stands on its own whichever arrives first.
+            for (player_id, side) in [
+                (self.prosecutor_id, ProsecutionSide::Prosecutor),
+                (self.defendant_id, ProsecutionSide::Defendant),
+            ] {
+                ctx.push_cmd(
+                    Command::InProsecution {
+                        prosecution_id,
+                        side,
+                    },
+                    CommandRecipient::Actor(player_id),
+                    eng.time,
+                );
             }
 
             prosecution_id

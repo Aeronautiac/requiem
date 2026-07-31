@@ -72,7 +72,11 @@ pub enum AbilityBehaviour {
     TrueNameReroll(TrueNameReroll),
     TapIn(TapIn),
     SilentProsecute(SilentProsecute),
+    Blackout(Blackout),
 }
+
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct Blackout {}
 
 // Org ability. Accuse a player of being wanted, with no trial, no vote, and no announcement that
 // anybody was accused at all.

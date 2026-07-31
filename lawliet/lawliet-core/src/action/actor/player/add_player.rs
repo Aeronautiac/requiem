@@ -6,15 +6,14 @@
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
-        ActionResult, AddChargePool, AddToWorldChannels, CreateAndGiveAbility, GiveRole,
-        SetTrueName,
+        ActionResult, AddChargePool, CreateAndGiveAbility, GiveRole, SetTrueName,
+        UpdateWorldViewports,
     },
     actor::ActorKind,
     command::Command,
     common::{ActorKey, Version},
     engine::Engine,
-    helpers::{cmd_world_event, get_actor_mut, get_charge_pool_mut, open_viewport, sync_presence},
-    viewport::ViewportKind,
+    helpers::{cmd_world_data, get_actor_mut, get_charge_pool_mut},
 };
 
 // true names must be unique
@@ -46,27 +45,30 @@ impl ActionInterface for AddPlayer {
 
         // player will only be physically created in the mutation path
         if mutate {
-            // Allocated here rather than in Player::new because viewport lifetime belongs to
-            // actions. Nothing is ever granted access to it: it names the player as a sender, and
-            // is only ever addressed to.
-            let log_viewport = open_viewport(eng, ctx, ViewportKind::Log);
+            // Claimed here rather than in Player::new because that lifetime belongs to actions.
+            // Nobody is ever granted a log: it names the player as a sender, and is only ever
+            // addressed to.
+            let log = eng.world.add_log();
             eng.world
                 .get_player_mut(player_id)
                 .expect("just created")
-                .log_viewport = log_viewport;
+                .log = log;
 
-            // A new player starts present, so they enter the presence viewport here — and
-            // because their watermark starts at zero, entry hands them every world event since
-            // the game began. That is what the BasePlayer stream existed for ("any player shall
-            // be fed these commands, even if created AFTER the command was sent"), and it now
-            // falls out of ordinary backfill with no separate stream and no born-position
-            // bookkeeping on the server.
-            sync_presence(eng, ctx, mutate);
+            // A new player enters both world viewports here, and because their watermark starts
+            // at zero, entry hands them everything ever addressed to either — the whole roster and
+            // every world event so far, in order. A player created on day three learns about the
+            // players created on day one for free.
+            Action::UpdateWorldViewports(UpdateWorldViewports {})
+                .handle(eng, ctx, actor, version, mutate)?;
 
-            // Announce the slot, AFTER the entry above so this player's own backfill of the
-            // presence viewport hands them every earlier MapActor — i.e. the existing roster —
-            // before their own arrival goes out to everyone else.
-            cmd_world_event(
+            // Announce the slot, AFTER the entry above so this player's own backfill of the data
+            // viewport hands them every earlier MapActor — i.e. the existing roster — before their
+            // own arrival goes out to everyone else.
+            //
+            // World DATA, not a world event: existence is ungated. Ride the events viewport and an
+            // incarcerated player would never learn this player exists, then meet them in the
+            // prison channel as a member they have no record of.
+            cmd_world_data(
                 eng,
                 ctx,
                 Command::MapActor {
@@ -103,9 +105,6 @@ impl ActionInterface for AddPlayer {
                 })
                 .handle(eng, ctx, actor, version, mutate)?;
             }
-
-            Action::AddToWorldChannels(AddToWorldChannels { player_id })
-                .handle(eng, ctx, actor, version, mutate)?;
 
             Action::GiveRole(GiveRole {
                 target_id: player_id,

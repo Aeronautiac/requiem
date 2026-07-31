@@ -42,6 +42,9 @@ pub struct DefaultConfig {
     // How long an autonomous day lasts. Uniform — every day is the same length, and an early manual
     // advance restarts it in full rather than inheriting what was left.
     pub iteration_duration: Time,
+    // How long the world stays dark. A blackout always ends on its own; nothing in the game can
+    // extend it and nothing can cut it short but a host.
+    pub blackout_duration: Time,
     pub prosecution_autonomous: bool, // whether the plain Prosecute ability files autonomous trials
 }
 
@@ -84,6 +87,7 @@ pub fn default_defaults() -> DefaultConfig {
         tap_in_window: hrs(24),
         iterations_autonomous: true,
         iteration_duration: hrs(24),
+        blackout_duration: hrs(24),
         prosecution_autonomous: true,
     }
 }

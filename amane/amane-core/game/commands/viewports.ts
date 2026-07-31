@@ -18,13 +18,15 @@ export const viewportHandlers: Handlers = {
     ctx.view.viewports.delete(slotKeyToString(p.viewport));
   },
 
-  // What an object a viewport belongs to, said on the viewport itself as it is allocated.
+  // What object a viewport belongs to, said on the viewport itself as it is allocated.
   //
-  // Presence is the only kind worth acting on here: it belongs to no object, so nothing else would
-  // ever name it, and this is what lets news answer whether it has gone quiet. Every other
-  // viewport is identified by the content that rides it — a channel by its map, a bug by NewBug —
-  // and the kind adds nothing to that. The record never arrives at all; the server keeps it.
+  // WorldEvents is the only kind worth acting on here: it belongs to no object, so nothing else
+  // would ever name it, and this is what lets the feed answer whether it has gone quiet. Every
+  // other viewport is identified by the content that rides it — a channel by its map, a bug by
+  // NewBug — and the kind adds nothing to that. The record never arrives at all; the server
+  // keeps it. WorldData needs no entry either: it is never lost, so it is never stale.
   MapViewport(ctx: CmdCtx, p) {
-    if (p.kind === "Presence") ctx.view.record_presence_viewport(slotKeyToString(p.viewport));
+    if (p.kind === "WorldEvents")
+      ctx.view.record_world_events_viewport(slotKeyToString(p.viewport));
   },
 };

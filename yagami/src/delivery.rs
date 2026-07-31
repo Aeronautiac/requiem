@@ -26,8 +26,7 @@ use lawliet_types::{
     action::ActionRequest,
     actor::ActorKind,
     command::{Command, CommandPayload, CommandRecipient},
-    common::{ActorKey, ViewportKey},
-    viewport::ViewportKind,
+    common::{ActorKey, LogID, ViewportKey},
 };
 
 use crate::{
@@ -45,20 +44,20 @@ use crate::{
 // never separate storage, so a replay can never hand out a command before the one that created what
 // it refers to.
 //
-// The index is `viewport -> the positions addressed to it`, and it is here rather than beside the log
-// because it is only meaningful against this exact log -- passing the two separately is an invitation
-// to let them get out of step. It stores positions, not payloads: there is exactly one copy of every
-// command. It is purely an accelerator, and nothing is persisted: both rebuild from the action log.
+// The indexes are `recipient -> the positions addressed to it`, and they are here rather than beside
+// the log because they are only meaningful against this exact log -- passing them separately is an
+// invitation to let them get out of step. They store positions, not payloads: there is exactly one
+// copy of every command. They are purely an accelerator, and nothing is persisted: all of it rebuilds
+// from the action log.
+//
+// The record is in the same log, addressed to a LogID rather than a viewport, and indexed the same
+// way for the same reason: an autopsy or a tap-in asks for one record out of everything ever said,
+// and that must cost what it yields rather than the length of the log.
 #[derive(Default)]
 pub struct History {
     log: Vec<CommandPayload>,
-    index: HashMap<ViewportKey, Vec<usize>>,
-    // The viewports that carry the record, learned from MapViewport as the engine allocates them.
-    //
-    // A log viewport is an identity, not an audience. It exists so the server can answer an
-    // autopsy or a tap-in from what was actually said, and is the only kind of viewport this
-    // server has any reason to tell apart.
-    log_viewports: HashSet<ViewportKey>,
+    viewports: HashMap<ViewportKey, Vec<usize>>,
+    records: HashMap<LogID, Vec<usize>>,
 }
 
 impl History {
@@ -67,28 +66,33 @@ impl History {
     pub fn extend(&mut self, commands: Vec<CommandPayload>) -> usize {
         let at = self.log.len();
         for (offset, payload) in commands.iter().enumerate() {
-            if let CommandRecipient::Viewport(viewport) = &payload.recipient {
-                self.index.entry(*viewport).or_default().push(at + offset);
-            }
-            // MapViewport is addressed to the viewport it describes and is emitted when that
-            // viewport is allocated, so this is always recorded before anything can be addressed
-            // there -- within this batch as much as across batches, since the whole batch is
-            // indexed before a single command of it is handed out.
-            if let Command::MapViewport {
-                viewport,
-                kind: ViewportKind::Log,
-            } = &payload.cmd
-            {
-                self.log_viewports.insert(*viewport);
+            match &payload.recipient {
+                CommandRecipient::Viewport(viewport) => {
+                    self.viewports.entry(*viewport).or_default().push(at + offset)
+                }
+                CommandRecipient::Log(log) => {
+                    self.records.entry(*log).or_default().push(at + offset)
+                }
+                CommandRecipient::System | CommandRecipient::Actor(_) => {}
             }
         }
         self.log.extend(commands);
         at
     }
 
-    // Whether this viewport is the record. Nothing addressed to one is ever delivered to a client.
-    fn is_log(&self, viewport: &ViewportKey) -> bool {
-        self.log_viewports.contains(viewport)
+    // Everything ever written to one record, in order.
+    //
+    // The whole of it, unlike a viewport's half-open range: nobody is ever catching up on a record,
+    // so there is no cursor into it and no gap to splice. A reveal that wants only the last stretch
+    // of it trims by timestamp, which is what the range on a tap-in means.
+    #[allow(dead_code)] // the reveal abilities that ask for this are not served yet.
+    pub fn record(&self, log: LogID) -> impl Iterator<Item = &CommandPayload> {
+        self.records
+            .get(&log)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            .iter()
+            .map(|&pos| &self.log[pos])
     }
 
     // One past the last command: where a batch that added nothing both begins and ends.
@@ -106,7 +110,7 @@ impl History {
         from: usize,
         until: usize,
     ) -> impl Iterator<Item = &CommandPayload> {
-        let positions = self.index.get(&viewport).map(Vec::as_slice).unwrap_or(&[]);
+        let positions = self.viewports.get(&viewport).map(Vec::as_slice).unwrap_or(&[]);
         let start = positions.partition_point(|&pos| pos < from);
 
         positions[start..]
@@ -216,6 +220,10 @@ impl ViewportCursor {
             let visible = match &payload.recipient {
                 CommandRecipient::System => reach.administers(),
                 CommandRecipient::Actor(id) => reach.actor(id),
+                // The record reaches no client, admin included. It is not an audience that happens
+                // to be empty -- there is no way to be granted it, so this is the whole of the
+                // rule rather than a special case carved out of one.
+                CommandRecipient::Log(_) => false,
                 // Administer reads every viewport, including ones nobody has ever entered. That is
                 // what the capability means -- it already grants the System stream -- and it is what
                 // lets admin watch a deception unfold: they receive the fiction through the presence
@@ -226,16 +234,11 @@ impl ViewportCursor {
                 // viewport's watermark on every command, so a later EnterViewport finds the gap
                 // already closed and backfills nothing.
                 CommandRecipient::Viewport(viewport) => {
-                    // The record reaches no client, admin included. Membership already keeps it
-                    // from everyone else -- nobody is ever granted a log viewport -- so Administer
-                    // reading every viewport unconditionally is the one thing that would hand a
-                    // client the same message twice, once as content and once as the record.
-                    let held = !history.is_log(viewport)
-                        && (reach.administers()
-                            || self
-                                .access
-                                .get(viewport)
-                                .is_some_and(|holders| !holders.is_empty()));
+                    let held = reach.administers()
+                        || self
+                            .access
+                            .get(viewport)
+                            .is_some_and(|holders| !holders.is_empty());
 
                     // ...and never re-send what this viewport's mark already accounts for. A no-op
                     // on a live walk, where the mark trails the position by construction. It earns
@@ -751,14 +754,6 @@ mod delivery_tests {
         )
     }
 
-    // What the engine emits when it allocates a viewport, addressed to the viewport itself.
-    fn map(vp: ViewportKey, kind: ViewportKind) -> CommandPayload {
-        payload(
-            CommandRecipient::Viewport(vp),
-            Command::MapViewport { viewport: vp, kind },
-        )
-    }
-
     fn exit(vp: ViewportKey, who: ActorKey) -> CommandPayload {
         payload(
             CommandRecipient::Actor(who),
@@ -1009,16 +1004,20 @@ mod delivery_tests {
         assert_eq!(tags(&replay(&omniscient, &log)), ["before", "after"]);
     }
 
-    // ...but never the record. Admin is the only key that could reach a log viewport at all, since
-    // nobody is ever granted one, and the copy it would receive is a message it already has.
+    // ...but never the record, which is not an audience anyone can be in. It is kept regardless,
+    // and reachable by the query that will answer a reveal.
     #[test]
-    fn the_record_reaches_nobody() {
-        let (channel, record) = (viewport(1), viewport(2));
+    fn the_record_reaches_nobody_and_is_kept_anyway() {
+        let channel = viewport(1);
+        let record: LogID = 7;
         let log = vec![
-            map(record, ViewportKind::Log),
-            map(channel, ViewportKind::Channel),
             content(channel, "said"),
-            content(record, "said"),
+            payload(
+                CommandRecipient::Log(record),
+                Command::AnonymousAnnouncement {
+                    content: "said".into(),
+                },
+            ),
         ];
         let omniscient = Privileges {
             actors: ActorScope::All,
@@ -1026,6 +1025,31 @@ mod delivery_tests {
         };
 
         assert_eq!(tags(&replay(&omniscient, &log)), ["said"]);
+
+        let kept: Vec<_> = history(&log).record(record).cloned().collect();
+        assert_eq!(tags(&kept), ["said"]);
+    }
+
+    // One record out of everything ever said, and nothing from any other.
+    #[test]
+    fn a_record_holds_only_its_own() {
+        let (mine, theirs): (LogID, LogID) = (1, 2);
+        let said = |log: LogID, tag: &str| {
+            payload(
+                CommandRecipient::Log(log),
+                Command::AnonymousAnnouncement {
+                    content: tag.to_string(),
+                },
+            )
+        };
+        let log = vec![
+            said(mine, "mine-1"),
+            said(theirs, "theirs"),
+            said(mine, "mine-2"),
+        ];
+
+        let kept: Vec<_> = history(&log).record(mine).cloned().collect();
+        assert_eq!(tags(&kept), ["mine-1", "mine-2"]);
     }
 
     // Walk the whole log onto a cursor and keep the cursor, as a live connection has one.

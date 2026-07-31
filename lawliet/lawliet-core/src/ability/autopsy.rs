@@ -7,7 +7,7 @@ use lawliet_types::{
 
 use crate::{
     ability::AbilityInterface,
-    helpers::{actor_id, get_actor},
+    helpers::{actor_id, get_actor, get_player},
 };
 
 impl AbilityInterface for Autopsy {
@@ -30,9 +30,12 @@ impl AbilityInterface for Autopsy {
         }
 
         let user_id = actor_id(actor).expect("expected valid actor to use Autopsy");
+        // The target's own record, which names them as the sender of everything they said wherever
+        // they said it — including anything said under a name that was not theirs.
+        let log = get_player(eng, self.target)?.log;
         ctx.push_cmd(
             Command::RevealAutopsyMessages {
-                target_id: self.target,
+                log,
                 range: eng.config.defaults.autopsy_window,
                 redact_names: eng.config.defaults.autopsy_redaction,
             },

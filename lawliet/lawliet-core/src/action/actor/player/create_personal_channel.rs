@@ -1,11 +1,10 @@
-use indexmap::indexset;
 use lawliet_types::{
     action::{
-        Action, ActionActor, ActionError, ActionResponse, CreateChannel, CreatePersonalChannel,
-        CreatePersonalChannelResponse, SetMember,
+        Action, ActionActor, ActionError, ActionResponse, CreateAndGiveProfile, CreateChannel,
+        CreatePersonalChannel, CreatePersonalChannelResponse,
     },
     actor::ActorDisplay,
-    channel::{ChannelMember, ChannelPermission},
+    channel::{ChannelPerm, FixedPolicy, PermUpdatePolicy},
 };
 
 use crate::{
@@ -32,20 +31,19 @@ impl ActionInterface for CreatePersonalChannel {
             return Err(ActionError::PersonalChannelLimitReached);
         }
 
-        let channel_response = Action::CreateChannel(CreateChannel { loggable: false }).handle(
-            eng,
-            ctx,
-            &ActionActor::System,
-            version,
-            mutate,
-        )?;
+        let channel_response = Action::CreateChannel(CreateChannel {
+            loggable: false,
+            base_profile: None,
+        })
+        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         let ActionResponse::CreateChannel(data) = channel_response else {
             unreachable!();
         };
         let channel_id = data.id;
 
-        // Must precede the SetMember below, whose UpdateChannelView references the channel.
-        // Addressed to the channel's own viewport, so only the owner ever sees it.
+        // Addressed to the channel's own viewport, so only the owner ever sees it, and pushed
+        // before the name that puts them in it — the channel has to exist before anything can be
+        // said about a name in it.
         cmd_channel(
             eng,
             ctx,
@@ -63,14 +61,19 @@ impl ActionInterface for CreatePersonalChannel {
             player.personal_channels.insert(channel_id);
             player.personal_channel_charges = player.personal_channel_charges.saturating_sub(1);
 
-            Action::SetMember(SetMember {
-                player_id,
+            // Their own notepad, and theirs unconditionally: nothing that happens to them takes
+            // away a place that is only ever read by them.
+            Action::CreateAndGiveProfile(CreateAndGiveProfile {
                 channel_id,
-                settings: Some(ChannelMember {
-                    perms: ChannelPermission::Send
-                        | ChannelPermission::View
-                        | ChannelPermission::LoggabilityControl,
-                    displays: indexset! { ActorDisplay::Raw(player_id) },
+                player_id,
+                display: ActorDisplay::Raw(player_id),
+                visible: true,
+                shared: false,
+                transferrable: false,
+                perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                    perms: ChannelPerm::Send
+                        | ChannelPerm::View
+                        | ChannelPerm::LoggabilityControl,
                 }),
             })
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;

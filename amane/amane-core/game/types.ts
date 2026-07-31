@@ -4,12 +4,15 @@ import type {
   AbilityName,
   ActorDisplay,
   BugContext,
+  ChannelProfileView,
   ContactLog,
   OrganizationName,
   PassiveType,
+  PollOptionIndex,
+  PollOptionTally,
   PollOutcome,
+  PollParent,
   PollSubject,
-  PollVisibility,
   ProsecutionPhaseView,
   Role,
   TapInOutcome,
@@ -19,6 +22,13 @@ export type WorldEvent = {
   // Iteration 1 is the host starting the game, so this is also how a viewer learns play has begun.
   NewIteration: {
     iteration: number,
+  }
+} | {
+  // The world went dark, or came back. Rides world data rather than the events viewport it
+  // silences, so it is the one thing a viewer still hears during a blackout — without it, silence
+  // would be indistinguishable from nothing happening.
+  Blackout: {
+    active: boolean,
   }
 } | {
   Death: {
@@ -224,22 +234,24 @@ export type GameEvent = {
 
 export type PollData = {
   subject: PollSubject,
-  scope: PollVisibility,
-  accept: number,
-  reject: number,
+  parent: PollParent,
+  // The choices and the weight behind each, in the order they are offered. A vote names one by
+  // its position here.
+  options: PollOptionTally[],
   potential: number,
   // Actor KEY, not a name. Resolved at render time: a name resolved at apply time would be
   // whatever `players` held then, and a replay later would resolve it differently.
   opener: string | null,
-  // Set once resolved. The entry is KEPT rather than deleted: a view gaining the poll's viewport
-  // later replays its whole history and has to reach the same place. Live polls filter on null.
+  // Set once resolved. The entry is KEPT rather than deleted: a poll rides its parent's viewport,
+  // so a view gaining that viewport replays every poll the parent ever held and has to reach the
+  // same place. Live polls filter on null.
   outcome: PollOutcome | null,
 }
 
 // Having an entry at all means the viewer can see the poll; `eligible` is whether they may vote.
 export type PollView = {
   eligible: boolean,
-  own_vote: boolean | null,
+  own_vote: PollOptionIndex | null,
 }
 
 // The trial channel and verdict poll ride their own command streams; trial_channel is just the id
@@ -268,22 +280,18 @@ export interface PassiveView {
   type: PassiveType;
 }
 
-// Per-view because the same actor can be shown under different displays to different viewers
-// (deception). Keyed by display key -> member.
-export type ChannelMemberView = {
-  display: ActorDisplay;
-  perms: number;
-  // Sticky. A member that has never held a positive perm isn't an effective member.
-  had_positive: boolean;
-};
-
-// The presence of an entry IS the membership signal — non-members hold no entry and receive no
-// member updates.
+// A channel as this view stands in it. Both halves are whole sets, replaced rather than patched:
+// they are current state, not a sequence of events, which is why the engine directs them here
+// instead of addressing them to the channel's viewport.
 export type ChannelView = {
-  perms: ChannelPerms;
-  members: Map<string, ChannelMemberView>;
-  // The displays this viewer may send as in this channel.
-  displays: ActorDisplay[];
+  // Every name the room can see, and what each may do. Per-view because the same actor can be
+  // shown under different names to different viewers (deception), and because a name the room has
+  // not been told about is simply absent — its existence is the thing being kept.
+  roster: ChannelProfileView[];
+  // Every name here that is THIS view's to speak as, whether or not the room can see it. Almost
+  // always exactly one. Empty is a member who holds nothing, which is how being removed is stated
+  // rather than left to be noticed.
+  own: ChannelProfileView[];
 };
 
 // A player slot this view has been told about (from MapActor).

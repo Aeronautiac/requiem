@@ -27,7 +27,10 @@ impl ActionInterface for CreateGroupchat {
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;
 
-        let channel_response = Action::CreateChannel(CreateChannel { loggable: true })
+        let channel_response = Action::CreateChannel(CreateChannel {
+            loggable: true,
+            base_profile: None,
+        })
             .handle(eng, ctx, actor, version, mutate)?;
         let ActionResponse::CreateChannel(data) = channel_response else {
             unreachable!();

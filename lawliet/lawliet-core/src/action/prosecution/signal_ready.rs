@@ -4,15 +4,18 @@
 *
 * Custody phase:
 *   Sets the caller's ready flag (prosecutor_ready or defense_ready).
-*   If both flags are now set, calls AdvanceProsecution.
 *
 * Trial Debate subphase:
 *   Sets the caller's done flag (prosecutor_done or defense_done).
-*   One flag set → timer shortened (reschedule timeout job to a shorter duration).
-*   Both flags set → calls AdvanceProsecution immediately.
+*   One flag set → countdown shortened.
 *
-* On a non-autonomous prosecution that AdvanceProsecution holds instead of advancing, which is
-* what pending_advance below then rejects further signals against.
+* Setting the flags is all this does. Both being set is what leaves the phase, and that is read by
+* UpdateProsecutions on the trailing sweep rather than acted on here: a prosecution that is frozen,
+* or non-autonomous and already waiting on a host, cannot move at the moment the second flag lands,
+* and the sweep is where it moves once that clears. One trigger, and it is the one that re-runs.
+*
+* On a non-autonomous prosecution the sweep's advance is held instead, which is what pending_advance
+* below then rejects further signals against.
 *
 * Fails if the prosecution is not in one of the above phases/subphases, or if the caller
 * is not a participant in this prosecution.
@@ -23,8 +26,7 @@
 
 use crate::{
     action::{
-        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionRequest,
-        ActionResponse, ActionResult, AdvanceProsecution,
+        ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse, ActionResult,
     },
     common::Version,
     engine::Engine,
@@ -32,15 +34,17 @@ use crate::{
     prosecution::{ProsecutionPhase, TrialPhase},
 };
 
+use super::reschedule_advance;
+
 pub use crate::action::{SignalReady, SignalReadyResponse};
 
 impl ActionInterface for SignalReady {
     fn handle(
         &mut self,
         eng: &mut Engine,
-        ctx: &mut ActionContext,
+        _ctx: &mut ActionContext,
         actor: &ActionActor,
-        version: Version,
+        _version: Version,
         mutate: bool,
     ) -> ActionResult {
         actor.player_only()?;
@@ -67,7 +71,7 @@ impl ActionInterface for SignalReady {
         // `_` and errors — it is not a signallable phase.
         let prosecutor_signalled;
         let defense_signalled;
-        let timeout_job;
+        let timer;
         // Some only in a debate, carrying the trial's channel — also the only phase where
         // signalling shortens a clock.
         let debate_channel;
@@ -76,11 +80,11 @@ impl ActionInterface for SignalReady {
             ProsecutionPhase::Custody {
                 prosecutor_ready,
                 defense_ready,
-                timeout_job_id,
+                timer: phase_timer,
             } => {
                 prosecutor_signalled = *prosecutor_ready;
                 defense_signalled = *defense_ready;
-                timeout_job = *timeout_job_id;
+                timer = *phase_timer;
                 debate_channel = None;
             }
             ProsecutionPhase::Trial {
@@ -90,11 +94,11 @@ impl ActionInterface for SignalReady {
                         defense_done,
                     },
                 channel_id,
-                timeout_job_id,
+                timer: phase_timer,
             } => {
                 prosecutor_signalled = *prosecutor_done;
                 defense_signalled = *defense_done;
-                timeout_job = *timeout_job_id;
+                timer = *phase_timer;
                 debate_channel = Some(*channel_id);
             }
             _ => return Err(ActionError::IncompatiblePhase),
@@ -104,7 +108,8 @@ impl ActionInterface for SignalReady {
             return Err(ActionError::AlreadySignalled);
         }
 
-        // The OTHER side had already signalled, so this call completes the pair.
+        // The OTHER side had already signalled, so this call completes the pair. Only used to skip
+        // the shortening below — the advance itself is the sweep's.
         let resolve =
             (is_prosecutor && defense_signalled) || (is_defendant && prosecutor_signalled);
 
@@ -114,33 +119,28 @@ impl ActionInterface for SignalReady {
 
         if mutate {
             // One side finishing cuts the clock for the other, but only ever downwards — replacing
-            // a deadline that is already inside the shortened window would push it back out.
+            // a deadline that is already inside the shortened window would push it back out. What
+            // is left is asked of the timer rather than of the job, so a debate that spent time
+            // frozen is compared on the time it actually had.
             //
-            // Skipped when this call resolves the debate, since the prosecution advances below and
-            // a fresh timer would be scheduled only to be discarded.
+            // Skipped when this call resolves the debate, since the trailing sweep advances out of
+            // it and a fresh countdown would be started only to be discarded.
             let shortened = eng.config.defaults.debate_shortened_timeout;
             let rescheduled = if debate_channel.is_some() && !resolve {
-                let curr_job = eng
-                    .jobs
-                    .view(timeout_job)
-                    .expect("expected valid job id to be held within trial phase");
-                let remaining = curr_job.request.timestamp - eng.time;
+                let remaining = eng
+                    .world
+                    .timers
+                    .get(timer)
+                    .expect("expected a valid timer to be held within the trial phase")
+                    .remaining(eng.time);
 
-                (remaining > shortened).then(|| {
-                    eng.jobs.cancel_id(timeout_job);
-                    eng.jobs.push(ActionRequest {
-                        actor: ActionActor::System,
-                        timestamp: eng.time + shortened,
-                        payload: Action::AdvanceProsecution(AdvanceProsecution {
-                            prosecution_id: self.prosecution_id,
-                        }),
-                    })
-                })
+                (remaining > shortened)
+                    .then(|| reschedule_advance(eng, self.prosecution_id, timer, shortened))
             } else {
                 None
             };
 
-            let timeout_job_id = rescheduled.unwrap_or(timeout_job);
+            let timer = rescheduled.unwrap_or(timer);
             let prosecution = get_prosecution_mut(eng, self.prosecution_id)
                 .expect("prosecution should have already been validated");
 
@@ -150,22 +150,15 @@ impl ActionInterface for SignalReady {
                         prosecutor_done: prosecutor_signalled,
                         defense_done: defense_signalled,
                     },
-                    timeout_job_id,
+                    timer,
                     channel_id,
                 },
                 None => ProsecutionPhase::Custody {
                     prosecutor_ready: prosecutor_signalled,
                     defense_ready: defense_signalled,
-                    timeout_job_id,
+                    timer,
                 },
             };
-        }
-
-        if resolve {
-            Action::AdvanceProsecution(AdvanceProsecution {
-                prosecution_id: self.prosecution_id,
-            })
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         Ok(ActionResponse::SignalReady(SignalReadyResponse {}))

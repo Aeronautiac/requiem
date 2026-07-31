@@ -5,24 +5,23 @@ pub mod poll_timeout;
 pub mod remove_vote;
 pub mod update_polls;
 
-use indexmap::IndexSet;
 use lawliet_types::command::{Command, CommandRecipient};
 
 use crate::{
     action::ActionContext,
     common::PollKey,
     engine::Engine,
-    helpers::{get_poll, sync_viewport},
+    helpers::get_poll,
+    poll::{PollOptionIndex, PollOptionTally},
 };
 
-// Broadcast a poll's current state: the shared data + tally to the poll's viewport
+// Broadcast a poll's current state: the shared data + tally to the parent's viewport
 // (UpdatePoll), then each viewer's personal view — votability and their own vote
 // (UpdatePollView). Only emits on the mutate pass; used on creation and after each vote.
 //
-// Access is resynced first, so an actor who has just come into scope enters the viewport before
-// the UpdatePoll lands and a departing one exits before it doesn't. Losing scope no longer hides
-// the poll — it only means no further updates, so whatever the poll last looked like to that
-// player stays where it was.
+// Nothing here decides who may read any of it. The poll is addressed to its parent's viewport
+// and the parent alone decides that viewport's membership, so a player who has lost sight of the
+// poll simply stops receiving updates and keeps whatever it last looked like to them.
 pub(crate) fn broadcast_poll(
     eng: &mut Engine,
     ctx: &mut ActionContext,
@@ -35,22 +34,30 @@ pub(crate) fn broadcast_poll(
     let Ok(poll) = get_poll(eng, poll_id) else {
         return;
     };
-    let viewport = poll.viewport;
-    let viewers = poll.viewers(eng);
-    sync_viewport(eng, ctx, viewport, viewers.clone(), mutate);
+    let Some(viewport) = poll.viewport(eng) else {
+        return;
+    };
 
-    let poll = get_poll(eng, poll_id).expect("just read above");
+    let viewers = poll.viewers(eng);
     let tally = poll.weights(eng);
+    let options = poll
+        .options
+        .iter()
+        .zip(tally.options)
+        .map(|(option, weight)| PollOptionTally {
+            label: option.label.clone(),
+            weight,
+        })
+        .collect();
     let subject = poll.subject.clone();
-    let scope = poll.visibility;
+    let parent = poll.parent;
     let opener = poll.opener;
     ctx.push_cmd(
         Command::UpdatePoll {
             poll_id,
             subject,
-            scope,
-            accept: tally.accept,
-            reject: tally.reject,
+            parent,
+            options,
             potential: tally.potential_total,
             opener,
         },
@@ -60,11 +67,10 @@ pub(crate) fn broadcast_poll(
 
     // Personal views stay directed: `eligible` and `own_vote` differ per viewer, so they cannot
     // ride the shared viewport.
-    let viewers: IndexSet<_> = viewers;
     for id in viewers {
         let poll = get_poll(eng, poll_id).expect("just read above");
-        let eligible = poll.voter_policy(eng, id);
-        let own_vote = poll.votes.get(&id).map(|v| v.accept);
+        let eligible = poll.can_enter(eng, id);
+        let own_vote: Option<PollOptionIndex> = poll.votes.get(&id).copied();
         ctx.push_cmd(
             Command::UpdatePollView {
                 poll_id,
@@ -114,9 +120,16 @@ mod poll_tests {
         engine::Engine,
         helpers::get_actor,
         passive::PassiveType,
-        poll::{PollPolicy, PollSubject, PollVisibility, VoterPolicy},
+        poll::{PollOption, PollOptionLabel, PollParent, PollPolicy, PollSubject, VoterPolicy},
         test_helpers::*,
     };
+
+    fn generic_option(label: &str, payload: Option<Action>) -> PollOption {
+        PollOption {
+            label: PollOptionLabel::Generic(label.to_string()),
+            payload,
+        }
+    }
 
     #[test]
     fn vote_addition() {
@@ -131,19 +144,19 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
                 duration: None,
-                accept_payload: Box::new(Some(Action::Null(Null {}))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(Action::Null(Null {})), None),
+                ignore_amplification: false,
             },
         );
 
         let poll_data = eng.world.get_poll(poll_id).unwrap();
         assert!(!poll_data.contains_voter(p1));
 
-        add_vote(&mut eng, 0, poll_id, p1, true).unwrap();
+        add_vote(&mut eng, 0, poll_id, p1, ACCEPT).unwrap();
 
         let poll_data = eng.world.get_poll(poll_id).unwrap();
         assert!(poll_data.contains_voter(p1));
@@ -162,17 +175,17 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
                 duration: None,
-                accept_payload: Box::new(Some(Action::Null(Null {}))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(Action::Null(Null {})), None),
+                ignore_amplification: false,
             },
         );
 
-        add_vote(&mut eng, 0, poll_id, p1, true).unwrap();
-        assert!(add_vote(&mut eng, 0, poll_id, p1, true).is_err());
+        add_vote(&mut eng, 0, poll_id, p1, ACCEPT).unwrap();
+        assert!(add_vote(&mut eng, 0, poll_id, p1, ACCEPT).is_err());
 
         let poll_data = eng.world.get_poll(poll_id).unwrap();
         assert!(poll_data.contains_voter(p1));
@@ -191,16 +204,16 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
                 duration: None,
-                accept_payload: Box::new(Some(Action::Null(Null {}))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(Action::Null(Null {})), None),
+                ignore_amplification: false,
             },
         );
 
-        add_vote(&mut eng, 0, poll_id, p1, true).unwrap();
+        add_vote(&mut eng, 0, poll_id, p1, ACCEPT).unwrap();
         remove_vote(&mut eng, 0, poll_id, p1).unwrap();
 
         let poll_data = eng.world.get_poll(poll_id).unwrap();
@@ -219,12 +232,12 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
                 duration: None,
-                accept_payload: Box::new(None),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(None, None),
+                ignore_amplification: false,
             },
         );
 
@@ -249,16 +262,16 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
                 duration: None,
-                accept_payload: Box::new(None),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(None, None),
+                ignore_amplification: false,
             },
         );
 
-        add_vote(&mut eng, 0, poll_id, p1, true).unwrap();
+        add_vote(&mut eng, 0, poll_id, p1, ACCEPT).unwrap();
         quick_kill(&mut eng, 0, true, true, false, p1);
         assert!(remove_vote(&mut eng, 0, poll_id, p1).is_err());
     }
@@ -275,17 +288,17 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
                 duration: None,
-                accept_payload: Box::new(None),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(None, None),
+                ignore_amplification: false,
             },
         );
 
         quick_kill(&mut eng, 0, true, true, false, p1);
-        assert!(add_vote(&mut eng, 0, poll_id, p1, true).is_err());
+        assert!(add_vote(&mut eng, 0, poll_id, p1, ACCEPT).is_err());
     }
 
     #[test]
@@ -301,19 +314,19 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::Majority,
                 duration: Some(20),
-                accept_payload: Box::new(Some(default_kill(p2))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(default_kill(p2)), None),
+                ignore_amplification: false,
             },
         );
 
         let p2_actor = get_actor(&eng, p2).unwrap();
         assert!(!p2_actor.has_state(State::Dead));
 
-        add_vote(&mut eng, 1, poll_id, p1, true).unwrap();
+        add_vote(&mut eng, 1, poll_id, p1, ACCEPT).unwrap();
 
         let p2_actor = get_actor(&eng, p2).unwrap();
         assert!(!p2_actor.has_state(State::Dead));
@@ -336,16 +349,16 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
                 duration: Some(10),
-                accept_payload: Box::new(Some(default_kill(p1))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(default_kill(p1)), None),
+                ignore_amplification: false,
             },
         );
 
-        assert!(add_vote(&mut eng, 10, poll_id, p1, true).is_err());
+        assert!(add_vote(&mut eng, 10, poll_id, p1, ACCEPT).is_err());
     }
 
     #[test]
@@ -361,24 +374,24 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
                 duration: None,
-                accept_payload: Box::new(Some(default_kill(p2))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(default_kill(p2)), None),
+                ignore_amplification: false,
             },
         );
 
         let p2_actor = get_actor(&eng, p2).unwrap();
         assert!(!p2_actor.has_state(State::Dead));
 
-        add_vote(&mut eng, 1, poll_id, p1, true).unwrap();
+        add_vote(&mut eng, 1, poll_id, p1, ACCEPT).unwrap();
 
         let p2_actor = get_actor(&eng, p2).unwrap();
         assert!(!p2_actor.has_state(State::Dead));
 
-        add_vote(&mut eng, 21, poll_id, p2, true).unwrap();
+        add_vote(&mut eng, 21, poll_id, p2, ACCEPT).unwrap();
 
         let p2_actor = get_actor(&eng, p2).unwrap();
         assert!(p2_actor.has_state(State::Dead));
@@ -399,26 +412,26 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::Majority,
-                timeout_policy: PollPolicy::WinningVote,
+                timeout_policy: PollPolicy::MostVoted,
                 duration: Some(10),
-                accept_payload: Box::new(Some(default_kill(p4))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(default_kill(p4)), None),
+                ignore_amplification: false,
             },
         );
 
-        add_vote(&mut eng, 1, poll_id, p1, true).unwrap();
+        add_vote(&mut eng, 1, poll_id, p1, ACCEPT).unwrap();
 
         let p4_actor = get_actor(&eng, p4).unwrap();
         assert!(!p4_actor.has_state(State::Dead));
 
-        add_vote(&mut eng, 9, poll_id, p2, true).unwrap();
+        add_vote(&mut eng, 9, poll_id, p2, ACCEPT).unwrap();
 
         let p4_actor = get_actor(&eng, p4).unwrap();
         assert!(!p4_actor.has_state(State::Dead));
 
-        add_vote(&mut eng, 9, poll_id, p3, false).unwrap();
+        add_vote(&mut eng, 9, poll_id, p3, REJECT).unwrap();
 
         let p4_actor = get_actor(&eng, p4).unwrap();
         assert!(!p4_actor.has_state(State::Dead));
@@ -442,16 +455,16 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::AlwaysInconclusive,
-                timeout_policy: PollPolicy::WinningVote,
+                timeout_policy: PollPolicy::MostVoted,
                 duration: Some(10),
-                accept_payload: Box::new(Some(default_kill(p1))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(default_kill(p1)), None),
+                ignore_amplification: false,
             },
         );
 
-        add_vote(&mut eng, 1, poll_id, p1, true).unwrap();
+        add_vote(&mut eng, 1, poll_id, p1, ACCEPT).unwrap();
 
         let p1_actor = get_actor(&eng, p1).unwrap();
         assert!(!p1_actor.has_state(State::Dead));
@@ -476,18 +489,18 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::AlwaysInconclusive,
                 timeout_policy: PollPolicy::Majority,
                 duration: Some(10),
-                accept_payload: Box::new(Some(default_kill(p1))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(default_kill(p1)), None),
+                ignore_amplification: false,
             },
         );
 
-        add_vote(&mut eng, 1, poll_id, p1, true).unwrap();
-        add_vote(&mut eng, 1, poll_id, p2, true).unwrap();
-        add_vote(&mut eng, 1, poll_id, p3, true).unwrap();
+        add_vote(&mut eng, 1, poll_id, p1, ACCEPT).unwrap();
+        add_vote(&mut eng, 1, poll_id, p2, ACCEPT).unwrap();
+        add_vote(&mut eng, 1, poll_id, p3, ACCEPT).unwrap();
 
         let p1_actor = get_actor(&eng, p1).unwrap();
         assert!(!p1_actor.has_state(State::Dead));
@@ -520,18 +533,18 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::Majority,
                 duration: Some(5),
-                accept_payload: Box::new(Some(default_kill(p1))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(default_kill(p1)), None),
+                ignore_amplification: false,
             },
         );
 
-        add_vote(&mut eng, 0, poll_id, p1, true).unwrap();
-        add_vote(&mut eng, 0, poll_id, p2, true).unwrap();
-        add_vote(&mut eng, 0, poll_id, p3, false).unwrap();
+        add_vote(&mut eng, 0, poll_id, p1, ACCEPT).unwrap();
+        add_vote(&mut eng, 0, poll_id, p2, ACCEPT).unwrap();
+        add_vote(&mut eng, 0, poll_id, p3, REJECT).unwrap();
         null_action(&mut eng, 10);
 
         // it should be a 50/50 split
@@ -560,17 +573,17 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::Majority,
                 duration: Some(5),
-                accept_payload: Box::new(Some(default_kill(p1))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(default_kill(p1)), None),
+                ignore_amplification: false,
             },
         );
 
-        add_vote(&mut eng, 0, poll_id, p1, false).unwrap();
-        add_vote(&mut eng, 0, poll_id, p2, true).unwrap();
+        add_vote(&mut eng, 0, poll_id, p1, REJECT).unwrap();
+        add_vote(&mut eng, 0, poll_id, p2, ACCEPT).unwrap();
         null_action(&mut eng, 10);
 
         let p1_actor = get_actor(&eng, p1).unwrap();
@@ -591,16 +604,16 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::Majority,
                 duration: None,
-                accept_payload: Box::new(Some(default_kill(p1))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(default_kill(p1)), None),
+                ignore_amplification: false,
             },
         );
 
-        add_vote(&mut eng, 0, poll_id, p1, true).unwrap();
+        add_vote(&mut eng, 0, poll_id, p1, ACCEPT).unwrap();
         quick_kill(&mut eng, 0, true, true, false, p2);
 
         let p1_actor = get_actor(&eng, p1).unwrap();
@@ -628,17 +641,17 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::AlwaysInconclusive,
-                timeout_policy: PollPolicy::WinningVote,
+                timeout_policy: PollPolicy::MostVoted,
                 duration: Some(5),
-                accept_payload: Box::new(Some(default_kill(p1))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(default_kill(p1)), None),
+                ignore_amplification: false,
             },
         );
 
-        add_vote(&mut eng, 0, poll_id, p1, true).unwrap();
-        add_vote(&mut eng, 0, poll_id, p2, false).unwrap();
+        add_vote(&mut eng, 0, poll_id, p1, ACCEPT).unwrap();
+        add_vote(&mut eng, 0, poll_id, p2, REJECT).unwrap();
         quick_kill(&mut eng, 0, true, true, false, p2);
         null_action(&mut eng, 10);
 
@@ -659,17 +672,17 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
                 duration: None,
-                accept_payload: Box::new(Some(default_kill(p2))),
-                reject_payload: Box::new(None),
+                options: PollOption::accept_reject(Some(default_kill(p2)), None),
+                ignore_amplification: false,
             },
         );
 
         quick_kill(&mut eng, 0, true, true, false, p2);
-        assert!(add_vote(&mut eng, 0, poll_id, p1, true).is_err());
+        assert!(add_vote(&mut eng, 0, poll_id, p1, ACCEPT).is_err());
     }
 
     #[test]
@@ -685,21 +698,21 @@ mod poll_tests {
                 opener: None,
                 voter_policy: VoterPolicy::Present,
                 subject: PollSubject::Generic(String::new()),
-                visibility: PollVisibility::AllPresent,
+                parent: PollParent::World,
                 update_policy: PollPolicy::Majority,
                 timeout_policy: PollPolicy::AlwaysInconclusive,
                 duration: None,
-                accept_payload: Box::new(Some(default_kill(p1))),
-                reject_payload: Box::new(Some(default_kill(p2))),
+                options: PollOption::accept_reject(Some(default_kill(p1)), Some(default_kill(p2))),
+                ignore_amplification: false,
             },
         );
 
-        add_vote(&mut eng, 0, poll_id, p1, false).unwrap();
+        add_vote(&mut eng, 0, poll_id, p1, REJECT).unwrap();
 
         let p2_actor = get_actor(&eng, p2).unwrap();
         assert!(!p2_actor.has_state(State::Dead));
 
-        add_vote(&mut eng, 0, poll_id, p2, false).unwrap();
+        add_vote(&mut eng, 0, poll_id, p2, REJECT).unwrap();
 
         let p2_actor = get_actor(&eng, p2).unwrap();
         assert!(p2_actor.has_state(State::Dead));
@@ -707,7 +720,179 @@ mod poll_tests {
         assert!(!p1_actor.has_state(State::Dead));
     }
 
-    // TODO:
-    // visibility based tests (orgs, channels, etc...)
-    // do it when channels are implemented
+    // Three options, no majority anywhere, and the heaviest one wins on timeout.
+    #[test]
+    fn most_voted_picks_the_heaviest_of_three() {
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
+        let p3 = add_player(&mut eng, 0, Role::Civilian, "p3");
+        let p4 = add_player(&mut eng, 0, Role::Civilian, "p4");
+        let p5 = add_player(&mut eng, 0, Role::Civilian, "p5");
+
+        let poll_id = create_poll(
+            &mut eng,
+            0,
+            CreatePoll {
+                opener: None,
+                voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
+                parent: PollParent::World,
+                update_policy: PollPolicy::AlwaysInconclusive,
+                timeout_policy: PollPolicy::MostVoted,
+                duration: Some(10),
+                options: vec![
+                    generic_option("a", None),
+                    generic_option("b", Some(default_kill(p1))),
+                    generic_option("c", None),
+                ],
+                ignore_amplification: false,
+            },
+        );
+
+        add_vote(&mut eng, 0, poll_id, p1, 0).unwrap();
+        add_vote(&mut eng, 0, poll_id, p2, 1).unwrap();
+        add_vote(&mut eng, 0, poll_id, p3, 1).unwrap();
+        add_vote(&mut eng, 0, poll_id, p4, 2).unwrap();
+
+        // 1-2-1 of a possible 5. No majority, and p5 never voted, so only MostVoted can call it.
+        assert!(!get_actor(&eng, p1).unwrap().has_state(State::Dead));
+        assert!(!get_actor(&eng, p5).unwrap().has_state(State::Dead));
+
+        null_action(&mut eng, 20);
+        assert!(get_actor(&eng, p1).unwrap().has_state(State::Dead));
+    }
+
+    // A level split resolves to nobody, which is what keeps a two-way tie from silently going to
+    // whichever option happens to be listed first.
+    #[test]
+    fn most_voted_is_inconclusive_on_a_tie() {
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
+
+        let poll_id = create_poll(
+            &mut eng,
+            0,
+            CreatePoll {
+                opener: None,
+                voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
+                parent: PollParent::World,
+                update_policy: PollPolicy::AlwaysInconclusive,
+                timeout_policy: PollPolicy::MostVoted,
+                duration: Some(10),
+                options: vec![
+                    generic_option("a", Some(default_kill(p1))),
+                    generic_option("b", Some(default_kill(p2))),
+                ],
+                ignore_amplification: false,
+            },
+        );
+
+        add_vote(&mut eng, 0, poll_id, p1, 0).unwrap();
+        add_vote(&mut eng, 0, poll_id, p2, 1).unwrap();
+        null_action(&mut eng, 20);
+
+        assert!(!get_actor(&eng, p1).unwrap().has_state(State::Dead));
+        assert!(!get_actor(&eng, p2).unwrap().has_state(State::Dead));
+    }
+
+    // An option that is not on the ballot is not a vote.
+    #[test]
+    fn a_vote_for_no_option_is_rejected() {
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+
+        let poll_id = create_poll(
+            &mut eng,
+            0,
+            CreatePoll {
+                opener: None,
+                voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
+                parent: PollParent::World,
+                update_policy: PollPolicy::AlwaysInconclusive,
+                timeout_policy: PollPolicy::AlwaysInconclusive,
+                duration: None,
+                options: PollOption::accept_reject(None, None),
+                ignore_amplification: false,
+            },
+        );
+
+        assert!(add_vote(&mut eng, 0, poll_id, p1, 2).is_err());
+        assert!(!eng.world.get_poll(poll_id).unwrap().contains_voter(p1));
+    }
+
+    // The same ballot that vote_amplification carries, with amplification switched off: one voter
+    // worth ten is worth one, so the other side is not outvoted.
+    #[test]
+    fn ignoring_amplification_counts_heads() {
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
+
+        quick_passive(
+            &mut eng,
+            0,
+            p2,
+            PassiveType::VoteAmplification { multiplier: 10 },
+            false,
+        );
+
+        let poll_id = create_poll(
+            &mut eng,
+            0,
+            CreatePoll {
+                opener: None,
+                voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
+                parent: PollParent::World,
+                update_policy: PollPolicy::Majority,
+                timeout_policy: PollPolicy::Majority,
+                duration: Some(5),
+                options: PollOption::accept_reject(Some(default_kill(p1)), None),
+                ignore_amplification: true,
+            },
+        );
+
+        add_vote(&mut eng, 0, poll_id, p1, REJECT).unwrap();
+        add_vote(&mut eng, 0, poll_id, p2, ACCEPT).unwrap();
+        null_action(&mut eng, 10);
+
+        assert!(!get_actor(&eng, p1).unwrap().has_state(State::Dead));
+    }
+
+    // A poll cannot outlive what it was put to. The channel is torn down, so the vote it was held
+    // in has no audience and no reason to still be open.
+    #[test]
+    fn destroying_a_parent_cancels_its_poll() {
+        let mut eng = Engine::new();
+        init_engine(&mut eng);
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let channel = create_channel(&mut eng, 0, false);
+
+        let poll_id = create_poll(
+            &mut eng,
+            0,
+            CreatePoll {
+                opener: None,
+                voter_policy: VoterPolicy::Present,
+                subject: PollSubject::Generic(String::new()),
+                parent: PollParent::Channel(channel),
+                update_policy: PollPolicy::AlwaysInconclusive,
+                timeout_policy: PollPolicy::AlwaysInconclusive,
+                duration: Some(100),
+                options: PollOption::accept_reject(Some(default_kill(p1)), None),
+                ignore_amplification: false,
+            },
+        );
+        assert!(eng.world.get_poll(poll_id).is_some());
+
+        destroy_channel(&mut eng, 1, channel).unwrap();
+
+        assert!(eng.world.get_poll(poll_id).is_none());
+        // And its timer went with it, rather than firing into the gap it left.
+        assert!(eng.world.timers.is_empty());
+    }
 }

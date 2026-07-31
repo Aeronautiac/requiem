@@ -3,19 +3,9 @@
 // Every Map* here does the same two things — put the Channel in the view, and record the viewport
 // it arrived on. The second half is easy to forget, and a channel registered without it can never
 // answer whether it has gone quiet, so both go through `mapChannel`.
-import { SvelteMap } from "svelte/reactivity";
 import { slotKeyToString } from "../../bindings";
 import type { ChannelCategory } from "../types";
-import {
-  PERM_LOGGABILITY,
-  PERM_SEND,
-  PERM_VIEW,
-  displayKey,
-  hasPositivePerms,
-  new_channel,
-  orgDisplayName,
-  t,
-} from "../helpers.svelte";
+import { new_channel, orgDisplayName, ownPerms, t } from "../helpers.svelte";
 import { type CmdCtx, type Handlers } from "./index";
 
 function mapChannel(ctx: CmdCtx, key: string, category: ChannelCategory, name: string) {
@@ -135,49 +125,37 @@ export const channelHandlers: Handlers = {
     });
   },
 
-  // This view's own permissions in a channel. Perms is the membership signal, so this is what
-  // creates the entry.
-  UpdateChannelView(ctx: CmdCtx, p) {
+  // The names in a channel that are THIS view's to speak as. Holding one is what membership is, so
+  // this is what creates the entry — and an empty set is a member who holds nothing, not a member
+  // who was never told.
+  ProfileAccess(ctx: CmdCtx, p) {
     const channel_id = slotKeyToString(p.channel_id);
-    const read = (p.perms & PERM_VIEW) !== 0;
     const existing = ctx.view.channel_views.get(channel_id);
-    const had_read = existing?.perms.read ?? false;
+    const could_read = ownPerms(existing?.own ?? []).read;
+    const can_read = ownPerms(p.profiles).read;
 
-    // Re-set the key rather than mutating in place so perms/displays updates trigger reactivity.
+    // Re-set the key rather than mutating in place, so the swap triggers reactivity.
     ctx.view.channel_views.set(channel_id, {
-      perms: {
-        read,
-        send: (p.perms & PERM_SEND) !== 0,
-        loggability_control: (p.perms & PERM_LOGGABILITY) !== 0,
-      },
-      members: existing?.members ?? new SvelteMap(),
-      displays: p.displays,
+      roster: existing?.roster ?? [],
+      own: p.profiles,
     });
 
     // A notebook channel going from no-read to read means the book is now in this view's hands.
     // Derived rather than delivered; fires once per gain, not on refreshes while it is held.
-    if (read && !had_read && ctx.view.is_notebook_channel(channel_id)) {
+    if (can_read && !could_read && ctx.view.is_notebook_channel(channel_id)) {
       ctx.view.push_notif(ctx.timestamp, { NotebookReceived: {} });
     }
   },
 
-  // A view with no channel entry yet is skipped: the entry is created by UpdateChannelView, which
-  // the engine emits first.
-  ShowChannelMember(ctx: CmdCtx, p) {
-    const entry = ctx.view.channel_views.get(slotKeyToString(p.channel_id));
-    if (!entry) return;
-    const key = displayKey(p.display);
-    // Sticky, and about the OTHER member rather than this view: a member seeded with no perms is
-    // not an effective one, and should not be listed as though they were.
-    const had_positive =
-      (entry.members.get(key)?.had_positive ?? false) || hasPositivePerms(p.channel_perms);
-    entry.members.set(key, { display: p.display, perms: p.channel_perms, had_positive });
-  },
-
-  RemoveChannelMember(ctx: CmdCtx, p) {
-    ctx.view.channel_views
-      .get(slotKeyToString(p.channel_id))
-      ?.members.delete(displayKey(p.display));
+  // Every name the room can see, whole, every time. Replaced rather than merged: a roster is the
+  // current answer, and a name that has left it has stopped being in the room.
+  ChannelRoster(ctx: CmdCtx, p) {
+    const channel_id = slotKeyToString(p.channel_id);
+    const existing = ctx.view.channel_views.get(channel_id);
+    ctx.view.channel_views.set(channel_id, {
+      roster: p.profiles,
+      own: existing?.own ?? [],
+    });
   },
 
   GcOwnerStatus(ctx: CmdCtx, p) {

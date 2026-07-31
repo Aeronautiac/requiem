@@ -7,7 +7,7 @@ use lawliet_types::{
     ability::{AbilityName, CivilianArrest},
     action::{Action, ActionActor, CreateIncarceration, CreatePoll},
     incarceration::IncarcerationSource,
-    poll::{PollPolicy, PollSubject, PollVisibility, VoterPolicy},
+    poll::{PollOption, PollParent, PollPolicy, PollSubject, VoterPolicy},
 };
 
 use crate::{
@@ -36,16 +36,19 @@ impl AbilityInterface for CivilianArrest {
         // TODO: give the creator a way to cancel this poll before it resolves.
         Action::CreatePoll(CreatePoll {
             voter_policy: VoterPolicy::Present,
-            visibility: PollVisibility::AllPresent,
+            parent: PollParent::World,
             subject: PollSubject::CivilianArrest(self.target),
             update_policy: PollPolicy::Majority,
             timeout_policy: PollPolicy::AlwaysInconclusive,
-            accept_payload: Box::new(Some(Action::CreateIncarceration(CreateIncarceration {
-                victim_id: self.target,
-                source: IncarcerationSource::Ability(ability),
-                duration: Some(eng.config.defaults.civ_arrest_time),
-            }))),
-            reject_payload: Box::new(None),
+            options: PollOption::accept_reject(
+                Some(Action::CreateIncarceration(CreateIncarceration {
+                    victim_id: self.target,
+                    source: IncarcerationSource::Ability(ability),
+                    duration: Some(eng.config.defaults.civ_arrest_time),
+                })),
+                None,
+            ),
+            ignore_amplification: false,
             duration: Some(eng.config.defaults.civ_arrest_vote_time),
             // the actor who called the arrest opened the vote (a player, or an org as itself)
             opener: actor_id(actor),

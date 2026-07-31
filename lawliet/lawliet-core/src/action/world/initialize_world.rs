@@ -28,18 +28,19 @@ impl ActionInterface for InitializeWorld {
     ) -> ActionResult {
         actor.admin_or_system()?;
 
-        // Presence is the one viewport no action opens: it comes into existence with the world and
-        // outlives everything in it, so it is announced here instead. Pushed before anything else
-        // so it heads that viewport's history, exactly as open_viewport arranges for the rest.
-        let presence = eng.world.presence_viewport;
-        ctx.push_cmd(
-            Command::MapViewport {
-                viewport: presence,
-                kind: ViewportKind::Presence,
-            },
-            CommandRecipient::Viewport(presence),
-            eng.time,
-        );
+        // The two viewports no action opens: they come into existence with the world and outlive
+        // everything in it, so they are announced here instead. Pushed before anything else so
+        // each heads its own viewport's history, exactly as open_viewport arranges for the rest.
+        for (viewport, kind) in [
+            (eng.world.events_viewport, ViewportKind::WorldEvents),
+            (eng.world.data_viewport, ViewportKind::WorldData),
+        ] {
+            ctx.push_cmd(
+                Command::MapViewport { viewport, kind },
+                CommandRecipient::Viewport(viewport),
+                eng.time,
+            );
+        }
 
         let pool_config = eng.config.world_config.charge_pools.clone();
         for (name, specifier) in pool_config {
@@ -58,16 +59,20 @@ impl ActionInterface for InitializeWorld {
             }
         }
 
-        let channel_names: Vec<_> = eng
+        // world channel creation
+        let channels: Vec<_> = eng
             .config
             .world_config
             .world_channels
-            .keys()
-            .copied()
+            .iter()
+            .map(|(name, blueprint)| (*name, *blueprint))
             .collect();
-        for name in channel_names {
-            let response = Action::CreateChannel(CreateChannel { loggable: true })
-                .handle(eng, ctx, actor, version, mutate)?;
+        for (name, base_profile) in channels {
+            let response = Action::CreateChannel(CreateChannel {
+                loggable: true,
+                base_profile,
+            })
+            .handle(eng, ctx, actor, version, mutate)?;
             if mutate {
                 let ActionResponse::CreateChannel(data) = response else {
                     unreachable!()

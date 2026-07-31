@@ -10,18 +10,19 @@
 * - create channel (loggable)
 * - AddState(victim, State::Kidnapped)
 * - store Kidnapping in world
-* - UpdateKidnapChannels (sets victim + ability-owner-side perms)
-*
-* TODO: commands
+* - seat the victim in the channel
 */
 
-use lawliet_types::command::Command;
+use lawliet_types::{
+    actor::ActorDisplay,
+    channel::{AlivePolicy, PermUpdatePolicy},
+    command::Command,
+};
 
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
-        ActionResult, AddState, CreateChannel, ReleaseKidnapping, ScheduleJob,
-        UpdateKidnapChannels,
+        ActionResult, AddState, CreateAndGiveProfile, CreateChannel, ReleaseKidnapping, ScheduleJob,
     },
     actor::modifier::Modifier,
     actor::state::State,
@@ -58,13 +59,11 @@ impl ActionInterface for CreateKidnapping {
             return Err(ActionError::ActorHasStrengthenedPresence);
         }
 
-        let channel_response = Action::CreateChannel(CreateChannel { loggable: true }).handle(
-            eng,
-            ctx,
-            &ActionActor::System,
-            version,
-            mutate,
-        )?;
+        let channel_response = Action::CreateChannel(CreateChannel {
+            loggable: true,
+            base_profile: None,
+        })
+        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         let ActionResponse::CreateChannel(ch_data) = channel_response else {
             unreachable!()
         };
@@ -76,6 +75,7 @@ impl ActionInterface for CreateKidnapping {
                 channel_id,
                 kidnapping_type: self.kidnapping_type,
                 source: self.source,
+                mask: None,
             })
         } else {
             KidnappingKey::default()
@@ -111,13 +111,28 @@ impl ActionInterface for CreateKidnapping {
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
-        Action::UpdateKidnapChannels(UpdateKidnapChannels {}).handle(
-            eng,
-            ctx,
-            &ActionActor::System,
-            version,
-            mutate,
-        )?;
+        // The victim, and only the victim. They talk as themselves for as long as they are alive
+        // to; being held is what put them here, so nothing about being held is asked again.
+        //
+        // The kidnapper side cannot be settled here. It is whoever the source ability belongs to,
+        // which for an org is a roster that changes underneath the kidnapping — people join and
+        // leave while somebody is still being held — so it has to be re-derived rather than seated
+        // once.
+        //
+        // Gated, like everything downstream of a channel this action itself created: on the
+        // validate pass there is no channel yet to put a name in.
+        if mutate {
+            Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                channel_id,
+                player_id: self.victim_id,
+                display: ActorDisplay::Raw(self.victim_id),
+                visible: true,
+                shared: false,
+                transferrable: false,
+                perm_policy: PermUpdatePolicy::Alive(AlivePolicy {}),
+            })
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+        }
 
         Ok(ActionResponse::CreateKidnapping(CreateKidnappingResponse {
             id,

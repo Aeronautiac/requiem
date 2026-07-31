@@ -4,7 +4,7 @@
 */
 
 use crate::{
-    action::{Action, ActionError, ActionInterface, ActionResponse, SetMember},
+    action::{Action, ActionError, ActionInterface, ActionResponse, RemoveFromChannel},
     helpers::{get_lounge, get_player, get_player_mut},
 };
 
@@ -27,11 +27,10 @@ impl ActionInterface for RemoveFromLounge {
             return Err(ActionError::PlayerNotInLounge);
         }
 
-        let lounge = get_lounge(eng, self.lounge_id)?;
-        Action::SetMember(SetMember {
+        let channel_id = get_lounge(eng, self.lounge_id)?.channel_id;
+        Action::RemoveFromChannel(RemoveFromChannel {
+            channel_id,
             player_id: self.player_id,
-            channel_id: lounge.channel_id,
-            settings: None,
         })
         .handle(eng, ctx, actor, version, mutate)?;
 

@@ -286,6 +286,15 @@ export class SessionState {
         name: this.#name(view, slotKeyToString(f.accuser_id)),
         org: orgDisplayName(f.org),
       }));
+    } else if ("Blackout" in cmd) {
+      // Worth a toast in both directions: going dark tells you why the feed has stopped, and
+      // coming back tells you there is a backlog waiting.
+      const on = cmd.Blackout.active;
+      this.#notify(
+        recipient,
+        on ? t("blackout_begun_label") : t("blackout_over_label"),
+        on ? t("blackout_begun") : t("blackout_over"),
+      );
     } else if ("PseudocideRevival" in cmd) {
       this.#notify(recipient, t("toast_revival_title"), t("toast_revival_body", {
         name: this.#name(view, slotKeyToString(cmd.PseudocideRevival.target_id)),

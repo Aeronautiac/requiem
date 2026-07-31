@@ -1,13 +1,12 @@
-use indexmap::indexset;
+use lawliet_types::channel::{ContactPolicy, PermUpdatePolicy};
 
 use crate::{
     ability::AbilityInterface,
     action::{
-        Action, ActionActor, ActionError, ActionInterface, ActionResponse, SetGroupchatOwner,
-        SetMember, UpdateContactChannels,
+        Action, ActionActor, ActionError, ActionInterface, ActionResponse, CreateAndGiveProfile,
+        SetGroupchatOwner,
     },
     actor::{ActorDisplay, modifier::Modifier},
-    channel::{ChannelMember, ChannelPermissions},
     config::ability::AbilityName,
     helpers::{actor_id, get_actor, get_gc, get_gc_mut, get_player_mut},
 };
@@ -61,13 +60,14 @@ impl AbilityInterface for CreateGroupchat {
         if mutate {
             let channel_id = get_gc(eng, gc_id)?.channel_id;
 
-            Action::SetMember(SetMember {
+            Action::CreateAndGiveProfile(CreateAndGiveProfile {
                 channel_id,
                 player_id: creator_id,
-                settings: Some(ChannelMember {
-                    perms: ChannelPermissions::EMPTY,
-                    displays: indexset![ActorDisplay::Raw(creator_id)],
-                }),
+                display: ActorDisplay::Raw(creator_id),
+                visible: true,
+                shared: false,
+                transferrable: false,
+                perm_policy: PermUpdatePolicy::Contact(ContactPolicy {}),
             })
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
@@ -76,12 +76,6 @@ impl AbilityInterface for CreateGroupchat {
 
             let player_data = get_player_mut(eng, creator_id)?;
             player_data.add_groupchat(gc_id);
-
-            // Apply the group chat's channel permissions from current state (Send|View).
-            Action::UpdateContactChannels(UpdateContactChannels {
-                player_id: creator_id,
-            })
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
             // Hand ownership to the creator.
             Action::SetGroupchatOwner(SetGroupchatOwner {

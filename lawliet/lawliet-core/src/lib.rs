@@ -10,6 +10,11 @@
 * jobs are flushed before each requested action to maintain temporal causality. time is a u128 of
 * unix milliseconds. the engine panics on inconsistent state — it is designed to be rolled back
 * by replaying the saved action log.
+* a job holds an absolute timestamp and so cannot be paused. anything whose deadline may need to
+* stop and start again holds a Timer instead — an object in the world, keyed like any other, which
+* owns a job and the arithmetic for banking what a run served. UpdateTimers stops and starts every
+* timer that opted into being stopped, in one sweep that knows nothing about what any of them are
+* for.
 *
 * --- actors ---
 * players and organizations are both actors. actor structs carry IndexSets of ability, passive,
@@ -56,11 +61,26 @@
 * track reference counts — unlink returning true signals the pool is safe to destroy.
 *
 * --- polls ---
-* polls carry optional accept/reject action payloads that fire on resolution. visibility scopes:
-* Org, Channel, or AllPresent. VoterPolicy: Present (not dead/imprisoned/kidnapped, can see poll).
-* PollPolicy: AlwaysInconclusive, Majority (>50%), or WinningVote (highest count; ties inconclusive).
-* update_policy is checked on each vote; timeout_policy fires when the timer expires. vote weight:
-* organizations vote 0; players vote 1, or more with a VoteAmplification passive.
+* a poll is a list of options, each with an optional action payload that fires if it wins. votes
+* name an option by index, and the list is fixed for the poll's life — an option whose payload
+* stops validating cancels the whole poll rather than being dropped out from under the votes.
+* PollPolicy: AlwaysInconclusive, Majority (an option holding >50% of the possible weight), or
+* MostVoted (the heaviest option; ties inconclusive, as is a poll nobody voted in). update_policy
+* is checked on each vote; timeout_policy fires when the timer expires. vote weight: organizations
+* vote 0; players vote 1, or more with a VoteAmplification passive — ignore_amplification clamps
+* every voter back to one. VoterPolicy: Present (not dead/imprisoned/kidnapped, in the poll's
+* scope).
+*
+* a poll owns no viewport. it hangs off a parent — Org, Channel, or World — and is addressed to
+* that parent's viewport, so it inherits every reason its audience can shrink and dies when its
+* parent does. the parent answers two questions that must not be confused: its MEMBERSHIP is who
+* the poll is put to, its VIEWPORT is who can reach the ballot right now.
+*
+* that gap is why counting a vote and entering one are separate questions. counts() is the tally
+* rule and reads the voter policy; can_enter() is counts() plus can_view(), and is what
+* AddVote/RemoveVote check. a blackout opens the gap — a world poll goes off the air, so nobody
+* may touch their vote, while every vote already cast still counts and the poll can still resolve
+* on what it holds.
 *
 * --- prosecution ---
 * three-phase state machine: Custody -> Trial -> Voting.
@@ -95,17 +115,19 @@
 * player or org), or Viewport.
 *
 * a viewport is an opaque engine-allocated identity that commands are addressed to. objects that
-* gate visibility — channels, bugs, polls, passives, and the world itself — each own one, and
+* gate visibility — channels, bugs, passives, and the world itself — each own one, and
 * each writes its viewport from its OWN visibility rule; the viewport is never consulted to
 * answer "can this actor see X?", only "who do I send this to?". gaining access delivers
 * everything previously addressed to that viewport, in order, which is what carries history to a
 * late arrival. losing access only stops further delivery: client state is monotonic and nothing
 * is ever retracted, so deletion is expressed as archival.
 *
-* the world-level presence viewport (every player without Modifier::NoPresence) is what makes
-* world events presence-gated. it replaced both the BasePlayer catch-up stream and the deferred
-* command queue: an absent player is simply not a member, and re-entry backfills the backlog in
-* order.
+* the world owns two viewports rather than one. the events viewport (every player without
+* Modifier::NoPresence) is what makes world events presence-gated, and is what a blackout empties.
+* the data viewport holds every player from creation and is never revoked by anything, because
+* existence and the clock must reach a player who cannot see anything else. together they replaced
+* both the BasePlayer catch-up stream and the deferred command queue: an absent player is simply
+* not a member of the events one, and re-entry backfills the backlog in order.
 *
 * command coverage: Death, Kidnapping, PseudocideRevival, channel lifecycle (add message, map
 * lounge/gc, archive), notebook ops (map, write, borrow status), ability / passive views, bug
@@ -150,6 +172,7 @@ mod poll;
 mod prosecution;
 #[cfg(test)]
 mod test_helpers;
+mod timer;
 mod viewport;
 mod world;
 
@@ -163,9 +186,12 @@ pub use common::{
 // theres no point in changing it at this point.
 
 // TODO:
+// - Channel rework
+// - Press conferences
+// - A poll's deadline never reaches the client. UpdatePoll carries no remaining time, so a poll
+//   whose timer is paused looks exactly like one that is simply taking a while. Nothing renders a
+//   countdown yet; whatever does has to be told about the pause along with the time.
 // - Rulesets & live config editing
-// - Prosecution disruption
-// - Blackout
 // - Add destroy actions for the different kinds of objects (actors will be the final destroyable objects. they may get very messy.)
 // - Optimize by going through and caching what can be cached, adding indirection for very large
 // enums, and using smallvec when possible

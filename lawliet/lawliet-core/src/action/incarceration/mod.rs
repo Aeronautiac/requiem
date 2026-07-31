@@ -22,7 +22,9 @@ mod incarceration_tests {
         (victim, onlooker)
     }
 
-    fn announcement(ctx: &crate::action::ActionContext) -> Option<(Option<u128>, CommandRecipient)> {
+    fn announcement(
+        ctx: &crate::action::ActionContext,
+    ) -> Option<(Option<u128>, CommandRecipient)> {
         ctx.commands.iter().find_map(|p| match &p.cmd {
             Command::Incarceration { duration, .. } => Some((*duration, p.recipient.clone())),
             _ => None,
@@ -33,13 +35,13 @@ mod incarceration_tests {
     fn incarcerating_announces_it_to_everyone_present() {
         let mut eng = Engine::new();
         let (victim, _) = world(&mut eng);
-        let presence = eng.world.presence_viewport;
+        let events = eng.world.events_viewport;
 
         let (_, ctx) = incarcerate(&mut eng, 1, victim, None);
 
         assert_eq!(
             announcement(&ctx),
-            Some((None, CommandRecipient::Viewport(presence)))
+            Some((None, CommandRecipient::Viewport(events)))
         );
     }
 
@@ -62,10 +64,11 @@ mod incarceration_tests {
         let (_, ctx) = incarcerate(&mut eng, 1, victim, None);
 
         // Incarceration carries victim + duration only; there is no reveal command at all.
-        assert!(!ctx.commands.iter().any(|p| matches!(
-            &p.cmd,
-            Command::KidnapReveal { .. }
-        )));
+        assert!(
+            !ctx.commands
+                .iter()
+                .any(|p| matches!(&p.cmd, Command::KidnapReveal { .. }))
+        );
     }
 
     // The victim has to hear it. Incarceration takes their presence, which removes them from the
@@ -107,22 +110,30 @@ mod incarceration_tests {
         crate::test_helpers::null_action(&mut eng, 7_000);
 
         assert!(get_incarceration(&eng, id).is_err());
-        assert!(!get_actor(&eng, victim).unwrap().has_state(State::Incarcerated));
+        assert!(
+            !get_actor(&eng, victim)
+                .unwrap()
+                .has_state(State::Incarcerated)
+        );
     }
 
     #[test]
     fn releasing_announces_it_and_frees_the_victim() {
         let mut eng = Engine::new();
         let (victim, _) = world(&mut eng);
-        let presence = eng.world.presence_viewport;
+        let events = eng.world.events_viewport;
         let (id, _) = incarcerate(&mut eng, 1, victim, None);
 
         let (_, ctx) = release_incarceration(&mut eng, 2, id).unwrap();
 
         assert!(ctx.commands.iter().any(|p| matches!(
             (&p.cmd, &p.recipient),
-            (Command::IncarcerationReleased { .. }, CommandRecipient::Viewport(v)) if *v == presence
+            (Command::IncarcerationReleased { .. }, CommandRecipient::Viewport(v)) if *v == events
         )));
-        assert!(!get_actor(&eng, victim).unwrap().has_state(State::Incarcerated));
+        assert!(
+            !get_actor(&eng, victim)
+                .unwrap()
+                .has_state(State::Incarcerated)
+        );
     }
 }

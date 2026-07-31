@@ -103,7 +103,14 @@ mod presence_tests {
 
     fn has_presence(eng: &Engine, id: ActorKey) -> bool {
         eng.world
-            .get_viewport(eng.world.presence_viewport)
+            .get_viewport(eng.world.events_viewport)
+            .unwrap()
+            .contains(id)
+    }
+
+    fn in_world_data(eng: &Engine, id: ActorKey) -> bool {
+        eng.world
+            .get_viewport(eng.world.data_viewport)
             .unwrap()
             .contains(id)
     }
@@ -165,29 +172,68 @@ mod presence_tests {
 
         assert!(has_presence(&eng, absent));
         // Re-entry is what replays the world events missed while away: everything addressed to
-        // the presence viewport since the exit is delivered, in order, on this one command.
-        let presence = eng.world.presence_viewport;
+        // the events viewport since the exit is delivered, in order, on this one command.
+        let events = eng.world.events_viewport;
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(absent)
                 && matches!(
                     &p.cmd,
                     Command::EnterViewport { viewport, actor }
-                        if *viewport == presence && *actor == absent
+                        if *viewport == events && *actor == absent
                 )
         }));
     }
 
+    // Existence is ungated, so losing presence must not cost a player the world-data viewport.
+    // Otherwise two incarcerated players share the prison channel while neither has been told the
+    // other exists.
     #[test]
-    fn world_events_are_addressed_to_the_presence_viewport() {
+    fn losing_presence_keeps_the_world_data_viewport() {
+        let mut eng = Engine::new();
+        let absent = add_player(&mut eng, 0, Role::Civilian, "absent");
+        add_state(&mut eng, 0, absent, State::Incarcerated);
+
+        assert!(!has_presence(&eng, absent));
+        assert!(in_world_data(&eng, absent));
+
+        // Nor does dying.
+        let dead = add_player(&mut eng, 0, Role::Civilian, "dead");
+        announced_kill(&mut eng, dead);
+        assert!(!has_presence(&eng, dead));
+        assert!(in_world_data(&eng, dead));
+    }
+
+    // A player created later learns about the players already there, because entry to the data
+    // viewport backfills every MapActor addressed to it.
+    #[test]
+    fn a_new_player_enters_the_world_data_viewport() {
+        let mut eng = Engine::new();
+        let first = add_player(&mut eng, 0, Role::Civilian, "first");
+        add_state(&mut eng, 0, first, State::Incarcerated);
+
+        let second = add_player(&mut eng, 0, Role::Civilian, "second");
+        let data = eng.world.data_viewport;
+
+        assert!(in_world_data(&eng, second));
+        // The incarcerated player is still a member, so the new arrival reaches them.
+        assert!(in_world_data(&eng, first));
+        assert!(
+            eng.world.get_viewport(data).unwrap().contains(first),
+            "an absent player must still receive who exists"
+        );
+    }
+
+    #[test]
+    fn world_events_are_addressed_to_the_events_viewport() {
         let mut eng = Engine::new();
         add_player(&mut eng, 0, Role::Civilian, "p1");
         let victim = add_player(&mut eng, 0, Role::Civilian, "victim");
 
         let (_, ctx) = announced_kill(&mut eng, victim);
-        let presence = eng.world.presence_viewport;
+        let events = eng.world.events_viewport;
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == CommandRecipient::Viewport(presence)
+            p.recipient == CommandRecipient::Viewport(events)
                 && matches!(&p.cmd, Command::Death { target_id, .. } if *target_id == victim)
         }));
         // Exactly once, and NOT mirrored to System. Admin reads every viewport, so a mirror

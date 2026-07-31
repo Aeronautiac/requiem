@@ -10,7 +10,7 @@
 // the price of the guarantee, and it is bounded by what was actually delivered rather than by the
 // size of the game.
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import type { ActorDisplay } from "../bindings";
+import type { ActorDisplay, ProsecutionSide } from "../bindings";
 import { slotKeyToString } from "../bindings";
 import { NOTIF_CHANNEL, new_channel, orgDisplayName, playerLabel, t } from "./helpers.svelte";
 import type {
@@ -63,6 +63,11 @@ export class GameView {
   og_orgs = new SvelteSet<string>();
   poll_views = new SvelteMap<string, PollView>();
   prosecutions = new SvelteMap<string, ProsecutionData>();
+  // Personal: which prosecutions this view is a party to, and on which side. The public snapshot
+  // cannot say — an anonymous prosecutor is Mysterious in their own copy of it — so the engine
+  // tells each side directly. Kept separately from `prosecutions` because it is a different fact
+  // arriving on a different route, and either may land first.
+  own_prosecutions = new SvelteMap<string, ProsecutionSide>();
 
   // ---- indices ----
   //
@@ -225,8 +230,12 @@ export class GameView {
 
   // What world events ride. A view that has left it still holds every event it was given but is
   // hearing nothing further, which is the one thing a news feed must not imply otherwise.
-  presence_viewport(): string | undefined {
-    return this.#viewport_of.get(PRESENCE);
+  //
+  // Left for two different reasons that look identical from here: this view lost presence, or the
+  // world went dark. Both mean the same thing to a reader — what you are looking at is the last
+  // thing you were told — so neither needs telling apart to render it honestly.
+  world_events_viewport(): string | undefined {
+    return this.#viewport_of.get(WORLD_EVENTS);
   }
 
   record_poll_viewport(viewport: string | undefined, poll_id: string) {
@@ -237,8 +246,8 @@ export class GameView {
     this.record_viewport(viewport, PROSECUTION_PREFIX + prosecution_id);
   }
 
-  record_presence_viewport(viewport: string) {
-    this.#viewport_of.set(PRESENCE, viewport);
+  record_world_events_viewport(viewport: string) {
+    this.#viewport_of.set(WORLD_EVENTS, viewport);
   }
 
   // May this view see what rode this viewport at all? Held once is enough — what was delivered
@@ -315,4 +324,8 @@ const POLL_PREFIX = "poll:";
 const PROSECUTION_PREFIX = "prosecution:";
 // The world's own viewports belong to no object, so they are filed under fixed keys rather than an
 // id. More join this when rulesets land.
-const PRESENCE = "world:presence";
+//
+// Only the events one is filed: it is the only viewport whose loss has to be shown. World data is
+// ungated — every player holds it from creation and never leaves — so nothing about it is ever
+// stale and there is nothing to answer.
+const WORLD_EVENTS = "world:events";

@@ -3,15 +3,14 @@
 * Add a player to a group chat
 */
 
-use indexmap::indexset;
+use lawliet_types::channel::{ContactPolicy, PermUpdatePolicy};
 
 use crate::{
     action::{
-        Action, ActionError, ActionInterface, ActionResponse, SetGroupchatOwner, SetMember,
-        UpdateContactChannels,
+        Action, ActionError, ActionInterface, ActionResponse, CreateAndGiveProfile,
+        SetGroupchatOwner,
     },
     actor::{ActorDisplay, modifier::Modifier},
-    channel::{ChannelMember, ChannelPermissions},
     helpers::{
         actor_id, cmd_contact_log, get_actor, get_actor_mut, get_gc, get_gc_mut, get_player_mut,
     },
@@ -58,15 +57,16 @@ impl ActionInterface for AddToGroupchat {
         // The channel/cache wiring is only meaningful once we actually mutate, exactly
         // like the lounge participant setup in create_lounge.
         if mutate {
-            // Create the channel member entry so the player can see the gc channel.
-            // UpdateContactChannels then applies the real (Send|View) perms from state.
-            Action::SetMember(SetMember {
+            // The name they speak under here, which is also what makes them a member. Its contact
+            // policy decides what it permits, now and whenever their standing moves.
+            Action::CreateAndGiveProfile(CreateAndGiveProfile {
                 channel_id,
                 player_id: self.player_id,
-                settings: Some(ChannelMember {
-                    perms: ChannelPermissions::EMPTY,
-                    displays: indexset![ActorDisplay::Raw(self.player_id)],
-                }),
+                display: ActorDisplay::Raw(self.player_id),
+                visible: true,
+                shared: false,
+                transferrable: false,
+                perm_policy: PermUpdatePolicy::Contact(ContactPolicy {}),
             })
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
@@ -75,11 +75,6 @@ impl ActionInterface for AddToGroupchat {
 
             let player_data = get_player_mut(eng, self.player_id)?;
             player_data.add_groupchat(self.groupchat_id);
-
-            Action::UpdateContactChannels(UpdateContactChannels {
-                player_id: self.player_id,
-            })
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
             // The gc owner is who brought them in. An ownerless gc was seated by the engine, which
             // is what the log then says.

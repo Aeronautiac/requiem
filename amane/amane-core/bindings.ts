@@ -14,6 +14,10 @@ export type ProsecutionKey = SlotKey;
 export type KidnappingKey = SlotKey;
 export type IncarcerationKey = SlotKey;
 export type ViewportKey = SlotKey;
+export type ProfileKey = SlotKey;
+// A record's identity, and a plain counter rather than a slot: a record is never freed, so there
+// is no generation to guard against reuse.
+export type LogID = number;
 
 export type Role =
   | "Kira"
@@ -95,9 +99,36 @@ export const ChannelPermissionFlag = {
   LoggabilityControl: 1 << 2,
 } as const;
 
-export type ChannelMember = {
+// One profile: who someone may appear as in a channel, and what appearing as them may do.
+//
+// A profile is the unit of participation, so this is what both halves of the channel protocol
+// carry — the visible ones go to the room on ChannelRoster, and your own come to you on
+// ProfileAccess. The two are separate because you may hold a name before the room is told it
+// exists, and the display of an unrevealed name is exactly what must not go to the room.
+export type ChannelProfileView = {
+  profile_id: ProfileKey;
+  display: ActorDisplay;
   perms: ChannelPermissions;
-  displays: ActorDisplay[];
+};
+
+// A profile's permission rule, evaluated by the engine after every action. The client never
+// applies one — it carries them because the admin setup actions name them.
+export type PermUpdatePolicy =
+  | { Fixed: { perms: ChannelPermissions } }
+  | { Contact: Record<string, never> }
+  | { News: Record<string, never> }
+  | { Presence: { perms: ChannelPermissions } }
+  | { Alive: Record<string, never> }
+  | { Trial: { prosecution_id: ProsecutionKey } };
+
+export type BlueprintDisplayKind = "OwnerRaw";
+
+// The profile every player is handed a copy of, and what makes them a member at all. A channel
+// without one has its membership decided by whatever action owns it.
+export type ProfileBlueprint = {
+  start_visible: boolean;
+  perm_policy: PermUpdatePolicy;
+  display_kind: BlueprintDisplayKind;
 };
 
 export type OrganizationName = "NULL" | "KK" | "TF" | "SPK";
@@ -134,8 +165,13 @@ export type ContactLog = {
 };
 
 export type TapInOutcome =
-  | { Found: { channel_id: ChannelKey; range: number | null } }
+  // There is a record to read. `range` is how far back from now, or null for everything it ever
+  // held. The log rather than the channel, so answering a tap-in needs no model of which channel
+  // owns what.
+  | { Found: { log: LogID; range: number | null } }
+  // Nothing has ever been registered under that id.
   | "NoSuchContact"
+  // The channel is real, but logging is off there, so nothing was ever written down.
   | "NotLoggable";
 
 export type PassiveType =
@@ -148,19 +184,34 @@ export type PassiveType =
 
 export type VoterPolicy = "Present";
 
-export type PollPolicy = "AlwaysInconclusive" | "Majority" | "WinningVote";
+export type PollPolicy = "AlwaysInconclusive" | "Majority" | "MostVoted";
 
-export type PollVisibility =
+// What a poll hangs off. Its membership is who the poll is put to; its viewport is who can reach
+// the ballot right now, and a poll is addressed to that viewport rather than owning one.
+export type PollParent =
   | { Org: ActorKey }
   | { Channel: ChannelKey }
-  | "AllPresent";
+  | "World";
 
 export type PollSubject =
   | { OrgAbility: AbilityBehaviour }
   | { CivilianArrest: ActorKey }
   | { Generic: string };
 
-export type PollOutcome = "Accepted" | "Rejected" | "Inconclusive" | "Cancelled";
+// Which option a vote is for: an index into the poll's options, fixed for the poll's life.
+export type PollOptionIndex = number;
+
+export type PollOptionLabel = "Accept" | "Reject" | { Generic: string };
+
+export type PollOptionTally = {
+  label: PollOptionLabel;
+  weight: number;
+};
+
+export type PollOutcome =
+  | { Resolved: PollOptionIndex }
+  | "Inconclusive"
+  | "Cancelled";
 
 export type AnonymousLoungeRoleDisplay = "Dynamic" | { Static: Role };
 
@@ -178,6 +229,10 @@ export type BugContext = "Explicit" | "Custody";
 export type ProsecutionSource =
   | "None"
   | { Ability: AbilityKey };
+
+// Which side of a prosecution you are on, told to you privately. Counsel is absent because a
+// lawyer is named publicly on the snapshot and always shown raw — there was never anything to tell.
+export type ProsecutionSide = "Prosecutor" | "Defendant";
 
 export type TrialSubphaseView = "Grace" | "Presentation";
 
@@ -217,17 +272,6 @@ export type IncarcerationSource =
 
 export type WorldChannelName = "News" | "General" | "Prison" | "LAndWatari";
 
-export type WorldChannelOverride = {
-  default_perms: ChannelPermissions;
-  force_perms: ChannelPermissions;
-};
-
-export type OverrideSource =
-  | { Role: Role }
-  | { Manual: number }
-  | { PressConference: ActorKey }
-  | "Incarceration";
-
 export type AbilityBehaviour =
   | { Contact: { target_id: ActorKey } }
   | { Pseudocide: { target_id: ActorKey; true_name: string; death_message: string; role: Role; notebook_transferred: boolean; ability_transferred: boolean } }
@@ -255,6 +299,7 @@ export type AbilityBehaviour =
   | { TrueNameReroll: { target: ActorKey; true_name: string } }
   | { TapIn: { contact_id: number } }
   | { SilentProsecute: { target: ActorKey } }
+  | { Blackout: Record<string, never> }
   | { PublicKidnap: { target: ActorKey; performer: ActorKey | null } }
   | { AnonymousKidnap: { target: ActorKey } }
   | { Bug: { target: ActorKey } };
@@ -463,6 +508,8 @@ export type UpdatePassiveVisibilities = Record<string, never>;
 
 export type CreateChannel = {
   loggable: boolean;
+  // Set for a channel everyone belongs to; null for one whose membership some action owns.
+  base_profile: ProfileBlueprint | null;
 };
 
 export type DestroyChannel = {
@@ -471,7 +518,12 @@ export type DestroyChannel = {
 
 export type SendMessage = {
   channel_id: ChannelKey;
-  display: ActorDisplay;
+  // Who to say it as. A player must name a profile they own, and Send belongs to the profile
+  // rather than to the sender: the same person may be able to speak here as one of their names and
+  // not as another.
+  //
+  // null is an admin speaking as nobody, which shows as ActorDisplay::System.
+  profile_id: ProfileKey | null;
   content: string;
 };
 
@@ -485,11 +537,64 @@ export type SetTrueName = {
   true_name: string;
 };
 
-export type SetMember = {
-  player_id: ActorKey;
+// Membership is not set, it follows. You are a member of a channel exactly while you own a profile
+// in it, so these are the whole of joining and leaving as well as of who may appear as what.
+
+// Put a name into a channel. It starts owned by nobody; handing it out is SetProfileAccess.
+export type AddProfile = {
   channel_id: ChannelKey;
-  settings: ChannelMember | null;
+  display: ActorDisplay;
+  // False for a name the room does not know yet. It is absent from the roster until its first
+  // message reveals it.
+  visible: boolean;
+  // Whether more than one actor may hold it at once.
+  shared: boolean;
+  // Whether it could ever belong to somebody other than whoever holds it now. A name that could
+  // not is destroyed along with its holder's membership.
+  transferrable: boolean;
+  perm_policy: PermUpdatePolicy;
 };
+
+// Put a name into a channel and hand it straight to somebody, which is also what makes them a
+// member. By far the common shape.
+export type CreateAndGiveProfile = {
+  channel_id: ChannelKey;
+  player_id: ActorKey;
+  display: ActorDisplay;
+  visible: boolean;
+  shared: boolean;
+  transferrable: boolean;
+  perm_policy: PermUpdatePolicy;
+};
+
+export type SetProfilePolicy = {
+  channel_id: ChannelKey;
+  profile_id: ProfileKey;
+  perm_policy: PermUpdatePolicy;
+};
+
+export type DeleteProfile = {
+  channel_id: ChannelKey;
+  profile_id: ProfileKey;
+};
+
+// Take a player out of a channel entirely, disposing of each of their names by whether it could
+// ever have belonged to anybody else.
+export type RemoveFromChannel = {
+  channel_id: ChannelKey;
+  player_id: ActorKey;
+};
+
+// Give a player a profile, or take it away. A first profile makes them a member; losing their last
+// ends the membership.
+export type SetProfileAccess = {
+  channel_id: ChannelKey;
+  profile_id: ProfileKey;
+  player_id: ActorKey;
+  granted: boolean;
+};
+
+export type UpdateChannels = Record<string, never>;
 
 export type AddToGroupchat = {
   groupchat_id: GroupchatKey;
@@ -524,10 +629,6 @@ export type RemoveFromLounge = {
   player_id: ActorKey;
 };
 
-export type UpdateContactChannels = {
-  player_id: ActorKey;
-};
-
 export type Null = Record<string, never>;
 export type Crash = Record<string, never>;
 export type NextIteration = Record<string, never>;
@@ -553,14 +654,15 @@ export type ReleaseIncarceration = {
   forced: boolean;
 };
 
-export type UpdatePrisonChannel = {
-  actor_id: ActorKey;
-};
+// Reconcile who is in the prison channel against who is actually locked up. The prison hands out
+// no seats of its own, so its membership is managed and the incarceration state is the authority.
+export type UpdatePrisonChannel = Record<string, never>;
 
 export type CreateKidnapping = {
   victim_id: ActorKey;
   kidnapping_type: KidnappingType;
   source: KidnappingSource;
+  duration: number | null;
 };
 
 export type CullKidnappings = {
@@ -572,7 +674,10 @@ export type ReleaseKidnapping = {
   forced: boolean;
 };
 
-export type UpdateKidnapChannels = Record<string, never>;
+// Re-derive who is on the captors' side of every active kidnapping, and seat them. A sweep over
+// KIDNAPPINGS rather than channels: who the captors are is a property of what started the
+// kidnapping, and an org's roster moves while somebody is still being held.
+export type UpdateKidnappings = Record<string, never>;
 
 export type AddNotebook = {
   fake: boolean;
@@ -650,23 +755,29 @@ export type GivePassive = {
 
 export type AddVote = {
   poll_id: PollKey;
-  accept: boolean;
+  option: PollOptionIndex;
+};
+
+export type PollOption = {
+  label: PollOptionLabel;
+  payload: Action | null;
 };
 
 export type CreatePoll = {
   voter_policy: VoterPolicy;
-  visibility: PollVisibility;
+  parent: PollParent;
   subject: PollSubject;
   update_policy: PollPolicy;
   timeout_policy: PollPolicy;
-  accept_payload: Action | null;
-  reject_payload: Action | null;
+  options: PollOption[];
+  ignore_amplification: boolean;
   duration: number | null;
+  opener: ActorKey | null;
 };
 
 export type PollCleanup = {
   poll_id: PollKey;
-  cancelled: boolean;
+  outcome: PollOutcome;
 };
 
 export type PollTimeout = {
@@ -720,10 +831,6 @@ export type TerminateProsecution = {
 
 export type Update = Record<string, never>;
 
-export type AddToWorldChannels = {
-  player_id: ActorKey;
-};
-
 export type CreateOrgs = Record<string, never>;
 
 export type InitializeEngine = {
@@ -738,16 +845,10 @@ export type SetRandomSeed = {
   seed: number;
 };
 
-export type SetWorldChannelOverride = {
-  player_id: ActorKey;
-  channel_name: WorldChannelName;
-  source: OverrideSource;
-  priority: number;
-  override_data: WorldChannelOverride | null;
-};
+export type UpdateWorldViewports = Record<string, never>;
 
-export type UpdateWorldChannelPerms = {
-  player_id: ActorKey;
+export type SetBlackout = {
+  active: boolean;
 };
 
 export type Action =
@@ -817,11 +918,16 @@ export type Action =
   | { CreateChannel: CreateChannel }
   | { CreatePersonalChannel: CreatePersonalChannel }
   | { DestroyChannel: DestroyChannel }
-  | { SetMember: SetMember }
+  | { AddProfile: AddProfile }
+  | { CreateAndGiveProfile: CreateAndGiveProfile }
+  | { DeleteProfile: DeleteProfile }
+  | { RemoveFromChannel: RemoveFromChannel }
+  | { SetProfileAccess: SetProfileAccess }
+  | { SetProfilePolicy: SetProfilePolicy }
+  | { UpdateChannels: UpdateChannels }
   | { SetLoggable: SetLoggable }
   | { SetTrueName: SetTrueName }
   | { CreateLounge: CreateLounge }
-  | { UpdateContactChannels: UpdateContactChannels }
   | { LeaveLounge: LeaveLounge }
   | { RemoveFromLounge: RemoveFromLounge }
   | { AddToGroupchat: AddToGroupchat }
@@ -838,9 +944,8 @@ export type Action =
   | { SelectLawyer: SelectLawyer }
   | { CullProsecutions: CullProsecutions }
   | { TerminateProsecution: TerminateProsecution }
-  | { AddToWorldChannels: AddToWorldChannels }
-  | { UpdateWorldChannelPerms: UpdateWorldChannelPerms }
-  | { SetWorldChannelOverride: SetWorldChannelOverride }
+  | { UpdateWorldViewports: UpdateWorldViewports }
+  | { SetBlackout: SetBlackout }
   | { InitializeEngine: InitializeEngine }
   | { SetRandomSeed: SetRandomSeed }
   | { UpdateBugVisibilities: UpdateBugVisibilities }
@@ -849,7 +954,7 @@ export type Action =
   | { CreateKidnapping: CreateKidnapping }
   | { ReleaseKidnapping: ReleaseKidnapping }
   | { CullKidnappings: CullKidnappings }
-  | { UpdateKidnapChannels: UpdateKidnapChannels }
+  | { UpdateKidnappings: UpdateKidnappings }
   | { UpdatePrisonChannel: UpdatePrisonChannel }
   | { CreateIncarceration: CreateIncarceration }
   | { ReleaseIncarceration: ReleaseIncarceration }
@@ -917,7 +1022,11 @@ export type ActionError =
   | "AlreadyLeader"
   | "ChannelDoesntExist"
   | "NotAChannelMember"
-  | "DisplayNotOwned"
+  | "ProfileNotFound"
+  | "ProfileNotOwned"
+  | "ProfileNotShareable"
+  | "ProfileRequired"
+  | "IncompatiblePolicy"
   | "PlayerNotInLounge"
   | "LoungeDoesntExist"
   | "GroupchatDoesntExist"
@@ -940,7 +1049,14 @@ export type ActionError =
   | "PersonalChannelLimitReached"
   | "PerformerRequiresOrg"
   | "NotAnOgMember"
-  | "CannotSacrificeForOwnName";
+  | "CannotSacrificeForOwnName"
+  | "CannotProsecuteSelf"
+  | "GameAlreadyStarted"
+  | "GameNotStarted"
+  | "MustChooseSuccessor"
+  | "NoEyes"
+  | "NotAPollOption"
+  | "PollHasNoOptions";
 
 export type ActionResponse =
   | { AddPlayer: { id: ActorKey } }
@@ -957,6 +1073,8 @@ export type ActionResponse =
   | { SystemUseOrgAbility: { poll_id: PollKey | null } }
   | { CreateAndGiveOrgAbility: { id: AbilityKey } }
   | { CreateChannel: { id: ChannelKey } }
+  | { AddProfile: { profile_id: ProfileKey } }
+  | { CreateAndGiveProfile: { profile_id: ProfileKey } }
   | { CreateLounge: { lounge_id: LoungeKey; channel_id: ChannelKey } }
   | { CreateGroupchat: { id: GroupchatKey } }
   | { CreateBug: { id: BugKey } }
@@ -991,11 +1109,23 @@ export type Command =
   | { ArchiveBug: { bug_key: BugKey } }
   | { Bugged: { context: BugContext } }
   | { NewIteration: { iteration: number } }
+  | { Blackout: { active: boolean } }
   | { GcOwnerStatus: { owner: boolean; gc_id: GroupchatKey } }
   | { OgStatus: { target_id: ActorKey; org_id: ActorKey; og: boolean } }
-  | { ShowChannelMember: { channel_id: ChannelKey; display: ActorDisplay; channel_perms: ChannelPermissions } }
-  | { RemoveChannelMember: { channel_id: ChannelKey; display: ActorDisplay } }
-  | { UpdateChannelView: { channel_id: ChannelKey; perms: ChannelPermissions; displays: ActorDisplay[] } }
+  // DIRECTED: every name the room can currently see, and what each may do. The whole set, every
+  // time, sent to each viewer when it changes and to anyone the moment they gain sight of it.
+  //
+  // Directed and whole rather than addressed to the channel's viewport, and that is the entire
+  // point: a viewport replays its history to anyone who enters, so a roster delivered that way
+  // would hand every new arrival every name the channel has ever held — the previous holder of a
+  // notebook, everyone who was ever in a lounge, every mask worn at a trial.
+  //
+  // Invisible profiles are absent from it. Their existence is the thing being kept.
+  | { ChannelRoster: { channel_id: ChannelKey; profiles: ChannelProfileView[] } }
+  // DIRECTED: which profiles in this channel you may speak as, whether or not the room can see
+  // them, and what each permits. Says nothing about whether you can READ the channel — that is the
+  // viewport's answer. An empty set is a member who holds nothing here.
+  | { ProfileAccess: { channel_id: ChannelKey; profiles: ChannelProfileView[] } }
   | { KiraConnectionAttempt: { channel_id: ChannelKey; user: ActorKey; success: boolean } }
   | { NotebookWrite: { notebook_id: NotebookKey; user_id: ActorKey; message: string | null; true_name: string; delay: number; successes_remaining: number; attempts_remaining: number; success: boolean; target_saved: boolean } }
   | { NotebookBorrowingStatus: { notebook_id: NotebookKey; borrowed: boolean } }
@@ -1004,17 +1134,20 @@ export type Command =
   | { RemoveAbility: { ability_id: AbilityKey } }
   | { UpdatePassiveView: { passive_type: PassiveType; passive_id: PassiveKey; owner_id: ActorKey } }
   | { RemovePassive: { passive_id: PassiveKey } }
-  | { RevealAutopsyMessages: { target_id: ActorKey; range: number; redact_names: boolean } }
+  // The record to read rather than whose it was: the log stores the raw messages, so answering
+  // this needs no model of which player or channel owns what.
+  | { RevealAutopsyMessages: { log: LogID; range: number; redact_names: boolean } }
   | { TapInResult: { contact_id: number; outcome: TapInOutcome } }
   | { ChannelTapped: { channel_id: ChannelKey } }
   | { RevealTrueName: { target_id: ActorKey; true_name: string } }
   | { RevealNotebookHolding: { target_id: ActorKey; holding: boolean } }
   | { RoleUpdate: { target_id: ActorKey; role: Role } }
   | { TrueNameUpdate: { target_id: ActorKey; true_name: string } }
-  | { UpdatePoll: { poll_id: PollKey; subject: PollSubject; scope: PollVisibility; accept: number; reject: number; potential: number; opener: ActorKey | null } }
+  | { UpdatePoll: { poll_id: PollKey; subject: PollSubject; parent: PollParent; options: PollOptionTally[]; potential: number; opener: ActorKey | null } }
   | { ClosePoll: { poll_id: PollKey; outcome: PollOutcome } }
-  | { UpdatePollView: { poll_id: PollKey; eligible: boolean; own_vote: boolean | null } }
+  | { UpdatePollView: { poll_id: PollKey; eligible: boolean; own_vote: PollOptionIndex | null } }
   | { UpdateProsecution: { prosecution_id: ProsecutionKey; prosecutor_display: ActorDisplay; defendant_display: ActorDisplay; phase: ProsecutionPhaseView; trial_channel: ChannelKey | null; lawyer_display: ActorDisplay | null } }
+  | { InProsecution: { prosecution_id: ProsecutionKey; side: ProsecutionSide } }
   | { CloseProsecution: { prosecution_id: ProsecutionKey; verdict: boolean | null } };
 
 // What a channel belongs to. Every channel in the game is an ordinary engine channel; this is the
@@ -1034,15 +1167,22 @@ export type ChannelKind =
 // has to say, and the display name arrives on the profile channel.
 export type ActorKind = "Player" | { Org: OrganizationName };
 
+// Every variant here is an audience. The record is not one, and is not a viewport at all — see
+// LogID.
 export type ViewportKind =
   | "Channel"
   | "Bug"
-  | "Poll"
   | "Passive"
-  | "Presence"
-  | "Log";
+  | "WorldEvents"
+  | "WorldData";
 
-export type CommandRecipient = "System" | { Actor: ActorKey } | { Viewport: ViewportKey };
+// Log is here for completeness of the protocol only. Nothing addressed to a record is ever
+// delivered to any client, admin included, so a client never observes one.
+export type CommandRecipient =
+  | "System"
+  | { Actor: ActorKey }
+  | { Viewport: ViewportKey }
+  | { Log: LogID };
 
 export type CommandPayload = {
   timestamp: number;

@@ -1,7 +1,7 @@
 pub mod create_kidnapping;
 pub mod cull_kidnappings;
 pub mod release_kidnapping;
-pub mod update_kidnap_channels;
+pub mod update_kidnappings;
 
 #[cfg(test)]
 mod tests {
@@ -15,14 +15,23 @@ mod tests {
             kidnapping::release_kidnapping::ReleaseKidnapping,
         },
         actor::{ActorDisplay, state::State},
-        channel::{ChannelPermission, ChannelPermissions},
-        common::{ActorKey, KidnappingKey, Time},
+        channel::{ChannelPerm, ChannelPermSet},
+        common::{ActorKey, ChannelKey, KidnappingKey, Time},
         config::{ability::AbilityName, actor::organization::OrganizationName, role::Role},
         engine::Engine,
         helpers::{get_actor, get_channel, get_kidnapping},
         kidnapping::{KidnappingSource, KidnappingType},
         test_helpers::*,
     };
+
+    // Everything somebody may do in the kidnapping's channel, under any name they hold there.
+    // Nothing at all if they are not in it.
+    fn perms(eng: &Engine, channel: ChannelKey, who: ActorKey) -> ChannelPermSet {
+        get_channel(eng, channel)
+            .unwrap()
+            .owned_profiles(who)
+            .fold(ChannelPermSet::EMPTY, |acc, profile| acc | profile.perms)
+    }
 
     // The shared helper always kidnaps indefinitely; these cases need the duration and the
     // commands it produced.
@@ -65,13 +74,8 @@ mod tests {
         );
 
         assert!(get_actor(&eng, victim).unwrap().has_state(State::Kidnapped));
-        let member = get_channel(&eng, ch)
-            .unwrap()
-            .get_member(victim)
-            .cloned()
-            .unwrap();
-        assert!(member.perms.contains(ChannelPermission::Send));
-        assert!(member.perms.contains(ChannelPermission::View));
+        assert!(perms(&eng, ch, victim).contains(ChannelPerm::Send));
+        assert!(perms(&eng, ch, victim).contains(ChannelPerm::View));
     }
 
     // Victim death drops their channel perms to EMPTY; the kidnapping itself persists.
@@ -89,12 +93,7 @@ mod tests {
         );
         quick_kill(&mut eng, 1, false, false, false, victim);
 
-        let member = get_channel(&eng, ch)
-            .unwrap()
-            .get_member(victim)
-            .cloned()
-            .unwrap();
-        assert_eq!(member.perms, ChannelPermissions::EMPTY);
+        assert_eq!(perms(&eng, ch, victim), ChannelPermSet::EMPTY);
         assert!(get_kidnapping(&eng, kid_id).is_ok());
     }
 
@@ -114,13 +113,8 @@ mod tests {
         quick_kill(&mut eng, 1, false, false, false, victim);
         quick_revive(&mut eng, 2, true, victim);
 
-        let member = get_channel(&eng, ch)
-            .unwrap()
-            .get_member(victim)
-            .cloned()
-            .unwrap();
-        assert!(member.perms.contains(ChannelPermission::Send));
-        assert!(member.perms.contains(ChannelPermission::View));
+        assert!(perms(&eng, ch, victim).contains(ChannelPerm::Send));
+        assert!(perms(&eng, ch, victim).contains(ChannelPerm::View));
     }
 
     // Killing the ability owner leaves the kidnapping and victim perms fully intact.
@@ -152,13 +146,8 @@ mod tests {
         quick_kill(&mut eng, 1, false, false, false, owner);
 
         assert!(get_kidnapping(&eng, kid_id).is_ok());
-        let member = get_channel(&eng, ch)
-            .unwrap()
-            .get_member(victim)
-            .cloned()
-            .unwrap();
-        assert!(member.perms.contains(ChannelPermission::Send));
-        assert!(member.perms.contains(ChannelPermission::View));
+        assert!(perms(&eng, ch, victim).contains(ChannelPerm::Send));
+        assert!(perms(&eng, ch, victim).contains(ChannelPerm::View));
     }
 
     // When an org member (kidnapper side) dies, their channel perms drop to EMPTY.
@@ -190,21 +179,13 @@ mod tests {
             KidnappingSource::Ability(ab),
         );
 
-        let before = get_channel(&eng, ch)
-            .unwrap()
-            .get_member(member)
-            .cloned()
-            .unwrap();
-        assert!(before.perms.contains(ChannelPermission::Send));
+        assert!(perms(&eng, ch, member).contains(ChannelPerm::Send));
 
         quick_kill(&mut eng, 1, false, false, false, member);
 
-        let after = get_channel(&eng, ch)
-            .unwrap()
-            .get_member(member)
-            .cloned()
-            .unwrap();
-        assert_eq!(after.perms, ChannelPermissions::EMPTY);
+        // Dying takes them off the org's channel, and the sweep reads participation from there —
+        // so they stop being a captor entirely rather than sitting in the room with nothing.
+        assert_eq!(perms(&eng, ch, member), ChannelPermSet::EMPTY);
     }
 
     // Anonymous kidnapping: org members appear as Mysterious.
@@ -236,13 +217,11 @@ mod tests {
             KidnappingSource::Ability(ab),
         );
 
-        let m = get_channel(&eng, ch)
-            .unwrap()
-            .get_member(member)
-            .cloned()
-            .unwrap();
-        assert!(m.displays.contains(&ActorDisplay::Mysterious));
-        assert!(!m.displays.contains(&ActorDisplay::Raw(member)));
+        // One mask between them, and nothing of their own: the victim cannot tell one captor from
+        // another, or how many there are.
+        let names = get_channel(&eng, ch).unwrap().accessible_profiles(member);
+        assert!(names.iter().any(|p| p.display == ActorDisplay::Mysterious));
+        assert!(!names.iter().any(|p| p.display == ActorDisplay::Raw(member)));
     }
 
     // Public kidnapping: org members appear as Raw(member_id).
@@ -274,13 +253,17 @@ mod tests {
             KidnappingSource::Ability(ab),
         );
 
-        let m = get_channel(&eng, ch)
-            .unwrap()
-            .get_member(member)
-            .cloned()
-            .unwrap();
-        assert!(m.displays.contains(&ActorDisplay::Raw(member)));
-        assert!(!m.displays.contains(&ActorDisplay::Mysterious));
+        // A name of their own, and it is the announced face, so the room sees it from the start.
+        let names = get_channel(&eng, ch).unwrap().accessible_profiles(member);
+        assert!(names.iter().any(|p| p.display == ActorDisplay::Raw(member)));
+        assert!(!names.iter().any(|p| p.display == ActorDisplay::Mysterious));
+        assert!(
+            get_channel(&eng, ch)
+                .unwrap()
+                .visible_profiles()
+                .iter()
+                .any(|p| p.display == ActorDisplay::Raw(member))
+        );
     }
 
     // Release removes Kidnapped state, destroys the channel, and removes the kidnapping record.
@@ -451,7 +434,7 @@ mod tests {
         let mut eng = Engine::new();
         init_engine(&mut eng);
         let victim = add_player(&mut eng, 0, Role::Civilian, "victim");
-        let presence = eng.world.presence_viewport;
+        let events = eng.world.events_viewport;
 
         let (_, ctx) = kidnap_for(&mut eng, 1, victim, Some(5_000));
 
@@ -460,7 +443,7 @@ mod tests {
                 Command::Kidnapping { duration, .. } => Some((*duration, p.recipient.clone())),
                 _ => None,
             }),
-            Some((Some(5_000), CommandRecipient::Viewport(presence)))
+            Some((Some(5_000), CommandRecipient::Viewport(events)))
         );
     }
 

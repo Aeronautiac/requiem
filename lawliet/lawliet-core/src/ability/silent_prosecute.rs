@@ -59,9 +59,7 @@ impl AbilityInterface for SilentProsecute {
                 sever_links: true,
                 silent: false,
                 set_books_dormant: false,
-                death_message: Some(
-                    eng.config.defaults.silent_prosecution_death_message.clone(),
-                ),
+                death_message: Some(eng.config.defaults.silent_prosecution_death_message.clone()),
                 killer_id: Some(accuser_id),
                 target_id: self.target,
             })

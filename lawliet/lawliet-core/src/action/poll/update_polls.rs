@@ -1,6 +1,11 @@
 /*
 * SYSTEM ACTION
 * Check all polls to see if they can be resolved. If they can, resolve them.
+*
+* A poll has no audience of its own — it rides its parent's viewport (see Poll::viewport), so
+* nothing here has to keep one in step. What is left is the two ways a poll can end without
+* anybody voting it to a conclusion: its parent going away, and one of its options becoming
+* something the engine would refuse to carry out.
 */
 
 use smallvec::{SmallVec, smallvec};
@@ -28,71 +33,65 @@ impl ActionInterface for UpdatePolls {
     ) -> ActionResult {
         actor.admin_or_system()?;
 
-        let mut polls_to_cancel: SmallVec<[PollKey; 8]> = smallvec![];
-        let mut polls_to_accept: SmallVec<[(PollKey, Option<Action>); 8]> = smallvec![];
-        let mut polls_to_reject: SmallVec<[(PollKey, Option<Action>); 8]> = smallvec![];
-        let ids: Vec<PollKey> = eng.world.polls.keys().collect();
+        // What each poll ends as, and the payload that ends it. Collected first because
+        // resolving one poll can change the answer for another.
+        let mut resolutions: SmallVec<[(PollKey, PollOutcome, Option<Action>); 4]> = smallvec![];
+        let ids: SmallVec<[PollKey; 8]> = eng.world.polls.keys().collect();
         for id in ids {
             let poll = get_poll(eng, id).unwrap();
-            let mut acc_payload = poll.accept_payload.clone();
-            let mut rej_payload = poll.reject_payload.clone();
 
-            if acc_payload.is_some()
-                && acc_payload
-                    .as_mut()
-                    .unwrap()
-                    .validate(eng, ctx, &ActionActor::System, version)
-                    .is_err()
-                || rej_payload.is_some()
-                    && rej_payload
-                        .as_mut()
-                        .unwrap()
-                        .validate(eng, ctx, &ActionActor::System, version)
+            // No parent, no poll. The channel or org this was put to has been torn down, taking
+            // the audience and the record with it.
+            if poll.viewport(eng).is_none() {
+                resolutions.push((id, PollOutcome::Cancelled, None));
+                continue;
+            }
+
+            let mut payloads: SmallVec<[Option<Action>; 4]> =
+                poll.options.iter().map(|o| o.payload.clone()).collect();
+
+            // One option going invalid takes the whole poll with it, rather than the poll losing
+            // an option: the ballot was drawn up as a set of choices, and a set that can no
+            // longer be offered whole is not the question anybody was asked. Dropping the option
+            // instead would also move every index after it out from under the votes already
+            // cast.
+            let invalid = payloads.iter_mut().any(|payload| {
+                payload.as_mut().is_some_and(|act| {
+                    act.validate(eng, ctx, &ActionActor::System, version)
                         .is_err()
-            {
-                polls_to_cancel.push(id);
-            } else {
-                let poll = get_poll(eng, id).unwrap();
-                let policy_res = poll.update_policy(eng);
-                match policy_res {
-                    PolicyResult::Accept => polls_to_accept.push((id, acc_payload)),
-                    PolicyResult::Reject => polls_to_reject.push((id, rej_payload)),
-                    _ => {}
-                };
+                })
+            });
+            if invalid {
+                resolutions.push((id, PollOutcome::Cancelled, None));
+                continue;
+            }
+
+            let poll = get_poll(eng, id).unwrap();
+            if let PolicyResult::Resolved(option) = poll.update_policy(eng) {
+                let payload = payloads.get_mut(option as usize).and_then(Option::take);
+                resolutions.push((id, PollOutcome::Resolved(option), payload));
             }
         }
 
-        // All removals go through PollCleanup, which emits ClosePoll with the outcome and
-        // tears the poll down.
-        for id in polls_to_cancel {
+        // The payloads are guaranteed to succeed by this point. If they don't, something's wrong.
+        // All removals go through PollCleanup, which emits ClosePoll with the outcome and tears
+        // the poll down.
+        //
+        // Tear down BEFORE running the payload, on the same terms as PollTimeout: a resolving
+        // payload can itself tear this poll down — a prosecution verdict runs TerminateProsecution,
+        // which cleans up its own voting poll — and cleaning up afterwards would then find the poll
+        // already gone and fail the whole sweep. This way such a payload finds it gone, and its own
+        // cleanup is guarded on existence and skips.
+        for (id, outcome, payload) in resolutions {
             Action::PollCleanup(PollCleanup {
                 poll_id: id,
-                outcome: PollOutcome::Cancelled,
+                outcome,
             })
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;
-        }
 
-        for (id, action) in polls_to_reject {
-            if let Some(mut act) = action {
+            if let Some(mut act) = payload {
                 act.handle(eng, ctx, &ActionActor::System, version, mutate)?;
             }
-            Action::PollCleanup(PollCleanup {
-                poll_id: id,
-                outcome: PollOutcome::Rejected,
-            })
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
-        }
-
-        // the actions are guaranteed to succeed by this point. if they dont, something's wrong.
-        for (id, action) in polls_to_accept {
-            if let Some(mut act) = action {
-                act.handle(eng, ctx, &ActionActor::System, version, mutate)?;
-            }
-            Action::PollCleanup(PollCleanup {
-                poll_id: id,
-                outcome: PollOutcome::Accepted,
-            })
-            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         }
 
         Ok(ActionResponse::UpdatePolls(UpdatePollsResponse {}))

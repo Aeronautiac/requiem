@@ -4,23 +4,24 @@ use crate::{
     ability::{AbilityBehaviour, AbilityName},
     actor::{ActorDisplay, State},
     bug::BugSource,
-    channel::ChannelMember,
+    channel::{PermUpdatePolicy, ProfileBlueprint},
     chargepool::{ChargeConditions, PoolLinkType},
     command::{Command, CommandPayload, CommandRecipient},
     common::{
         AbilityKey, ActorKey, BugKey, ChannelKey, ChargeCount, ChargePoolKey, GroupchatKey,
         IncarcerationKey, IterationCount, KidnappingKey, LinkWeight, NotebookKey, PassiveKey,
-        PollKey, ProsecutionKey, Seed, Time, Variant,
+        PollKey, ProfileKey, ProsecutionKey, Seed, Time, Variant,
     },
     incarceration::IncarcerationSource,
     kidnapping::{KidnappingSource, KidnappingType},
     lounge::LoungeVariant,
     organization::{LeadershipTransferPolicies, OrgAbility, OrganizationName},
     passive::PassiveType,
-    poll::{PollOutcome, PollPolicy, PollSubject, PollVisibility, VoterPolicy},
+    poll::{
+        PollOption, PollOptionIndex, PollOutcome, PollParent, PollPolicy, PollSubject, VoterPolicy,
+    },
     prosecution::ProsecutionSource,
     role::Role,
-    world::{OverrideSource, WorldChannelName, WorldChannelOverride},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -58,6 +59,17 @@ pub enum ActionError {
     ActorIsNotOrg,
     PlayerIsNotLeader,
     PollDoesntExist,
+    PollHasNoOptions,
+    NotAPollOption,
+    // The policy a profile was to be built with cannot answer for that profile.
+    IncompatiblePolicy,
+    ProfileNotFound,
+    // A profile only one actor may wear at a time, offered to a second one.
+    ProfileNotShareable,
+    // Speaking as a name the sender does not hold.
+    ProfileNotOwned,
+    // A player tried to speak as nobody. Only a host may do that.
+    ProfileRequired,
     InvalidVoter,
     NotAVoter,
     AlreadyVoted,
@@ -71,7 +83,6 @@ pub enum ActionError {
     AlreadyLeader,
     ChannelDoesntExist,
     NotAChannelMember,
-    DisplayNotOwned,
     PlayerNotInLounge,
     LoungeDoesntExist,
     GroupchatDoesntExist,
@@ -94,12 +105,8 @@ pub enum ActionError {
     MustChooseSuccessor,
     NoEyes,
     CannotProsecuteSelf,
-    // ShinigamiSacrifice: only a founding member of the org can be spent, and never for their own
-    // name.
     NotAnOgMember,
     CannotSacrificeForOwnName,
-    // A player used PublicKidnap with a `performer` set — designating who appears as the
-    // kidnapper is an org-only choice; a player is always shown as themselves.
     PerformerRequiresOrg,
 }
 
@@ -575,6 +582,8 @@ pub struct CreateChannelResponse {
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct CreateChannel {
     pub loggable: bool,
+    // Set for a channel everyone belongs to; None for one whose membership some action owns.
+    pub base_profile: Option<ProfileBlueprint>,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -593,7 +602,14 @@ pub struct SendMessageResponse {}
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct SendMessage {
     pub channel_id: ChannelKey,
-    pub display: ActorDisplay,
+    // Who to say it as. A player must name a profile they own, and holding Send is a property of
+    // the profile rather than of the sender: the same person may be able to speak here as one of
+    // their names and not as another.
+    //
+    // None is an admin speaking as nobody, which shows as ActorDisplay::System. It exists so the
+    // host can talk in a channel without being given a name in it — nothing else has a reason to
+    // send a message it holds no profile for.
+    pub profile_id: Option<ProfileKey>,
     pub content: String,
 }
 
@@ -618,15 +634,115 @@ pub struct SetTrueName {
     pub true_name: String,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct SetMemberResponse {}
+// Membership is not set, it follows. An actor is a member of a channel exactly while they own a
+// profile in it, so the actions below are the whole of joining and leaving as well as the whole of
+// who may appear as what.
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct SetMember {
-    pub player_id: ActorKey,
-    pub channel_id: ChannelKey,
-    pub settings: Option<ChannelMember>,
+pub struct AddProfileResponse {
+    pub profile_id: ProfileKey,
 }
+
+// Put a name into a channel. It starts owned by nobody — handing it out is SetProfileAccess, and
+// keeping the two apart is what lets a profile be prepared before there is anyone to wear it.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct AddProfile {
+    pub channel_id: ChannelKey,
+    pub display: ActorDisplay,
+    // False for a name the room does not know yet. It is absent from the roster until its first
+    // message reveals it — see Command::ChannelRoster.
+    pub visible: bool,
+    // Whether more than one actor may hold it at once. An unshared profile is a name only one
+    // person can be wearing, which is what makes wearing it mean anything.
+    pub shared: bool,
+    // Whether it could ever belong to somebody other than whoever holds it now. A name that could
+    // not has no life without its holder, and is destroyed along with their membership.
+    pub transferrable: bool,
+    pub perm_policy: PermUpdatePolicy,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct CreateAndGiveProfileResponse {
+    pub profile_id: ProfileKey,
+}
+
+// Put a name into a channel and hand it straight to somebody, which is also what makes them a
+// member of it. By far the common shape: most channels give each member exactly one name of their
+// own. A channel wanting something stranger — a mask nobody has been told about yet, a name several
+// people wear at once — reaches for AddProfile and SetProfileAccess separately.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct CreateAndGiveProfile {
+    pub channel_id: ChannelKey,
+    pub player_id: ActorKey,
+    pub display: ActorDisplay,
+    pub visible: bool,
+    pub shared: bool,
+    pub transferrable: bool,
+    pub perm_policy: PermUpdatePolicy,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetProfilePolicyResponse {}
+
+// Change the rule deciding what a name permits. The new permissions follow from the next sweep.
+//
+// Refused if the policy cannot answer for this profile, and refused is all it is: the profile is
+// left exactly as it was, still holding the rule it had. Construction is the only place an
+// incompatible policy destroys anything, because there the alternative is a profile that was never
+// coherent to begin with.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetProfilePolicy {
+    pub channel_id: ChannelKey,
+    pub profile_id: ProfileKey,
+    pub perm_policy: PermUpdatePolicy,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct DeleteProfileResponse {}
+
+
+// Take a profile out of the channel. Whatever was said through it stays said; its owners stop
+// being members if it was the last one they held.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct DeleteProfile {
+    pub channel_id: ChannelKey,
+    pub profile_id: ProfileKey,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct RemoveFromChannelResponse {}
+
+// Take a player out of a channel entirely.
+//
+// Each of their names is disposed of according to whether it could ever have belonged to anybody
+// else: one that could not is destroyed, since it had no life without them, and one that could is
+// simply taken off them and left in the channel for whoever comes next.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct RemoveFromChannel {
+    pub channel_id: ChannelKey,
+    pub player_id: ActorKey,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetProfileAccessResponse {}
+
+// Give a player a profile, or take it away. Gaining a first profile makes them a member; losing
+// their last one ends their membership.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetProfileAccess {
+    pub channel_id: ChannelKey,
+    pub profile_id: ProfileKey,
+    pub player_id: ActorKey,
+    pub granted: bool,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateChannelsResponse {}
+
+// Stamp out any base profiles that are owed, then re-evaluate every profile in the world. Trails
+// every action, so nothing that moves a policy's inputs has to know that it did.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateChannels {}
 
 // groupchat
 
@@ -696,14 +812,6 @@ pub struct RemoveFromLounge {
     pub player_id: ActorKey,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdateContactChannelsResponse {}
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdateContactChannels {
-    pub player_id: ActorKey,
-}
-
 // ////////////////////////////////////////////////
 // ENGINE //
 // ////////////////////////////////////////////////
@@ -765,14 +873,6 @@ pub struct ReleaseIncarceration {
     pub forced: bool,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdatePrisonChannelResponse {}
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdatePrisonChannel {
-    pub actor_id: ActorKey,
-}
-
 // ////////////////////////////////////////////////
 // KIDNAPPING //
 // ////////////////////////////////////////////////
@@ -800,6 +900,29 @@ pub struct CullKidnappings {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdatePrisonChannelResponse {}
+
+// Reconcile who is in the prison channel against who is actually locked up.
+//
+// The prison hands out no seats of its own, deliberately: a channel everybody belonged to would be
+// one every client had to hold and hide. So membership is managed, and the state is the authority —
+// incarceration is set and cleared from more places than could each be trusted to remember this.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdatePrisonChannel {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateKidnappingsResponse {}
+
+// Re-derive who is on the captors' side of every active kidnapping, and seat them.
+//
+// A sweep over KIDNAPPINGS rather than over channels: who the captors are is a property of what
+// started the kidnapping, and that is not a question a channel can answer about itself. It is also
+// the part that moves — an org's roster changes while somebody is still being held — and the rule
+// deciding it will not stay as it is.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateKidnappings {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct ReleaseKidnappingResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -807,12 +930,6 @@ pub struct ReleaseKidnapping {
     pub kidnapping_id: KidnappingKey,
     pub forced: bool,
 }
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdateKidnapChannelsResponse {}
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdateKidnapChannels {}
 
 // ////////////////////////////////////////////////
 // NOTEBOOK //
@@ -990,7 +1107,7 @@ pub struct AddVoteResponse {}
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct AddVote {
     pub poll_id: PollKey,
-    pub accept: bool,
+    pub option: PollOptionIndex,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1001,12 +1118,16 @@ pub struct CreatePollReponse {
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct CreatePoll {
     pub voter_policy: VoterPolicy,
-    pub visibility: PollVisibility,
+    pub parent: PollParent,
     pub subject: PollSubject,
     pub update_policy: PollPolicy,
     pub timeout_policy: PollPolicy,
-    pub accept_payload: Box<Option<Action>>,
-    pub reject_payload: Box<Option<Action>>,
+    // The choices, in the order they are offered. Must not be empty.
+    pub options: Vec<PollOption>,
+    // Count heads instead of weight: every voter who counts is worth exactly one, and vote
+    // amplification does nothing here. For ballots where being able to buy a result would be
+    // absurd rather than merely strong.
+    pub ignore_amplification: bool,
     pub duration: Option<Time>,
     // Who opened the poll, surfaced on the client's "vote started" notice. None = no distinct
     // opener (system-driven polls). Not stored beyond the Poll it seeds.
@@ -1054,14 +1175,6 @@ pub struct AdvanceProsecutionResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct AdvanceProsecution {
-    pub prosecution_id: ProsecutionKey,
-}
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdateProsecutionChannelsResponse {}
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdateProsecutionChannels {
     pub prosecution_id: ProsecutionKey,
 }
 
@@ -1159,14 +1272,6 @@ pub struct NextIterationResponse {}
 pub struct NextIteration {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct AddToWorldChannelsResponse {}
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct AddToWorldChannels {
-    pub player_id: ActorKey,
-}
-
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct CreateOrgsResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1195,23 +1300,23 @@ pub struct SetRandomSeed {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct SetWorldChannelOverrideResponse {}
+pub struct UpdateWorldViewportsResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct SetWorldChannelOverride {
-    pub player_id: ActorKey,
-    pub channel_name: WorldChannelName,
-    pub source: OverrideSource,
-    pub priority: u8,
-    pub override_data: Option<WorldChannelOverride>,
-}
+pub struct UpdateWorldViewports {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdateWorldChannelPermsResponse {}
+pub struct UpdateTimersResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdateWorldChannelPerms {
-    pub player_id: ActorKey,
+pub struct UpdateTimers {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetBlackoutResponse {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetBlackout {
+    pub active: bool,
 }
 
 // ////////////////////////////////////////////////
@@ -1314,11 +1419,16 @@ pub enum Action {
     SendMessage(SendMessage),
     CreateChannel(CreateChannel),
     DestroyChannel(DestroyChannel),
-    SetMember(SetMember),
+    AddProfile(AddProfile),
+    CreateAndGiveProfile(CreateAndGiveProfile),
+    DeleteProfile(DeleteProfile),
+    RemoveFromChannel(RemoveFromChannel),
+    SetProfileAccess(SetProfileAccess),
+    SetProfilePolicy(SetProfilePolicy),
+    UpdateChannels(UpdateChannels),
     SetLoggable(SetLoggable),
     SetTrueName(SetTrueName),
     CreateLounge(CreateLounge),
-    UpdateContactChannels(UpdateContactChannels),
     LeaveLounge(LeaveLounge),
     RemoveFromLounge(RemoveFromLounge),
     AddToGroupchat(AddToGroupchat),
@@ -1331,15 +1441,14 @@ pub enum Action {
     StartProsecution(StartProsecution),
     SetCustody(SetCustody),
     AdvanceProsecution(AdvanceProsecution),
-    UpdateProsecutionChannels(UpdateProsecutionChannels),
     UpdateProsecutions(UpdateProsecutions),
     SignalReady(SignalReady),
     SelectLawyer(SelectLawyer),
     CullProsecutions(CullProsecutions),
     TerminateProsecution(TerminateProsecution),
-    AddToWorldChannels(AddToWorldChannels),
-    UpdateWorldChannelPerms(UpdateWorldChannelPerms),
-    SetWorldChannelOverride(SetWorldChannelOverride),
+    UpdateWorldViewports(UpdateWorldViewports),
+    UpdateTimers(UpdateTimers),
+    SetBlackout(SetBlackout),
     InitializeEngine(InitializeEngine),
     SetRandomSeed(SetRandomSeed),
     UpdateBugVisibilities(UpdateBugVisibilities),
@@ -1348,7 +1457,7 @@ pub enum Action {
     CreateKidnapping(CreateKidnapping),
     ReleaseKidnapping(ReleaseKidnapping),
     CullKidnappings(CullKidnappings),
-    UpdateKidnapChannels(UpdateKidnapChannels),
+    UpdateKidnappings(UpdateKidnappings),
     UpdatePrisonChannel(UpdatePrisonChannel),
     CreateIncarceration(CreateIncarceration),
     ReleaseIncarceration(ReleaseIncarceration),
@@ -1428,11 +1537,16 @@ pub enum ActionResponse {
     SendMessage(SendMessageResponse),
     CreateChannel(CreateChannelResponse),
     DestroyChannel(DestroyChannelResponse),
-    SetMember(SetMemberResponse),
+    AddProfile(AddProfileResponse),
+    CreateAndGiveProfile(CreateAndGiveProfileResponse),
+    DeleteProfile(DeleteProfileResponse),
+    RemoveFromChannel(RemoveFromChannelResponse),
+    SetProfileAccess(SetProfileAccessResponse),
+    SetProfilePolicy(SetProfilePolicyResponse),
+    UpdateChannels(UpdateChannelsResponse),
     SetLoggable(SetLoggableResponse),
     SetTrueName(SetTrueNameResponse),
     CreateLounge(CreateLoungeResponse),
-    UpdateContactChannels(UpdateContactChannelsResponse),
     LeaveLounge(LeaveLoungeResponse),
     RemoveFromLounge(RemoveFromLoungeResponse),
     AddToGroupchat(AddToGroupchatResponse),
@@ -1445,15 +1559,14 @@ pub enum ActionResponse {
     StartProsecution(StartProsecutionResponse),
     SetCustody(SetCustodyResponse),
     AdvanceProsecution(AdvanceProsecutionResponse),
-    UpdateProsecutionChannels(UpdateProsecutionChannelsResponse),
     UpdateProsecutions(UpdateProsecutionsResponse),
     SignalReady(SignalReadyResponse),
     SelectLawyer(SelectLawyerResponse),
     CullProsecutions(CullProsecutionsResponse),
     TerminateProsecution(TerminateProsecutionResponse),
-    AddToWorldChannels(AddToWorldChannelsResponse),
-    UpdateWorldChannelPerms(UpdateWorldChannelPermsResponse),
-    SetWorldChannelOverride(SetWorldChannelOverrideResponse),
+    UpdateWorldViewports(UpdateWorldViewportsResponse),
+    UpdateTimers(UpdateTimersResponse),
+    SetBlackout(SetBlackoutResponse),
     InitializeEngine(InitializeEngineResponse),
     SetRandomSeed(SetRandomSeedResponse),
     UpdateBugVisibilities(UpdateBugVisibilitiesResponse),
@@ -1462,7 +1575,7 @@ pub enum ActionResponse {
     CreateKidnapping(CreateKidnappingResponse),
     ReleaseKidnapping(ReleaseKidnappingResponse),
     CullKidnappings(CullKidnappingsResponse),
-    UpdateKidnapChannels(UpdateKidnapChannelsResponse),
+    UpdateKidnappings(UpdateKidnappingsResponse),
     UpdatePrisonChannel(UpdatePrisonChannelResponse),
     CreateIncarceration(CreateIncarcerationResponse),
     ReleaseIncarceration(ReleaseIncarcerationResponse),

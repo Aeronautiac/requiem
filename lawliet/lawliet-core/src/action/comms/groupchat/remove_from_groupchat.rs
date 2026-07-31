@@ -4,7 +4,7 @@
 */
 
 use crate::{
-    action::{Action, ActionError, ActionInterface, ActionResponse, SetMember},
+    action::{Action, ActionError, ActionInterface, ActionResponse, RemoveFromChannel},
     actor::ActorDisplay,
     helpers::{actor_id, cmd_contact_log, get_gc, get_gc_mut, get_player_mut},
     passive::{ContactEvent, ContactLog},
@@ -38,13 +38,11 @@ impl ActionInterface for RemoveFromGroupchat {
         }
         let channel_id = gc.channel_id;
 
-        // Drop the channel membership too (emits RemoveChannel to the player and
-        // RemoveChannelMember to the others), mirroring remove_from_lounge. Without
-        // this the player would keep seeing the gc channel after being removed.
-        Action::SetMember(SetMember {
-            player_id: self.player_id,
+        // Mirroring remove_from_lounge. Without this the player would keep seeing the gc channel
+        // after being removed.
+        Action::RemoveFromChannel(RemoveFromChannel {
             channel_id,
-            settings: None,
+            player_id: self.player_id,
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 

@@ -17,16 +17,15 @@
 * prosecution snapshot, not from here.
 */
 
-use indexmap::indexset;
 use lawliet_types::{
-    channel::{ChannelMember, ChannelPermission},
+    channel::{ContactPolicy, PermUpdatePolicy},
     command::Command,
 };
 
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
-        ActionResult, CreateChannel, SetMember,
+        ActionResult, CreateAndGiveProfile, CreateChannel,
     },
     actor::{ActorDisplay, modifier::Modifier},
     channel::ChannelKind,
@@ -73,13 +72,11 @@ impl ActionInterface for SelectLawyer {
             return Err(ActionError::UserNotPresent);
         }
 
-        let channel_response = Action::CreateChannel(CreateChannel { loggable: false }).handle(
-            eng,
-            ctx,
-            &ActionActor::System,
-            version,
-            mutate,
-        )?;
+        let channel_response = Action::CreateChannel(CreateChannel {
+            loggable: false,
+            base_profile: None,
+        })
+        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
         let ActionResponse::CreateChannel(channel_data) = channel_response else {
             unreachable!()
         };
@@ -87,8 +84,8 @@ impl ActionInterface for SelectLawyer {
 
         // The channel only exists on the mutate pass, so everything that reaches for it lives here.
         if mutate {
-            // Before SetMember, which syncs the viewport and then addresses the roster to it: a Map
-            // emitted afterwards would arrive behind history the newcomers already hold. The
+            // Before the names that put people in it: seating them enters them into the viewport,
+            // and a Map emitted afterwards would arrive behind history they already hold. The
             // frontend also indexes `channels` directly on AddMessage, so an unmapped channel is
             // fatal there.
             cmd_channel(
@@ -104,15 +101,18 @@ impl ActionInterface for SelectLawyer {
             );
 
             // Both sides, shown to each other as themselves — there is no anonymity between a
-            // defendant and their own counsel.
+            // defendant and their own counsel. A contact line like any other, which is what keeps
+            // it open through custody: being held cuts contact, and the accused is meant to keep
+            // reaching their lawyer regardless.
             for player_id in [caller, self.lawyer_id] {
-                Action::SetMember(SetMember {
-                    player_id,
+                Action::CreateAndGiveProfile(CreateAndGiveProfile {
                     channel_id,
-                    settings: Some(ChannelMember {
-                        perms: ChannelPermission::View | ChannelPermission::Send,
-                        displays: indexset![ActorDisplay::Raw(player_id)],
-                    }),
+                    player_id,
+                    display: ActorDisplay::Raw(player_id),
+                    visible: true,
+                    shared: false,
+                    transferrable: false,
+                    perm_policy: PermUpdatePolicy::Contact(ContactPolicy {}),
                 })
                 .handle(eng, ctx, &ActionActor::System, version, mutate)?;
             }

@@ -1,9 +1,10 @@
 use enumflags2::{BitFlags, bitflags};
-use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 
 use crate::actor::ActorDisplay;
-use crate::common::{ActorKey, GroupchatKey, ID, LoungeKey, NotebookKey, ProsecutionKey};
+use crate::common::{
+    ActorKey, GroupchatKey, ID, LoungeKey, NotebookKey, ProfileKey, ProsecutionKey,
+};
 use crate::world::WorldChannelName;
 
 // What a channel IS, stated on MapChannel when the channel is registered.
@@ -44,15 +45,110 @@ pub enum ChannelKind {
 #[bitflags]
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Hash, Eq, Ord, Serialize, Deserialize)]
-pub enum ChannelPermission {
+pub enum ChannelPerm {
     Send = 1 << 0,
     View = 1 << 1,
     LoggabilityControl = 1 << 2,
 }
-pub type ChannelPermissions = BitFlags<ChannelPermission>;
+pub type ChannelPermSet = BitFlags<ChannelPerm>;
 
+// One profile as a client sees it: who someone may appear as in this channel, and what appearing
+// as them may do.
+//
+// A profile is the unit of participation, so this is what both halves of the channel protocol
+// carry — the visible ones go to the room on ChannelRoster, and the recipient's own go to them on
+// ProfileAccess. The two are separate because a profile may be owned before it is visible, and the
+// display of an unrevealed profile is exactly the thing the room must not be told.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChannelMember {
-    pub perms: ChannelPermissions,
-    pub displays: IndexSet<ActorDisplay>,
+pub struct ChannelProfileView {
+    pub profile_id: ProfileKey,
+    pub display: ActorDisplay,
+    pub perms: ChannelPermSet,
+}
+
+// A profile's permission rule. The data half only — what each one decides, and when it may be
+// applied at all, is written out in lawliet_core::channel::policies.
+//
+// These live here rather than beside their impls because an action carries one: AddProfile names
+// the rule a profile is built with, and CreateChannel names the rule its base profile is stamped
+// with, so the rule has to cross the wire.
+
+// Gate permissions on the current profile owner's contact modifier status, and provide the typical
+// set of contact channel permissions.
+#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
+pub struct ContactPolicy {}
+
+// Always return some set of permissions.
+#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
+pub struct FixedPolicy {
+    pub perms: ChannelPermSet,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
+pub struct NewsPolicy {}
+
+// Grant these permissions while the owner is present, and nothing at all otherwise. All or
+// nothing: a channel that needs some permissions gated one way and others another wants a policy
+// of its own rather than a knob on this one.
+#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
+pub struct PresencePolicy {
+    pub perms: ChannelPermSet,
+}
+
+// Talk and listen, unless the owner is dead.
+//
+// For channels you are in because of something that happened to you, or something you are holding:
+// the prison, a kidnapping, a notebook. Being put there is what admits you, so there is no standing
+// left to check — except that the dead do not speak. Notably it ignores the contact modifiers,
+// since being held is what cuts your contact everywhere else and this is the place that does not
+// reach.
+#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
+pub struct AlivePolicy {}
+
+// A seat at a trial: View while present, and Send while this NAME is the one holding the floor.
+//
+// Every profile in a trial channel carries it, the spectators' included, and that is what keeps
+// the roster uniform. It decides from the profile's display rather than from its owner, which is
+// the whole trick: a trial knows its prosecutor by the display it announced them under, so a
+// prosecutor named openly gets the floor on the ordinary seat everyone has, and one who is
+// anonymous gets it on their mask while their own name stays as quiet as anybody else's.
+//
+// One policy rather than a spectator rule and a participant rule, because a participant would
+// otherwise need their spectator seat edited around them — and two rules that both decide the same
+// profile's permissions is an ordering problem waiting to happen.
+#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
+pub struct TrialPolicy {
+    pub prosecution_id: ProsecutionKey,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
+pub enum PermUpdatePolicy {
+    Fixed(FixedPolicy),
+    Contact(ContactPolicy),
+    News(NewsPolicy),
+    Presence(PresencePolicy),
+    Alive(AlivePolicy),
+    Trial(TrialPolicy),
+}
+
+// Which display a base profile is built with. A blueprint is stamped out for players who did not
+// exist when the channel was made, so it names a rule for producing a display rather than a
+// display.
+#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
+pub enum BlueprintDisplayKind {
+    // A raw display of the owner.
+    OwnerRaw,
+}
+
+// The profile every player is handed a copy of, and the thing that makes them a member at all.
+//
+// This is the answer to "who is in this channel" wherever the answer is everyone. A channel
+// without one has its membership decided by whatever action owns it, which is the other half of
+// the game — lounges, group chats, orgs, notebooks, and the world channels you are put into by
+// something happening to you.
+#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
+pub struct ProfileBlueprint {
+    pub start_visible: bool,
+    pub perm_policy: PermUpdatePolicy,
+    pub display_kind: BlueprintDisplayKind,
 }

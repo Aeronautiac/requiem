@@ -8,7 +8,7 @@
 * Kidnapped players may be released early by the kidnapper or a host.
 */
 
-use crate::{ActorKey, ChannelKey};
+use crate::{ActorKey, ChannelKey, common::ProfileKey};
 
 pub use lawliet_types::kidnapping::{KidnappingSource, KidnappingType};
 
@@ -20,4 +20,10 @@ pub struct Kidnapping {
     // the ability whose owner may release this kidnapping and whose owner is used as the
     // kidnapper for channel management (org → members added; player → player added)
     pub source: KidnappingSource,
+    // The one mask an anonymous kidnapping's captors share, once UpdateKidnappings has made it.
+    // Held here because it belongs to the kidnapping rather than to any of them: people come and
+    // go from the other side of it and the victim must never be able to tell.
+    //
+    // None for a public kidnapping, which gives each captor a name of their own instead.
+    pub mask: Option<ProfileKey>,
 }

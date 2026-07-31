@@ -11,11 +11,12 @@ use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
         CreateActorLinks, CreateAndGiveAbility, CreateAndGiveNotebook, CreateAndGivePassive,
-        PurgeVolatiles, SetWorldChannelOverride, SeverLinks, UpdateWorldChannelPerms,
+        CreateAndGiveProfile, PurgeVolatiles, RemoveFromChannel, SeverLinks,
     },
-    actor::player::OverrideSource,
+    actor::ActorDisplay,
+    channel::BlueprintDisplayKind,
     command::Command,
-    helpers::{get_player_mut, get_role_config},
+    helpers::{get_player, get_player_mut, get_role_config, get_world_channel_id},
 };
 
 pub use crate::action::{GiveRole, GiveRoleResponse};
@@ -33,13 +34,26 @@ impl ActionInterface for GiveRole {
 
         let role_config = get_role_config(eng, self.role)?.clone();
 
+        // Read before the role is overwritten: the rooms they are in for being what they were have
+        // to be given up before they can be given the new ones.
+        let previous_seats = get_role_config(eng, get_player(eng, self.target_id)?.role)?
+            .world_channel_profiles
+            .clone();
+
         let player = get_player_mut(eng, self.target_id)?;
         if mutate {
             player.role = self.role;
-            for channel_overrides in player.world_channel_overrides.values_mut() {
-                channel_overrides.retain(|source, _| !matches!(source, OverrideSource::Role(_)));
-            }
-            player.world_channel_overrides.retain(|_, v| !v.is_empty());
+        }
+
+        for seat in &previous_seats {
+            let Ok(channel_id) = get_world_channel_id(eng, seat.channel_name) else {
+                continue;
+            };
+            Action::RemoveFromChannel(RemoveFromChannel {
+                channel_id,
+                player_id: self.target_id,
+            })
+            .handle(eng, ctx, actor, version, mutate)?;
         }
 
         Action::PurgeVolatiles(PurgeVolatiles {
@@ -84,22 +98,23 @@ impl ActionInterface for GiveRole {
 
         Action::CreateActorLinks(CreateActorLinks {}).handle(eng, ctx, actor, version, mutate)?;
 
-        for entry in &role_config.world_channel_overrides {
-            Action::SetWorldChannelOverride(SetWorldChannelOverride {
+        // The world channels this role is in for being what it is. A channel with no blueprint of
+        // its own gets its guest list from here.
+        for seat in &role_config.world_channel_profiles {
+            let channel_id = get_world_channel_id(eng, seat.channel_name)?;
+            Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                channel_id,
                 player_id: self.target_id,
-                channel_name: entry.channel_name,
-                source: OverrideSource::Role(self.role),
-                priority: 0,
-                override_data: Some(entry.override_data.clone()),
+                display: match seat.blueprint.display_kind {
+                    BlueprintDisplayKind::OwnerRaw => ActorDisplay::Raw(self.target_id),
+                },
+                visible: seat.blueprint.start_visible,
+                shared: false,
+                transferrable: false,
+                perm_policy: seat.blueprint.perm_policy,
             })
             .handle(eng, ctx, actor, version, mutate)?;
         }
-
-        // re-evaluate after clearing overrides (covers roles with no channel overrides)
-        Action::UpdateWorldChannelPerms(UpdateWorldChannelPerms {
-            player_id: self.target_id,
-        })
-        .handle(eng, ctx, actor, version, mutate)?;
 
         // Notify the player of their (new) role for their personal log, and mirror it to
         // System so admin can inspect any player's role.

@@ -4,6 +4,8 @@
 * (try to resolve the poll, if it accepts, execute, else clean it up)
 */
 
+use smallvec::SmallVec;
+
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionExt, ActionInterface, ActionResponse,
@@ -29,26 +31,26 @@ impl ActionInterface for PollTimeout {
         actor.admin_or_system()?;
 
         let poll = get_poll(eng, self.poll_id)?;
-        let mut acc_payload = poll.accept_payload.clone();
-        let mut rej_payload = poll.reject_payload.clone();
+        let mut payloads: SmallVec<[Option<Action>; 4]> =
+            poll.options.iter().map(|o| o.payload.clone()).collect();
         let policy_res = poll.timeout_policy(eng);
 
-        // Determine how the poll ended (this is what the frontend is told via ClosePoll).
-        // A payload that no longer validates cancels the poll instead of resolving it.
-        // Decide the outcome and which payload (if any) to run. A payload that no longer
-        // validates cancels the poll instead of resolving it.
-        let invalid = acc_payload
-            .as_mut()
-            .is_some_and(|p| p.validate(eng, ctx, actor, version).is_err())
-            || rej_payload
+        // Decide the outcome and which payload (if any) to run — this is also what the frontend
+        // is told via ClosePoll. Any option that no longer validates cancels the whole poll
+        // instead of resolving it, on the same terms as UpdatePolls.
+        let invalid = payloads.iter_mut().any(|payload| {
+            payload
                 .as_mut()
-                .is_some_and(|p| p.validate(eng, ctx, actor, version).is_err());
+                .is_some_and(|act| act.validate(eng, ctx, actor, version).is_err())
+        });
         let (outcome, payload) = if invalid {
             (PollOutcome::Cancelled, None)
         } else {
             match policy_res {
-                PolicyResult::Accept => (PollOutcome::Accepted, acc_payload),
-                PolicyResult::Reject => (PollOutcome::Rejected, rej_payload),
+                PolicyResult::Resolved(option) => (
+                    PollOutcome::Resolved(option),
+                    payloads.get_mut(option as usize).and_then(Option::take),
+                ),
                 PolicyResult::Inconclusive => (PollOutcome::Inconclusive, None),
             }
         };

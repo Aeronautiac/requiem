@@ -40,4 +40,5 @@
   --color-event-custody: #64748b; /* held, and released */
   --color-event-tap: #14b8a6; /* a record was read */
   --color-event-prosecution: #e11d48;
+  --color-event-blackout: #1e1b4b; /* the world stopped telling you things */
 }

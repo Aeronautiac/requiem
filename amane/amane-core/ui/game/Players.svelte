@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
-  import { playerLabel } from "../../game/helpers.svelte";
+  import { permsLabel, playerLabel } from "../../game/helpers.svelte";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import type { GameState } from "../../game/state.svelte";
   import type { UiState } from "../../ui_state.svelte.ts";
@@ -21,26 +21,23 @@
   const channel_id = $derived(
     ui.is_news ? view.news_channel_id : ui.selected_channel,
   );
-  // Admin reads the System view, which the engine doesn't feed membership to yet, so admin's
-  // member list is empty for now.
-  // TODO: emit ShowChannelMember to System so admin sees channel members.
+  // Admin reads the System view, which the engine doesn't feed rosters to yet, so admin's member
+  // list is empty for now.
+  // TODO: direct ChannelRoster to System so admin sees channel members.
   const current_view = $derived(
     game.view_of(ui.viewer),
   );
-  // Only effective members. A player added with no perms was never a real participant and belongs
-  // in "other players".
-  const members = $derived.by(() => {
-    const all = channel_id
-      ? current_view?.channel_views.get(channel_id)?.members
-      : undefined;
-    return [...(all?.entries() ?? [])].filter(([, m]) => m.had_positive);
-  });
+  // Every name the room can see. A name it has not been told about is simply absent from the
+  // roster, so there is nothing to filter out here.
+  const members = $derived(
+    channel_id ? (current_view?.channel_views.get(channel_id)?.roster ?? []) : [],
+  );
 
-  // Only Raw displays identify a specific player, so anonymous/role members stay in "other".
+  // Only Raw displays identify a specific player, so anonymous/role names stay in "other".
   const member_player_ids = $derived.by(() => {
     const ids = new Set<string>();
-    for (const [, m] of members) {
-      const d = m.display;
+    for (const profile of members) {
+      const d = profile.display;
       if (typeof d !== "string" && "Raw" in d) ids.add(slotKeyToString(d.Raw));
     }
     return ids;
@@ -48,14 +45,6 @@
   const other_players = $derived(
     [...view.players.entries()].filter(([id]) => !member_player_ids.has(id)),
   );
-
-  // send = bit 0, read = bit 1, matching the UpdateChannelView perms parsing.
-  function perms_label(perms: number): string {
-    const parts: string[] = [];
-    if (perms & 2) parts.push("read");
-    if (perms & 1) parts.push("send");
-    return parts.join(" · ");
-  }
 
   // Anonymous and role displays can't be contacted — you don't know who they are.
   function contact_target(display: ActorDisplay): string | null {
@@ -81,7 +70,7 @@
       {:else if members.length === 0}
         <p class="px-2 py-1 text-xs text-neutral-600">No members</p>
       {:else}
-        {#each members as [key, member] (key)}
+        {#each members as member (slotKeyToString(member.profile_id))}
           {@const pid = contact_target(member.display)}
           {#if pid}
             <Player
@@ -95,9 +84,9 @@
               class="flex items-center justify-between px-2 py-1 text-sm text-neutral-300"
             >
               <span>{view.resolve_display(member.display)}</span>
-              {#if perms_label(member.perms)}
+              {#if permsLabel(member.perms)}
                 <span class="text-xs text-neutral-600">
-                  {perms_label(member.perms)}
+                  {permsLabel(member.perms)}
                 </span>
               {/if}
             </div>

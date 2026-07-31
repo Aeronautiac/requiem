@@ -28,8 +28,7 @@ impl ActionInterface for DestroyChannel {
     ) -> ActionResult {
         actor.require_system()?;
         let channel = get_channel(eng, self.channel_id)?;
-        let viewport = channel.membership_viewport;
-        let log_viewport = channel.log_viewport;
+        let viewport = channel.viewport;
 
         // Order matters and is easy to get wrong: the archival notice is addressed to the very
         // viewport being torn down, so it must be emitted while the members are still in it.
@@ -45,11 +44,12 @@ impl ActionInterface for DestroyChannel {
 
         sync_viewport(eng, ctx, viewport, IndexSet::new(), mutate);
 
+        // The record is not freed with the channel. A viewport is an audience and has nobody left
+        // once the room is gone; a log is what was said in it, and a tap-in or an autopsy may still
+        // ask about a channel that no longer exists.
         if mutate {
             eng.world.remove_channel(self.channel_id);
             eng.world.remove_viewport(viewport);
-            // Nobody is ever granted the log viewport, so there is no one to exit from it.
-            eng.world.remove_viewport(log_viewport);
         }
 
         Ok(ActionResponse::DestroyChannel(DestroyChannelResponse {}))

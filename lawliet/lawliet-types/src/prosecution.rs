@@ -8,6 +8,17 @@ pub enum ProsecutionSource {
     Ability(AbilityKey),
 }
 
+// Which side of a prosecution a particular player is on. Told to that player privately — see
+// Command::InProsecution — because the public snapshot cannot say it without saying it to everyone.
+//
+// Counsel is deliberately absent: a lawyer is named publicly on the snapshot and always shown raw,
+// so there has never been anything private to tell them.
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Serialize, Deserialize)]
+pub enum ProsecutionSide {
+    Prosecutor,
+    Defendant,
+}
+
 // Whether the side holding the floor has started yet. Surfaced rather than collapsed because the
 // two mean different things to the player who holds it: in Grace you have not begun and your first
 // message starts your slot, in Presentation the clock is already running on it.

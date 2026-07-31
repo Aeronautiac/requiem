@@ -24,7 +24,7 @@ impl ActionInterface for RemoveVote {
         let player_id = actor_id(actor).unwrap();
 
         let poll = get_poll(eng, self.poll_id)?;
-        if !poll.voter_policy(eng, player_id) {
+        if !poll.can_enter(eng, player_id) {
             return Err(ActionError::InvalidVoter);
         }
         if !poll.contains_voter(player_id) {

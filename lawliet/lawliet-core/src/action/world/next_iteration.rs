@@ -4,12 +4,13 @@ use lawliet_types::{
         ReturnBorrowedNotebooks,
     },
     actor::State,
+    bug::BugSource,
     command::Command,
     common::BugKey,
 };
 use smallvec::SmallVec;
 
-use crate::{action::ActionInterface, helpers::cmd_world_event};
+use crate::{action::ActionInterface, helpers::cmd_world_data};
 
 impl ActionInterface for NextIteration {
     fn handle(
@@ -41,7 +42,15 @@ impl ActionInterface for NextIteration {
             eng.world.curr_iteration += 1;
         }
 
-        let keys: SmallVec<[BugKey; 8]> = eng.world.bugs.keys().collect();
+        // Planted bugs last a day. A custody wiretap is not planted and does not expire with one —
+        // it belongs to the custody, and lasts exactly as long as the prosecution keeps its
+        // defendant there. SetCustody is the only thing that ends it.
+        let keys: SmallVec<[BugKey; 8]> = eng
+            .world
+            .bugs
+            .iter()
+            .filter_map(|(id, bug)| matches!(bug.source, BugSource::Ability(_)).then_some(id))
+            .collect();
         for id in keys {
             Action::ArchiveBug(ArchiveBug { bug_id: id })
                 .handle(eng, ctx, actor, version, mutate)?;
@@ -75,7 +84,9 @@ impl ActionInterface for NextIteration {
             }
         }
 
-        cmd_world_event(
+        // World DATA: the clock is not an announcement. A prisoner and a blacked-out world both
+        // still need to know what day it is, or nothing else they can see makes sense.
+        cmd_world_data(
             eng,
             ctx,
             Command::NewIteration {

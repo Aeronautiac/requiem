@@ -3,8 +3,8 @@ use indexmap::IndexMap;
 pub use lawliet_types::role::Role;
 
 use crate::{
-    actor::{ActorLinkType, player::WorldChannelOverride},
-    channel::{ChannelPermission, ChannelPermissions},
+    actor::ActorLinkType,
+    channel::ProfileBlueprint,
     config::{
         ability::{AbilityIdentifier, AbilityName},
         world::WorldChannelName,
@@ -12,10 +12,20 @@ use crate::{
     passive::{ContactLogType, PassiveType},
 };
 
+pub use lawliet_types::channel::{BlueprintDisplayKind, ContactPolicy, PermUpdatePolicy};
+
+// A seat in a world channel that comes with the role.
+//
+// This is how a channel nobody belongs to by default gets its guest list: L and Watari's line has
+// no blueprint of its own, and is reached by being one of them. The blueprint says what the seat
+// is worth once you have it, which for an ordinary line between two people is simply contact.
+//
+// Given and taken away by GiveRole, so a role change moves you out of the old role's rooms and
+// into the new one's.
 #[derive(PartialEq, Eq, Clone)]
-pub struct RoleWorldChannelOverride {
+pub struct RoleWorldChannelProfile {
     pub channel_name: WorldChannelName,
-    pub override_data: WorldChannelOverride,
+    pub blueprint: ProfileBlueprint,
 }
 
 // TODO:
@@ -52,10 +62,23 @@ pub struct RoleConfig {
     pub passives: Vec<RolePassive>,
     pub notebooks: Vec<RoleNotebook>,
     pub actor_links: Vec<RoleLink>,
-    pub world_channel_overrides: Vec<RoleWorldChannelOverride>,
+    pub world_channel_profiles: Vec<RoleWorldChannelProfile>,
 }
 
 pub type RoleConfigMap = IndexMap<Role, RoleConfig>;
+
+// The seat L and Watari share, which is the only thing that gets anybody into that channel. An
+// ordinary two-way line once you are in it: talk and listen unless you have been cut off.
+fn l_and_watari_line() -> RoleWorldChannelProfile {
+    RoleWorldChannelProfile {
+        channel_name: WorldChannelName::LAndWatari,
+        blueprint: ProfileBlueprint {
+            start_visible: true,
+            display_kind: BlueprintDisplayKind::OwnerRaw,
+            perm_policy: PermUpdatePolicy::Contact(ContactPolicy {}),
+        },
+    }
+}
 
 pub fn default_role_config() -> RoleConfigMap {
     let mut map = RoleConfigMap::new();
@@ -82,7 +105,7 @@ pub fn default_role_config() -> RoleConfigMap {
             passives: vec![],
             notebooks: vec![RoleNotebook { fake: false }],
             actor_links: vec![],
-            world_channel_overrides: vec![],
+            world_channel_profiles: vec![],
         },
     );
 
@@ -132,7 +155,7 @@ pub fn default_role_config() -> RoleConfigMap {
             }],
             notebooks: vec![RoleNotebook { fake: false }],
             actor_links: vec![],
-            world_channel_overrides: vec![],
+            world_channel_profiles: vec![],
         },
     );
 
@@ -170,13 +193,7 @@ pub fn default_role_config() -> RoleConfigMap {
                     link_type: ActorLinkType::Passive,
                 },
             ],
-            world_channel_overrides: vec![RoleWorldChannelOverride {
-                channel_name: WorldChannelName::LAndWatari,
-                override_data: WorldChannelOverride {
-                    default_perms: ChannelPermission::Send | ChannelPermission::View,
-                    force_perms: ChannelPermissions::EMPTY,
-                },
-            }],
+            world_channel_profiles: vec![l_and_watari_line()],
         },
     );
 
@@ -218,13 +235,7 @@ pub fn default_role_config() -> RoleConfigMap {
             ],
             notebooks: vec![],
             actor_links: vec![],
-            world_channel_overrides: vec![RoleWorldChannelOverride {
-                channel_name: WorldChannelName::LAndWatari,
-                override_data: WorldChannelOverride {
-                    default_perms: ChannelPermission::Send | ChannelPermission::View,
-                    force_perms: ChannelPermissions::EMPTY,
-                },
-            }],
+            world_channel_profiles: vec![l_and_watari_line()],
         },
     );
 
@@ -260,7 +271,7 @@ pub fn default_role_config() -> RoleConfigMap {
             }],
             notebooks: vec![],
             actor_links: vec![],
-            world_channel_overrides: vec![],
+            world_channel_profiles: vec![],
         },
     );
 
@@ -301,7 +312,7 @@ pub fn default_role_config() -> RoleConfigMap {
             passives: vec![],
             notebooks: vec![],
             actor_links: vec![],
-            world_channel_overrides: vec![],
+            world_channel_profiles: vec![],
         },
     );
 
@@ -321,13 +332,7 @@ pub fn default_role_config() -> RoleConfigMap {
             }],
             notebooks: vec![],
             actor_links: vec![],
-            world_channel_overrides: vec![RoleWorldChannelOverride {
-                channel_name: WorldChannelName::News,
-                override_data: WorldChannelOverride {
-                    default_perms: ChannelPermission::Send | ChannelPermission::View,
-                    force_perms: ChannelPermissions::EMPTY,
-                },
-            }],
+            world_channel_profiles: vec![],
         },
     );
 
@@ -338,7 +343,7 @@ pub fn default_role_config() -> RoleConfigMap {
             passives: vec![],
             notebooks: vec![],
             actor_links: vec![],
-            world_channel_overrides: vec![],
+            world_channel_profiles: vec![],
         },
     );
 
@@ -349,7 +354,7 @@ pub fn default_role_config() -> RoleConfigMap {
             passives: vec![],
             notebooks: vec![RoleNotebook { fake: false }],
             actor_links: vec![],
-            world_channel_overrides: vec![],
+            world_channel_profiles: vec![],
         },
     );
 
@@ -375,7 +380,7 @@ pub fn default_role_config() -> RoleConfigMap {
             passives: vec![],
             notebooks: vec![],
             actor_links: vec![],
-            world_channel_overrides: vec![],
+            world_channel_profiles: vec![],
         },
     );
 
@@ -392,7 +397,7 @@ pub fn default_role_config() -> RoleConfigMap {
             passives: vec![],
             notebooks: vec![RoleNotebook { fake: true }],
             actor_links: vec![],
-            world_channel_overrides: vec![],
+            world_channel_profiles: vec![],
         },
     );
 
@@ -421,7 +426,7 @@ pub fn default_role_config() -> RoleConfigMap {
             }],
             notebooks: vec![],
             actor_links: vec![],
-            world_channel_overrides: vec![],
+            world_channel_profiles: vec![],
         },
     );
 
@@ -441,7 +446,7 @@ pub fn default_role_config() -> RoleConfigMap {
             }],
             notebooks: vec![RoleNotebook { fake: true }],
             actor_links: vec![],
-            world_channel_overrides: vec![],
+            world_channel_profiles: vec![],
         },
     );
 
@@ -461,7 +466,7 @@ pub fn default_role_config() -> RoleConfigMap {
             }],
             notebooks: vec![],
             actor_links: vec![],
-            world_channel_overrides: vec![],
+            world_channel_profiles: vec![],
         },
     );
 

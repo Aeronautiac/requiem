@@ -15,9 +15,13 @@ new_key_type! {
     pub struct KidnappingKey;
     pub struct IncarcerationKey;
     pub struct ViewportKey;
+    pub struct TimerKey;
+    // Scoped to one channel: a profile key is only meaningful alongside the ChannelKey it was
+    // minted under, and every command carrying one carries that too.
+    pub struct ProfileKey;
 }
 
-pub type ID = usize; // host-inserted frontend identifiers (e.g. OverrideSource::Manual)
+pub type ID = usize;
 pub type Version = u8;
 pub type Time = u128; // intended to be used as unix time in milliseconds
 pub type JobID = usize;
@@ -30,3 +34,5 @@ pub type MemberCount = u16;
 pub type VoteAmplifier = u16;
 pub type AttemptCount = u16;
 pub type Seed = u32;
+pub type LogID = u16;
+

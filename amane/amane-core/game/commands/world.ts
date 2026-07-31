@@ -1,5 +1,10 @@
-// World events: this view's news feed. Each is delivered on the presence viewport, so a view that
-// has left presence simply stops receiving them — there is no gate here to forget.
+// World events: this view's news feed. Most are delivered on the world-events viewport, so a view
+// that has left it — by losing presence, or because the world went dark — simply stops receiving
+// them, and there is no gate here to forget.
+//
+// NewIteration and Blackout are the exceptions: they ride world data, which nothing takes away.
+// They land in the same feed because that is where a reader looks for them, not because they share
+// a delivery rule.
 import { slotKeyToString } from "../../bindings";
 import type { CmdCtx, Handlers } from "./index";
 
@@ -51,6 +56,13 @@ export const worldHandlers: Handlers = {
     ctx.view.events.push({
       timestamp: ctx.timestamp,
       data: { NewIteration: { iteration: p.iteration } },
+    });
+  },
+
+  Blackout(ctx: CmdCtx, p) {
+    ctx.view.events.push({
+      timestamp: ctx.timestamp,
+      data: { Blackout: { active: p.active } },
     });
   },
 

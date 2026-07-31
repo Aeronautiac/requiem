@@ -2,7 +2,7 @@
   // One person row in the Players panel: click to expand a dropdown. Admins get the admin
   // controls menu (inspect + set role / true name / kill / revive); everyone else gets the
   // Contact abilities against this player.
-  import { execErrorText } from "../../game/helpers.svelte";
+  import { execErrorText, permsLabel } from "../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
@@ -43,14 +43,6 @@
     ),
   );
 
-  // send = bit 0, read = bit 1 (matches the UpdateChannelView perms parsing).
-  function perms_label(p: number): string {
-    const parts: string[] = [];
-    if (p & 2) parts.push("read");
-    if (p & 1) parts.push("send");
-    return parts.join(" · ");
-  }
-
   async function contact(ability_id: string) {
     const request: ActionRequest = {
       actor: viewerToActor(ui.viewer),
@@ -82,8 +74,8 @@
     }}
   >
     <span>{label}</span>
-    {#if perms !== null && perms_label(perms)}
-      <span class="text-xs text-neutral-600">{perms_label(perms)}</span>
+    {#if perms !== null && permsLabel(perms)}
+      <span class="text-xs text-neutral-600">{permsLabel(perms)}</span>
     {/if}
   </button>
 
