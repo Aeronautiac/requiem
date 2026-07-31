@@ -32,6 +32,9 @@ impl AbilityInterface for NotebookReveal {
     ) -> super::AbilityResult {
         actor.player_only()?;
         let user_id = actor_id(actor).expect("expected valid actor to use NotebookReveal");
+        if self.target == user_id {
+            return Err(ActionError::CannotTargetSelf);
+        }
 
         // Eye abilities require the user to still have at least one eye.
         if get_player(eng, user_id)?.eyes < 1 {

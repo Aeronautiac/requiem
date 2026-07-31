@@ -63,10 +63,7 @@ pub enum TapInOutcome {
     // There is a record to read. The frontend server queries this log directly; `range` is how far
     // back from now, or None for everything it ever held. The log rather than the channel, so
     // answering a tap-in needs no model of which channel owns what.
-    Found {
-        log: LogID,
-        range: Option<Time>,
-    },
+    Found { log: LogID, range: Option<Time> },
     // Nothing has ever been registered under that id.
     NoSuchContact,
     // The channel is real, but logging is off there, so nothing was ever written down.

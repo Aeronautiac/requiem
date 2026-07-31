@@ -61,14 +61,10 @@ pub enum ActionError {
     PollDoesntExist,
     PollHasNoOptions,
     NotAPollOption,
-    // The policy a profile was to be built with cannot answer for that profile.
     IncompatiblePolicy,
     ProfileNotFound,
-    // A profile only one actor may wear at a time, offered to a second one.
     ProfileNotShareable,
-    // Speaking as a name the sender does not hold.
     ProfileNotOwned,
-    // A player tried to speak as nobody. Only a host may do that.
     ProfileRequired,
     InvalidVoter,
     NotAVoter,
@@ -108,6 +104,7 @@ pub enum ActionError {
     NotAnOgMember,
     CannotSacrificeForOwnName,
     PerformerRequiresOrg,
+    CannotTargetSelf,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -699,7 +696,6 @@ pub struct SetProfilePolicy {
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct DeleteProfileResponse {}
-
 
 // Take a profile out of the channel. Whatever was said through it stays said; its owners stop
 // being members if it was the last one they held.

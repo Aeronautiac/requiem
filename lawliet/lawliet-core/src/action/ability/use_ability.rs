@@ -102,22 +102,25 @@ impl ActionInterface for UseAbility {
         }
 
         if mutate {
-            let ability = get_ability(eng, self.ability_id)?;
-            let ability_name = ability.ability_name;
-            let (success_usages_remaining, failure_usages_remaining, iterations_to_reset) =
-                ability.get_ability_view_counts(eng);
-            ctx.push_cmd(
-                Command::UpdateAbilityView {
-                    ability_name,
-                    success_usages_remaining,
-                    failure_usages_remaining,
-                    iterations_to_reset,
-                    ability_id: self.ability_id,
-                    owner_id: actor_id,
-                },
-                owner_view_recipient(eng, actor_id),
-                eng.time,
-            );
+            let actor_data = get_actor(eng, actor_id)?;
+            for ability_id in actor_data.abilities.iter() {
+                let ability = get_ability(eng, *ability_id)?;
+                let ability_name = ability.ability_name;
+                let (success_usages_remaining, failure_usages_remaining, iterations_to_reset) =
+                    ability.get_ability_view_counts(eng);
+                ctx.push_cmd(
+                    Command::UpdateAbilityView {
+                        ability_name,
+                        success_usages_remaining,
+                        failure_usages_remaining,
+                        iterations_to_reset,
+                        ability_id: *ability_id,
+                        owner_id: actor_id,
+                    },
+                    owner_view_recipient(eng, actor_id),
+                    eng.time,
+                );
+            }
         }
 
         Ok(ActionResponse::UseAbility(UseAbilityResponse {}))

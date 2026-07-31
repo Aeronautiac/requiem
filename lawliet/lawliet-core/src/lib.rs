@@ -186,7 +186,6 @@ pub use common::{
 // theres no point in changing it at this point.
 
 // TODO:
-// - Channel rework
 // - Press conferences
 // - A poll's deadline never reaches the client. UpdatePoll carries no remaining time, so a poll
 //   whose timer is paused looks exactly like one that is simply taking a while. Nothing renders a
