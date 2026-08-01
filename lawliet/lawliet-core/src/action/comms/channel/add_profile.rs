@@ -23,9 +23,7 @@ impl ActionInterface for AddProfile {
     ) -> ActionResult {
         actor.admin_or_system()?;
 
-        // Refused on both passes, before anything is written: a policy that cannot answer for this
-        // profile would leave its permissions following nothing, with no symptom at the point of
-        // failure.
+        let channel = get_channel(eng, self.channel_id)?;
         let profile = ChannelProfile::new(
             self.display,
             self.visible,
@@ -33,7 +31,6 @@ impl ActionInterface for AddProfile {
             self.transferrable,
             self.perm_policy,
         );
-        let channel = get_channel(eng, self.channel_id)?;
         if !self.perm_policy.fits(eng, channel, &profile) {
             return Err(ActionError::IncompatiblePolicy);
         }

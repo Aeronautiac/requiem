@@ -1161,7 +1161,8 @@ export type ChannelKind =
   | { Org: ActorKey }
   | "Personal"
   | { Lawyer: ProsecutionKey }
-  | { Trial: ProsecutionKey };
+  | { Trial: ProsecutionKey }
+  | { Kidnapping: KidnappingKey };
 
 // What kind of actor a slot holds. A player carries nothing — the slot existing is all the engine
 // has to say, and the display name arrives on the profile channel.

@@ -16,6 +16,7 @@
 */
 
 use lawliet_types::{actor::Modifier, channel::ChannelPerm, command::CommandRecipient};
+use smallvec::SmallVec;
 
 use crate::{
     action::{
@@ -25,7 +26,9 @@ use crate::{
     actor::ActorDisplay,
     command::Command,
     common::BugKey,
-    helpers::{cmd_channel, cmd_channel_roster, get_actor, get_channel, get_channel_mut, player_id},
+    helpers::{
+        cmd_channel, cmd_channel_roster, get_actor, get_channel, get_channel_mut, player_id,
+    },
 };
 
 use crate::action::ActionActor;
@@ -77,9 +80,7 @@ impl ActionInterface for SendMessage {
         // later to name whoever talked. And, separately, it makes the name visible if the room did
         // not know it existed, which is about the name and not about who wore it.
         let mut revealed = false;
-        if mutate
-            && let (Some(profile_id), Some(id)) = (self.profile_id, sender)
-        {
+        if mutate && let (Some(profile_id), Some(id)) = (self.profile_id, sender) {
             let channel = get_channel_mut(eng, self.channel_id)
                 .expect("channel vanished mid-action: engine invariant violated");
             if let Some(profile) = channel.get_profile_mut(profile_id) {
@@ -108,7 +109,7 @@ impl ActionInterface for SendMessage {
                     eng.time,
                 );
 
-                let bug_ids: Vec<BugKey> = eng
+                let bug_ids: SmallVec<[BugKey; 8]> = eng
                     .world
                     .get_player(id)
                     .expect("expected valid player")
@@ -144,9 +145,6 @@ impl ActionInterface for SendMessage {
             cmd_channel_roster(eng, ctx, self.channel_id);
         }
 
-        // Addressed to the channel, which is precisely everyone holding View on it — and, on
-        // entry, anyone granted View later. Witnessed, so it also lands on the channel's record
-        // unless the sender is off it.
         cmd_channel(
             eng,
             ctx,

@@ -1,5 +1,3 @@
-// update a player's access to a profile
-
 use lawliet_types::action::ActionResponse;
 
 use crate::{
@@ -65,6 +63,8 @@ impl ActionInterface for SetProfileAccess {
         cmd_channel_roster(eng, ctx, self.channel_id);
         cmd_profile_access(eng, ctx, self.channel_id, self.player_id);
 
-        Ok(ActionResponse::SetProfileAccess(SetProfileAccessResponse {}))
+        Ok(ActionResponse::SetProfileAccess(
+            SetProfileAccessResponse {},
+        ))
     }
 }

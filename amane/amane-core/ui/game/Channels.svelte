@@ -33,6 +33,7 @@
     Notebook: "Notebooks",
     Role: "Roles",
     World: "World",
+    Kidnapping: "Kidnapping",
     Raw: "Misc",
     Prosecution: "Trials",
     Logs: "Logs",
@@ -49,6 +50,7 @@
     "Lounge",
     "Groupchat",
     "Prosecution",
+    "Kidnapping",
     "Logs",
     "Raw",
   ];
@@ -143,7 +145,8 @@
       payload: { CreatePersonalChannel: {} },
     };
     const reply = await session.submit_action(request);
-    if (!reply.ok) pc_flash.set_error(`Create failed: ${execErrorText(reply.error)}`);
+    if (!reply.ok)
+      pc_flash.set_error(`Create failed: ${execErrorText(reply.error)}`);
     else pc_flash.set_success("Personal channel created.");
   }
 </script>

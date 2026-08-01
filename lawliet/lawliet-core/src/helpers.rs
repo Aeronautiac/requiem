@@ -607,11 +607,10 @@ pub fn cmd_channel(
 
 // Tell everyone who can see a channel which names are in it.
 //
-// Synchronised rather than logged: the whole visible set, directed at each viewer, every time any
-// of it moves. Addressing it to the channel's viewport instead would be a leak rather than an
-// optimisation — a viewport hands its whole history to anyone who enters, so a late arrival would
-// be told every name the channel has ever held, including the ones that were the point of the
-// anonymity.
+// Synchronised. The whole visible set, directed at each viewer.
+// Addressing it to the channel's viewport instead would be a leak. A viewport hands its whole history to anyone who enters,
+// so a late arrival would be told every name the channel has ever held, including things like old death
+// note owners, and that's not good.
 //
 // Call it after anything that changes which profiles exist, what they show, what they permit, or
 // who can see them. It is idempotent, so calling it when nothing moved costs a few small commands

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::actor::ActorDisplay;
 use crate::common::{
-    ActorKey, GroupchatKey, ID, LoungeKey, NotebookKey, ProfileKey, ProsecutionKey,
+    ActorKey, GroupchatKey, ID, KidnappingKey, LoungeKey, NotebookKey, ProfileKey, ProsecutionKey,
 };
 use crate::world::WorldChannelName;
 
@@ -40,6 +40,7 @@ pub enum ChannelKind {
     Lawyer(ProsecutionKey),
     // Where the trial itself is held.
     Trial(ProsecutionKey),
+    Kidnapping(KidnappingKey),
 }
 
 #[bitflags]

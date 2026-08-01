@@ -181,19 +181,10 @@ pub use common::{
     LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey, Time,
 };
 
-// I've realized now that channels can likely be abstracted a bit further with overrides as a native
-// object rather than being specific to world channels, but everything is basically done already, so
-// theres no point in changing it at this point.
-
 // TODO:
 // - Press conferences
-// - A poll's deadline never reaches the client. UpdatePoll carries no remaining time, so a poll
-//   whose timer is paused looks exactly like one that is simply taking a while. Nothing renders a
-//   countdown yet; whatever does has to be told about the pause along with the time.
 // - Rulesets & live config editing
 // - Add destroy actions for the different kinds of objects (actors will be the final destroyable objects. they may get very messy.)
-// - Optimize by going through and caching what can be cached, adding indirection for very large
-// enums, and using smallvec when possible
 
 #[cfg(test)]
 mod tests {

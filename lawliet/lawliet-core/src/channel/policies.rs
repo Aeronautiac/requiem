@@ -74,12 +74,7 @@ impl IPermUpdatePolicy for FixedPolicy {
         true
     }
 
-    fn eval(
-        &self,
-        _eng: &Engine,
-        _channel: &Channel,
-        _profile: &ChannelProfile,
-    ) -> ChannelPermSet {
+    fn eval(&self, _eng: &Engine, _channel: &Channel, _profile: &ChannelProfile) -> ChannelPermSet {
         self.perms
     }
 }
@@ -131,9 +126,6 @@ impl IPermUpdatePolicy for AlivePolicy {
         matches!(profile.ownership, ProfileOwnership::Single(_))
     }
 
-    // Gated on being alive and nothing else. Whatever put you in this channel is what admits you,
-    // and the modifiers it carries are exactly the ones that shut you out of everywhere else —
-    // reading them here would close the one line left open.
     fn eval(&self, eng: &Engine, _channel: &Channel, profile: &ChannelProfile) -> ChannelPermSet {
         let Some(owner) = extract_single(profile) else {
             return ChannelPermSet::EMPTY;

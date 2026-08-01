@@ -121,8 +121,7 @@ export type ChannelPerms = {
 // only, no behaviour), `kind` is HOW it behaves. The split lets the read-only Notifications feed
 // (kind "Info") sit in the same "Personal" category as sendable personal channels (kind "Standard").
 export type ChannelCategory =
-  | "Raw" | "Lounge" | "Groupchat" | "Notebook" | "Role"
-  | "World" | "Org" | "Prosecution" | "Logs" | "Personal";
+  | "Raw" | "Lounge" | "Groupchat" | "Notebook" | "Role" | "World" | "Org" | "Prosecution" | "Logs" | "Personal" | "Kidnapping";
 export const CHANNEL_CATEGORIES: ChannelCategory[] = [
   "Raw", "Lounge", "Groupchat", "Notebook", "Role",
   "World", "Org", "Prosecution", "Logs", "Personal",
@@ -222,14 +221,14 @@ export type ChannelTappedEvent = {
 export type GameEvent = {
   timestamp: number,
   data:
-    | { Message: Message }
-    | { Write: WriteEvent }
-    | WorldEvent
-    | InfoEvent
-    | PollNoticeEvent
-    | ContactLogEvent
-    | KiraConnectionEvent
-    | ChannelTappedEvent,
+  | { Message: Message }
+  | { Write: WriteEvent }
+  | WorldEvent
+  | InfoEvent
+  | PollNoticeEvent
+  | ContactLogEvent
+  | KiraConnectionEvent
+  | ChannelTappedEvent,
 }
 
 export type PollData = {

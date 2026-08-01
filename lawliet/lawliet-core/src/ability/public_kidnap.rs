@@ -28,8 +28,6 @@ impl AbilityInterface for PublicKidnap {
     ) -> super::AbilityResult {
         get_player(eng, self.target)?;
 
-        // The publicly-shown kidnapper. A player is always themselves and may not designate
-        // anyone else; an org picks one of its own, defaulting to the acting member.
         let performer = match actor {
             ActionActor::Player(id) => {
                 if self.performer.is_some() {
@@ -64,3 +62,6 @@ impl AbilityInterface for PublicKidnap {
         Ok(super::AbilityStatus::Success)
     }
 }
+
+#[cfg(test)]
+mod tests {}

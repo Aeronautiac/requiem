@@ -1,5 +1,3 @@
-// delete a profile from a channel
-
 use lawliet_types::action::ActionResponse;
 use smallvec::SmallVec;
 

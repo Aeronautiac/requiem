@@ -1,8 +1,3 @@
-// go through every channel,
-// create base profiles,
-// go through every profile,
-// apply policies
-
 use indexmap::IndexSet;
 use lawliet_types::{action::ActionResponse, actor::ActorDisplay, channel::ChannelPermSet};
 use smallvec::SmallVec;
@@ -36,8 +31,6 @@ impl ActionInterface for UpdateChannels {
     ) -> ActionResult {
         actor.admin_or_system()?;
 
-        // Nothing here can fail, and a validate pass emits nothing, so there is no answer this
-        // could give that the mutate pass would not give again a moment later.
         if !mutate {
             return Ok(ActionResponse::UpdateChannels(UpdateChannelsResponse {}));
         }
@@ -164,19 +157,15 @@ fn apply_policies(eng: &mut Engine, ctx: &mut ActionContext, channel_id: Channel
         told.extend(profile.ownership.owners());
     }
 
-    // The audience is a projection of who holds View and every answer above has just settled.
     let (viewport, viewers) = {
         let channel = get_channel(eng, channel_id).expect(MISSING_CHANNEL);
         (channel.viewport, channel.viewers())
     };
     sync_viewport(eng, ctx, viewport, viewers, true);
 
-    // Once, after everything, rather than per profile: the roster is the whole visible set, so
-    // sending it for each name that moved would be the same message several times over.
     cmd_channel_roster(eng, ctx, channel_id);
 
-    // Directed, so it still reaches an owner the resync above has just taken out of the viewport —
-    // losing everything a name permitted is exactly the case they most need told.
+    // Directed, so it still reaches an owner the resync above has just taken out of the viewport
     for owner in told {
         cmd_profile_access(eng, ctx, channel_id, owner);
     }

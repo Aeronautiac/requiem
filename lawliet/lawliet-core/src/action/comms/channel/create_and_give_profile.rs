@@ -27,6 +27,7 @@ impl ActionInterface for CreateAndGiveProfile {
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
+        get_player(eng, self.player_id)?;
 
         let response = Action::AddProfile(AddProfile {
             channel_id: self.channel_id,
@@ -41,11 +42,6 @@ impl ActionInterface for CreateAndGiveProfile {
             unreachable!()
         };
 
-        // The player is checked on both passes; the grant itself only happens on the second. A key
-        // AddProfile has not issued yet names nothing, and asking the grant about it would fail for
-        // a reason that is not real. There is nothing lost: a name that has just been made is worn
-        // by nobody, so the one thing the grant can refuse cannot arise here.
-        get_player(eng, self.player_id)?;
         if mutate {
             Action::SetProfileAccess(SetProfileAccess {
                 channel_id: self.channel_id,

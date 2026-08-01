@@ -15,20 +15,20 @@
 
 use lawliet_types::{
     actor::ActorDisplay,
-    channel::{AlivePolicy, PermUpdatePolicy},
+    channel::{AlivePolicy, ChannelKind, PermUpdatePolicy},
     command::Command,
 };
 
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
-        ActionResult, AddState, CreateAndGiveProfile, CreateChannel, ReleaseKidnapping, ScheduleJob,
+        ActionResult, AddState, CreateAndGiveProfile, CreateChannel, ReleaseKidnapping,
+        ScheduleJob,
     },
-    actor::modifier::Modifier,
-    actor::state::State,
+    actor::{modifier::Modifier, state::State},
     common::{KidnappingKey, Version},
     engine::Engine,
-    helpers::{cmd_world_event, get_ability, get_actor, require_player},
+    helpers::{cmd_channel, cmd_world_event, get_ability, get_actor, require_player},
     kidnapping::{Kidnapping, KidnappingSource},
 };
 
@@ -81,9 +81,18 @@ impl ActionInterface for CreateKidnapping {
             KidnappingKey::default()
         };
 
-        // Announced BEFORE the state change. Kidnapped carries NoPresence, which takes the victim
-        // out of the very viewport this is addressed to — announcing afterwards tells everyone
-        // except the person it happened to.
+        cmd_channel(
+            eng,
+            ctx,
+            Command::MapChannel {
+                channel_id,
+                kind: ChannelKind::Kidnapping(id),
+            },
+            channel_id,
+            false,
+            None,
+        );
+
         cmd_world_event(
             eng,
             ctx,

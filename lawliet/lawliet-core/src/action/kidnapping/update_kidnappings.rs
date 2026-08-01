@@ -1,20 +1,11 @@
 /*
 * SYSTEM ACTION
 * Re-derive who is on the captors' side of every active kidnapping, and seat them.
+*, worn by all of them. The victim sees somebody and never how many, and no
 *
-* A sweep over KIDNAPPINGS rather than over channels. Who the captors are is a property of what
-* started the kidnapping, which is not a question a channel can answer about itself — and it is the
-* part that moves, since who is taking part in an org changes while somebody is still being held.
-*
-* The two kinds want opposite things, and both are the point of their kind:
-*
-*   Anonymous  one mask, worn by all of them. The victim sees somebody and never how many, and no
-*              amount of watching who says what pulls them apart. Its permissions are fixed,
-*              necessarily: a name worn by several people has no single owner whose standing could
-*              be consulted.
-*   Public     the face of the thing is visible from the start, and everyone standing behind it is
-*              hidden until they speak. Taking someone in the open still lets you stay at the back
-*              of the room.
+* Anonymous kidnappings have a single anonymous profile shared by everybody relevant.
+* Public kidnappings have the kidnapper start as the only visible display, while everyone else is
+* given an invisible display.
 *
 * The victim is seated by CreateKidnapping and is no business of this sweep.
 */
@@ -116,7 +107,7 @@ fn captors_of(eng: &Engine, source: KidnappingSource) -> SmallVec<[ActorKey; 8]>
         return SmallVec::from_slice(&[owner_id]);
     };
     let Ok(channel) = get_channel(eng, org.channel_id) else {
-        return SmallVec::new();
+        panic!("Invalid state: Org does not have a channel")
     };
     eng.world
         .get_viewport(channel.viewport)
@@ -145,8 +136,6 @@ fn wear_the_mask(
                 display: ActorDisplay::Mysterious,
                 visible: true,
                 shared: true,
-                // It belongs to the kidnapping rather than to any of them, so it survives all of
-                // them leaving.
                 transferrable: true,
                 perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
                     perms: ChannelPerm::Send | ChannelPerm::View,
@@ -177,8 +166,8 @@ fn wear_the_mask(
     Ok(())
 }
 
-// A name each. The one the kidnapping is publicly wearing starts visible, since it is what the act
-// announced; everybody else behind it is hidden until they use theirs.
+// A name each. The primary kidnapper starts visible.
+// Everybody else is hidden until they speak.
 fn seat_each_captor(
     eng: &mut Engine,
     ctx: &mut ActionContext,

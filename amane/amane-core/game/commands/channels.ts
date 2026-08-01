@@ -71,20 +71,30 @@ export const channelHandlers: Handlers = {
       return;
     }
 
+    // TODO:
+    // proper handling for kidnap channel names
+    if ("Kidnapping" in kind) {
+      const kidnapping_key = kind.Kidnapping;
+      mapChannel(ctx, key, "Kidnapping", `kidnapping`);
+    }
+
     // The defendant's private line to their lawyer rides its own viewport, so only those two ever
     // learn it exists. The trial's own channel is registered here too rather than from the
     // UpdateProsecution that names it — that rides presence, and filing the channel against THAT
     // viewport would mean everything said in the trial arrives on a viewport it was never mapped
     // to.
-    const prosecution_id = "Lawyer" in kind ? kind.Lawyer : kind.Trial;
-    const label = "Lawyer" in kind ? "lawyer" : "trial";
-    mapChannel(
-      ctx,
-      key,
-      "Prosecution",
-      `${label}-${prosecution_id.idx}v${prosecution_id.version}`,
-    );
-    ctx.view.map_prosecution_channel(key, slotKeyToString(prosecution_id));
+    if ("Lawyer" in kind || "Trial" in kind) {
+      const prosecution_id = "Lawyer" in kind ? kind.Lawyer : kind.Trial;
+      const label = "Lawyer" in kind ? "lawyer" : "trial";
+      mapChannel(
+        ctx,
+        key,
+        "Prosecution",
+        `${label}-${prosecution_id.idx}v${prosecution_id.version}`,
+      );
+      ctx.view.map_prosecution_channel(key, slotKeyToString(prosecution_id));
+
+    }
   },
 
   // Tearing a channel down is always archival — nothing said in it can be un-said.
