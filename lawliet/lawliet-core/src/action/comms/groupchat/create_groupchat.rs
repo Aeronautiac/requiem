@@ -31,7 +31,7 @@ impl ActionInterface for CreateGroupchat {
             loggable: true,
             base_profile: None,
         })
-            .handle(eng, ctx, actor, version, mutate)?;
+        .handle(eng, ctx, actor, version, mutate)?;
         let ActionResponse::CreateChannel(data) = channel_response else {
             unreachable!();
         };

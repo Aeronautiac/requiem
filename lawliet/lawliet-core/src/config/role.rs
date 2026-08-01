@@ -453,13 +453,22 @@ pub fn default_role_config() -> RoleConfigMap {
     map.insert(
         Role::Mello,
         RoleConfig {
-            abilities: vec![RoleAbility {
-                identifier: AbilityIdentifier {
-                    name: AbilityName::AnonymousAnnouncement,
-                    variant: 0,
+            abilities: vec![
+                RoleAbility {
+                    identifier: AbilityIdentifier {
+                        name: AbilityName::AnonymousAnnouncement,
+                        variant: 0,
+                    },
+                    transferrable: false,
                 },
-                transferrable: false,
-            }],
+                RoleAbility {
+                    identifier: AbilityIdentifier {
+                        name: AbilityName::AnonymousKidnap,
+                        variant: 0,
+                    },
+                    transferrable: false,
+                },
+            ],
             passives: vec![RolePassive {
                 passive_type: PassiveType::ContactLogs(ContactLogType::Odd),
                 transferrable: true,

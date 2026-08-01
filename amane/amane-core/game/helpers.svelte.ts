@@ -11,9 +11,10 @@ import type {
   OrganizationName,
   PassiveKey,
   ProsecutionPhaseView,
+  Statuses,
 } from "../bindings";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import { slotKeyFromString, slotKeyToString } from "../bindings";
+import { slotKeyFromString, slotKeyToString, StatusFlag } from "../bindings";
 import type { ExecError } from "../lib/protocol";
 import { STRINGS, type StringKey } from "../config/strings";
 import type {
@@ -173,6 +174,21 @@ export function permsLabel(perms: number): string {
   if (perms & PERM_VIEW) parts.push("read");
   if (perms & PERM_SEND) parts.push("send");
   return parts.join(" · ");
+}
+
+// The active flags of an actor's public status, as short badge labels. `missing` is the blackout
+// blur — worded as a vague "gone" — and never appears next to the specific flags it stands in for,
+// because the engine withholds those the moment it sets it.
+export function statusLabels(status: Statuses): string[] {
+  const labels: string[] = [];
+  if (status & StatusFlag.Missing) labels.push("gone");
+  if (status & StatusFlag.Dead) labels.push("dead");
+  if (status & StatusFlag.Incarcerated) labels.push("incarcerated");
+  if (status & StatusFlag.Kidnapped) labels.push("kidnapped");
+  if (status & StatusFlag.Custody) labels.push("custody");
+  if (status & StatusFlag.Ipp) labels.push("ipp");
+  if (status & StatusFlag.Bugged) labels.push("bugged");
+  return labels;
 }
 
 export function ownPerms(own: ChannelProfileView[]): ChannelPerms {

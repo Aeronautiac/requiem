@@ -1032,7 +1032,6 @@ pub fn terminate_prosecution(
     })
 }
 
-
 // ---- incarcerations ----
 
 pub fn incarcerate(

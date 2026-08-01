@@ -181,6 +181,58 @@ pub use common::{
     LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey, Time,
 };
 
+// I've now realized that what I've been calling a viewport is the shape of literally everything
+// regarding commands.
+// When an actors connects, they are backfilled on their entire history. An actor directed command
+// is just a viewport which that person was given immediate access to, and never had taken away.
+//
+// Removing the "actor" target leaves just viewport, system, and log.
+// Giving an actor its own viewport would remove the need to change command target based on if a
+// user of an ability was in an org or similar.
+//
+// However, changing this one thing is not worth it because its just a mild inconvenience. It is not
+// structurally blocking, and it would propagate through the entire stack. I've learned that this
+// command model can be generalized to a partitioning model, and this will be applicable to a real
+// time game I'm working on with a similar, but more refined architecture. It's just not worth doing
+// it here.
+
+// CURRENT PROJECT ISSUES:
+// - organizations see abilities they cannot currently use (member counts, role requirements).
+// - most of the task force abilities dont yet have a ui.
+// - notifications dont have enough coverage, and the way theyre handled on the frontend is messy.
+// - background check works mechanically, but the frontend displays the info to every individual actor's.
+// notifications channel rather than to the org's channel.
+// - there is no way to skip time on the server. the server needs some kind of offset value. you
+// should be able to send in a "time skip" value as an admin and skip ahead by that amount. this
+// decouples game time from real world time, but this might be how it should have been from the
+// start. the game can have conceptual time starting from 0, conceptual weekdays, etc... i doubt
+// this would be hard to change. it requires no engine work.
+// - you cannot edit the game's config as an admin. you also cannot revoke keys.
+// - players cannot immediately end their prosecution speaking period. they have to wait.
+// - notebook original owners dont know if their book is fake. it should be sent to them and the system.
+// currently, nobody knows its fake.
+// - you cannot see the list of running games on the platform layer of the client. not important
+// yet, but eventually needs to get done.
+// - the server has no persistence layer yet. everything is held in RAM, which is fine for testing,
+// but needs to get done for actual long-running games.
+// - the frontend lacks overall polish features like role display strings, rich text usage,
+// discord-like mentions, channel notifications/pings, greyed out channels which have been read with
+// no new messages, channels white with unreads, client side notification settings, etc...
+//
+// The good news is that basically all of the hard parts are done. This final phase is just polish.
+// After this, deployment. We have a hetzner cx23 waiting as well as a cloudflare domain.
+
+// CLIENT WORK OWED BY THE ENGINE:
+// protocol the engine now emits or accepts that the frontend doesn't yet handle. hand-written TS.
+// - NotebookFakeStatus command: render whether a book is a decoy in its notebook channel. reaches
+// only the original owner + System (admin), never a mere holder — so it is not a true-name-style
+// leak; a borrower/inheritor is left to deduce it.
+// - SignalReady during a Presentation subphase: an "end my turn" affordance in the trial channel,
+// shown to whoever holds the floor (prosecutor, or defendant/lawyer on the defense slot). ends the
+// speaking slot early instead of waiting out the clock.
+// - SetNotebookFake action: as admin, clicking the fake display toggles it — flips a book
+// real<->fake after creation. same display as the NotebookFakeStatus bullet, just interactive.
+
 // TODO:
 // - Press conferences
 // - Rulesets & live config editing

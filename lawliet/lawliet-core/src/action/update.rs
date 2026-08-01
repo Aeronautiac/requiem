@@ -6,8 +6,8 @@
 
 pub use crate::action::{
     Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-    UpdateChannels, UpdateKidnappings, UpdatePolls, UpdatePrisonChannel, UpdateProsecutions,
-    UpdateTimers, UpdateWorldViewports,
+    UpdateActorStatuses, UpdateChannels, UpdateKidnappings, UpdatePolls, UpdatePrisonChannel,
+    UpdateProsecutions, UpdateTimers, UpdateWorldViewports,
 };
 
 pub use crate::action::{Update, UpdateResponse};
@@ -47,14 +47,18 @@ impl ActionInterface for Update {
             .handle(eng, ctx, actor, version, mutate)?;
         // After the channel sweep above, which is what decides who is taking part in an org — and
         // that is what this reads to work out who is holding somebody.
-        Action::UpdateKidnappings(UpdateKidnappings {})
-            .handle(eng, ctx, actor, version, mutate)?;
+        Action::UpdateKidnappings(UpdateKidnappings {}).handle(eng, ctx, actor, version, mutate)?;
         Action::UpdatePrisonChannel(UpdatePrisonChannel {})
             .handle(eng, ctx, actor, version, mutate)?;
 
         Action::UpdateWorldViewports(UpdateWorldViewports {})
             .handle(eng, ctx, actor, version, mutate)?;
         Action::UpdateChannels(UpdateChannels {}).handle(eng, ctx, actor, version, mutate)?;
+
+        // After the final viewport sweep, so a newly-created player is already on the world-data
+        // viewport their status broadcasts to. Reads the settled states, bugs and blackout flag.
+        Action::UpdateActorStatuses(UpdateActorStatuses {})
+            .handle(eng, ctx, actor, version, mutate)?;
 
         // Last, because a timer's gate is a viewport and every one of them has just settled.
         Action::UpdateTimers(UpdateTimers {}).handle(eng, ctx, actor, version, mutate)?;

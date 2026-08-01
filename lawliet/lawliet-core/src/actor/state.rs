@@ -1,1 +1,1 @@
-pub use lawliet_types::actor::{State, States};
+pub use lawliet_types::actor::{State, States, Status, Statuses};

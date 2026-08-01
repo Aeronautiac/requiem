@@ -9,7 +9,7 @@ use lawliet_types::{
 
 use crate::{
     ability::AbilityInterface,
-    helpers::{actor_id, get_player},
+    helpers::{actor_id, get_channel, get_org, get_player},
 };
 
 impl AbilityInterface for BackgroundCheck {
@@ -26,15 +26,23 @@ impl AbilityInterface for BackgroundCheck {
         _version: u8,
         _mutate: bool,
     ) -> super::AbilityResult {
-        let true_name = get_player(eng, self.target)?.true_name.to_string();
         let user_id = actor_id(actor).expect("expected valid actor to use BackgroundCheck");
+        let true_name = get_player(eng, self.target)?.true_name.to_string();
+
+        let recipient = if actor.is_org() {
+            let org_data = get_org(eng, user_id)?;
+            let viewport = get_channel(eng, org_data.channel_id)?.viewport;
+            CommandRecipient::Viewport(viewport)
+        } else {
+            CommandRecipient::Actor(user_id)
+        };
 
         ctx.push_cmd(
             Command::RevealTrueName {
                 target_id: self.target,
                 true_name,
             },
-            CommandRecipient::Actor(user_id),
+            recipient,
             eng.time,
         );
 

@@ -97,7 +97,7 @@ use crate::common::ViewportKey;
 pub use lawliet_types::actor::ActorDisplay;
 pub use lawliet_types::channel::{
     BlueprintDisplayKind, ChannelKind, ChannelPerm, ChannelPermSet, ChannelProfileView,
-    PermUpdatePolicy, ProfileBlueprint,
+    PermUpdatePolicy, ProfileBlueprint, ProfileOwners,
 };
 
 #[derive(Debug)]

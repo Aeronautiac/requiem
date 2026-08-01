@@ -92,6 +92,7 @@ pub enum ActionError {
     NotACustodyPhase,
     IncompatiblePhase,
     AlreadySignalled,
+    NotHoldingFloor,
     LawyerAlreadySelected,
     CannotBeOwnLawyer,
     KidnappingNotFound,
@@ -105,6 +106,7 @@ pub enum ActionError {
     CannotSacrificeForOwnName,
     PerformerRequiresOrg,
     CannotTargetSelf,
+    WorldIsBlackedOut,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -972,6 +974,15 @@ pub struct GiveNotebook {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetNotebookFakeResponse {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetNotebookFake {
+    pub notebook_id: NotebookKey,
+    pub fake: bool,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct LendNotebookResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1308,6 +1319,12 @@ pub struct UpdateTimersResponse {}
 pub struct UpdateTimers {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateActorStatusesResponse {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateActorStatuses {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct SetBlackoutResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1357,6 +1374,7 @@ pub enum Action {
     AddPlayer(AddPlayer),
     AddNotebook(AddNotebook),
     GiveNotebook(GiveNotebook),
+    SetNotebookFake(SetNotebookFake),
     WriteName(WriteName),
     LendNotebook(LendNotebook),
     ScheduleKill(ScheduleKill),
@@ -1444,6 +1462,7 @@ pub enum Action {
     TerminateProsecution(TerminateProsecution),
     UpdateWorldViewports(UpdateWorldViewports),
     UpdateTimers(UpdateTimers),
+    UpdateActorStatuses(UpdateActorStatuses),
     SetBlackout(SetBlackout),
     InitializeEngine(InitializeEngine),
     SetRandomSeed(SetRandomSeed),
@@ -1474,6 +1493,7 @@ pub enum ActionResponse {
     AddPlayer(AddPlayerResponse),
     AddNotebook(AddNotebookResponse),
     GiveNotebook(GiveNotebookResponse),
+    SetNotebookFake(SetNotebookFakeResponse),
     WriteName(WriteNameResponse),
     LendNotebook(LendNotebookResponse),
     RemoveState(RemoveStateResponse),
@@ -1562,6 +1582,7 @@ pub enum ActionResponse {
     TerminateProsecution(TerminateProsecutionResponse),
     UpdateWorldViewports(UpdateWorldViewportsResponse),
     UpdateTimers(UpdateTimersResponse),
+    UpdateActorStatuses(UpdateActorStatusesResponse),
     SetBlackout(SetBlackoutResponse),
     InitializeEngine(InitializeEngineResponse),
     SetRandomSeed(SetRandomSeedResponse),

@@ -71,9 +71,7 @@ impl ActionInterface for CreatePersonalChannel {
                 shared: false,
                 transferrable: false,
                 perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
-                    perms: ChannelPerm::Send
-                        | ChannelPerm::View
-                        | ChannelPerm::LoggabilityControl,
+                    perms: ChannelPerm::Send | ChannelPerm::View | ChannelPerm::LoggabilityControl,
                 }),
             })
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;

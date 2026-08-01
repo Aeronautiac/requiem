@@ -15,8 +15,8 @@ use crate::{
     chargepool::ChargePool,
     common::{
         AbilityKey, ActorKey, BugKey, ChannelKey, ChargePoolKey, GroupchatKey, IncarcerationKey,
-        KidnappingKey, LogID, LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey, TimerKey,
-        ViewportKey,
+        KidnappingKey, LogID, LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey,
+        TimerKey, ViewportKey,
     },
     config::{
         actor::organization::OrganizationName,

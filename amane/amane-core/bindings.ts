@@ -92,6 +92,29 @@ export const StateFlag = {
   UnderTheRadar: 1 << 5,
 } as const;
 
+// The public projection of an actor's condition, as opposed to States (the raw set only the actor
+// itself is told). Not a subset of States: `Bugged` is a bug object, not a state, and `Missing` is
+// the blackout blur — a NEW presence loss shows only as Missing, so display it as a vague "gone"
+// and never infer the specific reason. UnderTheRadar is deliberately never in here.
+export type Status =
+  | "Bugged"
+  | "Dead"
+  | "Incarcerated"
+  | "Kidnapped"
+  | "Custody"
+  | "Ipp"
+  | "Missing";
+export type Statuses = number;
+export const StatusFlag = {
+  Bugged: 1 << 0,
+  Dead: 1 << 1,
+  Incarcerated: 1 << 2,
+  Kidnapped: 1 << 3,
+  Custody: 1 << 4,
+  Ipp: 1 << 5,
+  Missing: 1 << 6,
+} as const;
+
 export type ChannelPermissions = number;
 export const ChannelPermissionFlag = {
   Send: 1 << 0,
@@ -109,6 +132,13 @@ export type ChannelProfileView = {
   profile_id: ProfileKey;
   display: ActorDisplay;
   perms: ChannelPermissions;
+};
+
+// SYSTEM-only. Who wears one name in a channel — the admin's view behind the roster. Pairs with a
+// ChannelProfileView by profile_id; an empty owners list is a name currently worn by nobody.
+export type ProfileOwners = {
+  profile_id: ProfileKey;
+  owners: ActorKey[];
 };
 
 // A profile's permission rule, evaluated by the engine after every action. The client never
@@ -1097,6 +1127,7 @@ export type Command =
   // a client that can see that org's channel. Who was accused is deliberately not carried.
   | { FailedSilentProsecution: { accuser_id: ActorKey; true_name: string; org: OrganizationName } }
   | { ActorState: { state: States; actor_id: ActorKey } }
+  | { ActorStatus: { actor_id: ActorKey; status: Statuses } }
   | { AddOrgMember: { player_id: ActorKey; org_id: ActorKey } }
   | { RemoveOrgMember: { player_id: ActorKey; org_id: ActorKey } }
   | { AddMessage: { content: string; channel_id: ChannelKey; sender_display: ActorDisplay } }
@@ -1122,6 +1153,10 @@ export type Command =
   //
   // Invisible profiles are absent from it. Their existence is the thing being kept.
   | { ChannelRoster: { channel_id: ChannelKey; profiles: ChannelProfileView[] } }
+  // SYSTEM only. The ownership behind a channel's roster: for every visible profile, which actors
+  // wear it. Rides System alongside that channel's ChannelRoster and reaches nobody else — seeing
+  // through a name to the person is the admin power ordinary viewers lack. Keyed by profile_id.
+  | { ProfileOwnership: { channel_id: ChannelKey; owners: ProfileOwners[] } }
   // DIRECTED: which profiles in this channel you may speak as, whether or not the room can see
   // them, and what each permits. Says nothing about whether you can READ the channel — that is the
   // viewport's answer. An empty set is a member who holds nothing here.

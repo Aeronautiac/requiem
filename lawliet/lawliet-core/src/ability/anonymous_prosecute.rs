@@ -8,7 +8,7 @@ use lawliet_types::{
 use crate::{
     ability::AbilityInterface,
     action::ActionInterface,
-    helpers::{actor_id, get_player},
+    helpers::{actor_id, get_player, require_no_blackout},
 };
 
 impl AbilityInterface for AnonymousProsecute {
@@ -31,6 +31,11 @@ impl AbilityInterface for AnonymousProsecute {
         let prosecutor_id =
             actor_id(actor).expect("expected valid actor to have anonymous prosecute ability");
         let prosecutor_data = get_player(eng, prosecutor_id)?;
+
+        // As with an open prosecution: a trial cannot run while the world is dark, so filing one —
+        // anonymously or not — is refused during a blackout. Silent prosecution, which opens no
+        // trial, is deliberately exempt.
+        require_no_blackout(eng)?;
 
         Action::StartProsecution(StartProsecution {
             // Anonymity is about who the prosecutor is shown as, and says nothing about whether a
@@ -59,7 +64,7 @@ mod tests {
         config::role::Role,
         engine::Engine,
         helpers::get_prosecution,
-        test_helpers::{add_player, init_engine, quick_ability, use_ability},
+        test_helpers::{add_player, init_engine, quick_ability, set_blackout, started_engine, use_ability},
     };
 
     // Filing anonymously says who the prosecutor is SHOWN as. It is not a way to opt a trial out of
@@ -98,5 +103,38 @@ mod tests {
             let id = eng.world.prosecutions.keys().next().expect("a prosecution");
             assert_eq!(get_prosecution(&eng, id).unwrap().autonomous, autonomous);
         }
+    }
+
+    // A trial cannot run in the dark, so filing one is refused outright — no prosecution is opened.
+    #[test]
+    fn a_blackout_blocks_filing() {
+        let mut eng = started_engine();
+        let prosecutor = add_player(&mut eng, 0, Role::Civilian, "prosecutor");
+        let defendant = add_player(&mut eng, 0, Role::Civilian, "defendant");
+        let ability = quick_ability(
+            &mut eng,
+            0,
+            CreateAndGiveAbility {
+                ability_name: AbilityName::AnonymousProsecute,
+                variant: 0,
+                actor_id: prosecutor,
+                volatile: false,
+                transferrable: false,
+            },
+        );
+
+        set_blackout(&mut eng, 1, true);
+
+        assert!(
+            use_ability(
+                &mut eng,
+                2,
+                prosecutor,
+                ability,
+                AbilityBehaviour::AnonymousProsecute(AnonymousProsecute { target: defendant }),
+            )
+            .is_err()
+        );
+        assert!(eng.world.prosecutions.is_empty());
     }
 }

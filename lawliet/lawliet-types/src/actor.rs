@@ -49,6 +49,33 @@ pub enum State {
 
 pub type States = BitFlags<State>;
 
+// What OTHERS may see of an actor's condition, as opposed to `States`, which is the raw set the
+// actor is told about themselves. This is the curated, public projection carried by ActorStatus on
+// the world-data viewport.
+//
+// It is not a filtered `States`: some flags here are not engine states at all (`Bugged` is a Bug
+// object targeting the actor), and one is a deliberate blur (`Missing`). `UnderTheRadar` has no flag
+// here on purpose — being unseen is the whole point of it, so it is never projected.
+//
+// `Missing` is the fuzzy stand-in for "gone": set whenever a presence-removing state is being
+// withheld. Under a blackout the specific presence-removing flags (Dead/Incarcerated/Kidnapped) are
+// withheld and only `Missing` remains, so the world sees that someone is absent without being told
+// why — matching what world-data already discloses during a blackout.
+#[bitflags]
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Hash, Eq, Ord, Serialize, Deserialize)]
+pub enum Status {
+    Bugged = 1 << 0,
+    Dead = 1 << 1,
+    Incarcerated = 1 << 2,
+    Kidnapped = 1 << 3,
+    Custody = 1 << 4,
+    Ipp = 1 << 5,
+    Missing = 1 << 6,
+}
+
+pub type Statuses = BitFlags<Status>;
+
 #[bitflags]
 #[repr(u16)]
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Hash, Eq, Ord, Serialize, Deserialize)]

@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ability::AbilityName,
-    actor::{ActorDisplay, ActorKind, States},
+    actor::{ActorDisplay, ActorKind, States, Statuses},
     bug::BugContext,
-    channel::{ChannelKind, ChannelProfileView},
+    channel::{ChannelKind, ChannelProfileView, ProfileOwners},
     common::{
         AbilityKey, ActorKey, AttemptCount, BugKey, ChannelKey, ChargeCount, GroupchatKey, ID,
         IncarcerationKey, IterationCount, KidnappingKey, LogID, NotebookKey, PassiveKey, PollKey,
@@ -206,6 +206,20 @@ pub enum Command {
         actor_id: ActorKey,
     },
 
+    // BROADCAST (world-data viewport): what everyone may see of this actor's condition. The public
+    // counterpart to ActorState — where that is the actor's own raw state set, this is the curated
+    // projection others render them from, so it answers the visibility question once, for the whole
+    // world, instead of leaving each event to.
+    //
+    // Rides world-data, so it survives a blackout: during one the presence-removing flags collapse
+    // into `missing` (see Status), telling the world someone is gone without saying why. Re-emitted
+    // whenever a contributing fact moves — a relevant state, a bug landing or being archived, or the
+    // lights going out or coming back.
+    ActorStatus {
+        actor_id: ActorKey,
+        status: Statuses,
+    },
+
     // display a player as an org member. carries the org id, so the frontend keys the
     // update by it directly. addressed to the viewport of the org's backing channel — who may
     // see an org's roster is exactly who may see the org's channel.
@@ -368,6 +382,15 @@ pub enum Command {
         profiles: Vec<ChannelProfileView>,
     },
 
+    // SYSTEM only. The ownership behind a channel's roster: for every visible profile, which actors
+    // wear it. Emitted alongside the System copy of ChannelRoster (both from cmd_channel_roster),
+    // and only to System, because seeing through a name to the person behind it is exactly the
+    // admin power ordinary viewers lack. Keyed by profile_id so it lines up with that roster.
+    ProfileOwnership {
+        channel_id: ChannelKey,
+        owners: Vec<ProfileOwners>,
+    },
+
     // DIRECTED: which profiles in this channel the recipient may speak as, whether or not the room
     // can see them, and what each permits.
     //
@@ -431,6 +454,17 @@ pub enum Command {
     NotebookBorrowingStatus {
         notebook_id: NotebookKey,
         borrowed: bool,
+    },
+
+    // whether a notebook is fake (its writes cannot kill). Unlike the borrowing status — a fact
+    // about whoever currently holds the book — this is told only to its ORIGINAL owner, mirrored to
+    // System, the one entitled to know their own book is a decoy. Merely holding or even owning the
+    // book earns nothing: a borrower, or someone who inherited it by killing the owner, is never
+    // told, and deducing the decoy from a write that fails to kill is part of the game. Restated
+    // whenever the flag changes (SetNotebookFake), otherwise stated once when the owner is set.
+    NotebookFakeStatus {
+        notebook_id: NotebookKey,
+        fake: bool,
     },
 
     ////////////////////////////////////////////////

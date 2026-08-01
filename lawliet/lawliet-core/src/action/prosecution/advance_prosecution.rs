@@ -57,7 +57,9 @@
 * sweep, and channel perms by the SetMembers that UpdateProsecutionChannels issues.
 */
 
-use lawliet_types::channel::{BlueprintDisplayKind, PermUpdatePolicy, ProfileBlueprint, TrialPolicy};
+use lawliet_types::channel::{
+    BlueprintDisplayKind, PermUpdatePolicy, ProfileBlueprint, TrialPolicy,
+};
 
 use crate::{
     ChannelKey, Time,
@@ -234,7 +236,13 @@ impl ActionInterface for AdvanceProsecution {
                                 prosecution_id: self.prosecution_id,
                             }),
                         })
-                        .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+                        .handle(
+                            eng,
+                            ctx,
+                            &ActionActor::System,
+                            version,
+                            mutate,
+                        )?;
                     }
                 }
             }

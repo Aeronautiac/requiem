@@ -210,6 +210,72 @@ mod comms_tests {
         assert!(roster < message);
     }
 
+    // Admin sees every channel's roster, and behind it the one thing the room is never told: who
+    // wears each name. The roster reaches System like any viewer; the ownership reaches System and
+    // nobody else, even when the name is a mask the room cannot see through.
+    #[test]
+    fn admin_sees_the_roster_and_the_ownership_behind_it() {
+        let mut eng = Engine::new();
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let ch = create_channel(&mut eng, 0, false);
+
+        let (response, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                    channel_id: ch,
+                    player_id: p1,
+                    display: ActorDisplay::Mysterious,
+                    visible: true,
+                    shared: false,
+                    transferrable: false,
+                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                        perms: ChannelPerm::Send | ChannelPerm::View,
+                    }),
+                }),
+            })
+            .unwrap();
+        let ActionResponse::CreateAndGiveProfile(data) = response else {
+            unreachable!()
+        };
+
+        // The roster reaches admin like any viewer: the visible name, no owner attached.
+        assert!(ctx.commands.iter().any(|p| {
+            p.recipient == CommandRecipient::System
+                && matches!(&p.cmd, Command::ChannelRoster { channel_id, profiles }
+                    if *channel_id == ch
+                        && profiles.iter().any(|v| v.profile_id == data.profile_id))
+        }));
+
+        // The ownership behind that name reaches admin, and it names the holder of the mask.
+        // The last one is authoritative: a single action can re-emit the roster as it builds, so
+        // an early copy predates the grant.
+        let owner_cmd = ctx
+            .commands
+            .iter()
+            .rev()
+            .find(|p| {
+                matches!(&p.cmd, Command::ProfileOwnership { channel_id, .. } if *channel_id == ch)
+            })
+            .expect("System is told the ownership");
+        assert_eq!(owner_cmd.recipient, CommandRecipient::System);
+        let Command::ProfileOwnership { owners, .. } = &owner_cmd.cmd else {
+            unreachable!()
+        };
+        let entry = owners
+            .iter()
+            .find(|o| o.profile_id == data.profile_id)
+            .expect("the name is listed with its owner");
+        assert_eq!(entry.owners, vec![p1]);
+
+        // And it is admin's alone: no ownership command is ever addressed anywhere else.
+        assert!(ctx.commands.iter().all(|p| {
+            !matches!(&p.cmd, Command::ProfileOwnership { .. })
+                || p.recipient == CommandRecipient::System
+        }));
+    }
+
     // A name only one person can be wearing is the whole reason wearing it means anything, so
     // handing it to a second one is refused rather than quietly ignored.
     #[test]
@@ -231,10 +297,7 @@ mod comms_tests {
             }),
         });
 
-        assert!(matches!(
-            result,
-            Err((ActionError::ProfileNotShareable, _))
-        ));
+        assert!(matches!(result, Err((ActionError::ProfileNotShareable, _))));
     }
 
     // A name that could never have belonged to anybody else has no life without its holder, so

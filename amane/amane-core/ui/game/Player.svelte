@@ -2,7 +2,7 @@
   // One person row in the Players panel: click to expand a dropdown. Admins get the admin
   // controls menu (inspect + set role / true name / kill / revive); everyone else gets the
   // Contact abilities against this player.
-  import { execErrorText, permsLabel } from "../../game/helpers.svelte";
+  import { execErrorText, permsLabel, statusLabels } from "../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
@@ -36,6 +36,9 @@
   const flash = new Flash();
 
   const is_admin = $derived(ui.viewer === "Admin");
+
+  // The public condition of this player, as the world-data viewport last projected it.
+  const statuses = $derived(statusLabels(view.actor_statuses.get(id) ?? 0));
 
   const contact_abilities = $derived(
     [...(view.abilities.entries() ?? [])].filter(
@@ -73,7 +76,16 @@
       flash.success = null;
     }}
   >
-    <span>{label}</span>
+    <span class="flex items-center gap-1.5">
+      {label}
+      {#each statuses as s (s)}
+        <span
+          class="rounded bg-neutral-800 px-1 py-px text-[0.6rem] uppercase tracking-wide text-neutral-400"
+        >
+          {s}
+        </span>
+      {/each}
+    </span>
     {#if perms !== null && permsLabel(perms)}
       <span class="text-xs text-neutral-600">{permsLabel(perms)}</span>
     {/if}

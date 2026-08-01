@@ -9,7 +9,7 @@ use crate::{
     ability::AbilityInterface,
     action::ActionInterface,
     actor::modifier::Modifier,
-    helpers::{get_actor, get_org, get_player},
+    helpers::{actor_id, get_actor, get_org, get_player},
 };
 
 impl AbilityInterface for PublicKidnap {
@@ -27,6 +27,11 @@ impl AbilityInterface for PublicKidnap {
         mutate: bool,
     ) -> super::AbilityResult {
         get_player(eng, self.target)?;
+
+        let id = actor_id(actor).expect("expected valid actor id within public kidnap ability");
+        if self.target == id {
+            return Err(ActionError::CannotTargetSelf);
+        }
 
         let performer = match actor {
             ActionActor::Player(id) => {

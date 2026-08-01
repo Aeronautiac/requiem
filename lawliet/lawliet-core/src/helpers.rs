@@ -11,10 +11,11 @@ use crate::{
     ability::Ability,
     action::{ActionActor, ActionError},
     actor::{
-        Actor, ActorLinkType, ActorType, Organization, Player, modifier::Modifier, state::State,
+        Actor, ActorLinkType, ActorType, Organization, Player, modifier::Modifier,
+        state::{State, Status, Statuses},
     },
-    bug::Bug,
-    channel::Channel,
+    bug::{Bug, BugSource},
+    channel::{Channel, ProfileOwners},
     chargepool::ChargePool,
     command::Command,
     common::{
@@ -110,6 +111,13 @@ pub fn require_alive(eng: &Engine, actor_id: ActorKey) -> Result<(), ActionError
     let actor = get_actor(eng, actor_id)?;
     if actor.states.contains(State::Dead) {
         return Err(ActionError::ActorIsDead);
+    }
+    Ok(())
+}
+
+pub fn require_no_blackout(eng: &Engine) -> Result<(), ActionError> {
+    if eng.world.blackout {
+        return Err(ActionError::WorldIsBlackedOut);
     }
     Ok(())
 }
@@ -632,6 +640,33 @@ pub fn cmd_channel_roster(eng: &mut Engine, ctx: &mut ActionContext, channel_id:
             eng.time,
         );
     }
+
+    // Admin observes every channel, member or not. It gets the same visible roster the room sees,
+    // plus the one thing the room never learns: who is behind each of those names. Both ride the
+    // System recipient and key by profile_id, so the ownership map lines up with the roster.
+    let owners: Vec<ProfileOwners> = channel
+        .profiles
+        .iter()
+        .filter(|(_, profile)| profile.visible)
+        .map(|(id, profile)| ProfileOwners {
+            profile_id: id,
+            owners: profile.ownership.owners().into_vec(),
+        })
+        .collect();
+
+    ctx.push_cmd(
+        Command::ChannelRoster {
+            channel_id,
+            profiles,
+        },
+        CommandRecipient::System,
+        eng.time,
+    );
+    ctx.push_cmd(
+        Command::ProfileOwnership { channel_id, owners },
+        CommandRecipient::System,
+        eng.time,
+    );
 }
 
 // Tell an actor which names in a channel are theirs to speak as.
@@ -664,10 +699,10 @@ pub fn cmd_profile_access(
 // The whole set rather than the change: a client that ever missed one would otherwise stay wrong
 // forever, and the set is a handful of bits.
 //
-// Directed, with no broadcast form. What OTHER viewers may know about an actor is announced by the
-// event that caused it — Death, Kidnapping, Bugged — each of which already answers the visibility
-// question correctly for its own case. Presence therefore does not gate this: a player who has just
-// lost presence still learns they are dead, because this is addressed to them and not to a viewport.
+// Directed to the actor alone: their own raw state set, including states others never see (like
+// UnderTheRadar). What OTHERS may see is the curated projection in cmd_actor_status, not this.
+// Presence therefore does not gate this: a player who has just lost presence still learns they are
+// dead, because this is addressed to them and not to a viewport.
 pub fn cmd_actor_state(eng: &mut Engine, ctx: &mut ActionContext, actor_id: ActorKey) {
     let Ok(actor) = get_actor(eng, actor_id) else {
         return;
@@ -678,6 +713,98 @@ pub fn cmd_actor_state(eng: &mut Engine, ctx: &mut ActionContext, actor_id: Acto
         owner_view_recipient(eng, actor_id),
         eng.time,
     );
+}
+
+// True while an enabled bug is trained on this actor for a reason the public Status doesn't already
+// tell. A custody bug is excluded: it is incidental to being held, and the `Custody` flag already
+// carries that — surfacing `Bugged` too would just restate custody. A bug archived (disabled) but
+// kept in the world for its history no longer counts.
+pub fn actor_is_bugged(eng: &Engine, actor_id: ActorKey) -> bool {
+    eng.world.bugs.values().any(|bug| {
+        bug.target_id == actor_id && bug.enabled && !matches!(bug.source, BugSource::Custody)
+    })
+}
+
+// Broadcast the public projection of an actor's condition on the world-data viewport — the
+// companion to cmd_actor_state, which stays private to the actor. Call this wherever a contributing
+// fact moves: a relevant state, a bug landing or being archived, or a blackout toggling.
+//
+// Only players are projected; orgs have no status here. Emits only on a genuine change (diffed
+// against the actor's last_status) and stores the projection back, so the next call knows what the
+// world has already been told.
+//
+// Blackout blur: a presence-removing state (one carrying NoPresence) is withheld while the world is
+// dark UNLESS it was already public before the blackout — a fact once broadcast is never retracted.
+// Whatever is withheld surfaces only as `missing`, so the world learns someone is gone, not why.
+pub fn cmd_actor_status(eng: &mut Engine, ctx: &mut ActionContext, actor_id: ActorKey) {
+    let Ok(actor) = get_actor(eng, actor_id) else {
+        return;
+    };
+    if !matches!(actor.actor_type, ActorType::Player(_)) {
+        return;
+    }
+
+    let blackout = eng.world.blackout;
+    let last = actor.last_status;
+
+    let removes_presence = |state: State| {
+        eng.config
+            .state_modifiers
+            .get(&state)
+            .is_some_and(|m| m.contains(Modifier::NoPresence))
+    };
+
+    let mut status = Statuses::empty();
+    if actor_is_bugged(eng, actor_id) {
+        status |= Status::Bugged;
+    }
+
+    // A presence-removing state hidden by this blackout is withheld and folds into `Missing`; one
+    // the world already knew (`known`) is shown through the blackout instead of being retracted.
+    let mut missing = false;
+    let mut project = |flag: Status, state: State, known: bool| {
+        if !actor.states.contains(state) {
+            return;
+        }
+        if blackout && removes_presence(state) && !known {
+            missing = true;
+        } else {
+            status |= flag;
+        }
+    };
+
+    project(Status::Dead, State::Dead, last.contains(Status::Dead));
+    project(
+        Status::Incarcerated,
+        State::Incarcerated,
+        last.contains(Status::Incarcerated),
+    );
+    project(
+        Status::Kidnapped,
+        State::Kidnapped,
+        last.contains(Status::Kidnapped),
+    );
+    project(Status::Custody, State::Custody, last.contains(Status::Custody));
+    project(Status::Ipp, State::Ipp, last.contains(Status::Ipp));
+    drop(project);
+
+    if missing {
+        status |= Status::Missing;
+    }
+
+    if status != last {
+        ctx.push_cmd(
+            Command::ActorStatus { actor_id, status },
+            CommandRecipient::Viewport(eng.world.data_viewport),
+            eng.time,
+        );
+    }
+
+    if ctx.mutate {
+        if let Ok(actor) = get_actor_mut(eng, actor_id) {
+            actor.last_status = status;
+        }
+    }
 }
 
 // Tell a member whether they are an OG of an org, and mirror it to System for the admin inspector.
@@ -700,6 +827,36 @@ pub fn cmd_og_status(
                 org_id,
                 og,
             },
+            recipient,
+            eng.time,
+        );
+    }
+}
+
+// Tell a notebook's original owner whether their book is a decoy, mirrored to System for the admin
+// inspector. Only the ORIGINAL owner is entitled to know — not whoever merely holds it now. Someone
+// who borrowed it, or who came to own it by killing the original owner and inheriting the book,
+// deduces the decoy from a write that fails to kill, or never learns at all. If no original owner
+// is set yet, only System hears it.
+//
+// The one statement of the fake status, shared by the two events that need to make it: the give
+// that establishes the original owner, and any later change to the flag. Reads the current value
+// off the notebook rather than taking it, so a caller cannot state one thing and store another.
+pub fn cmd_notebook_fake_status(eng: &Engine, ctx: &mut ActionContext, notebook_id: NotebookKey) {
+    let Ok(notebook) = get_notebook(eng, notebook_id) else {
+        return;
+    };
+    let fake = notebook.fake;
+
+    for recipient in [
+        notebook.original_owner.map(CommandRecipient::Actor),
+        Some(CommandRecipient::System),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        ctx.push_cmd(
+            Command::NotebookFakeStatus { notebook_id, fake },
             recipient,
             eng.time,
         );

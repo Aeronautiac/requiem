@@ -52,6 +52,12 @@ export const actorHandlers: Handlers = {
     if (ctx.viewport === undefined) ctx.view.states = p.state;
   },
 
+  // The public condition of one actor, whole set every time. Emitted only to the world-data
+  // viewport, so any arrival is a legitimate projection — just replace what was held.
+  ActorStatus(ctx: CmdCtx, p) {
+    ctx.view.actor_statuses.set(slotKeyToString(p.actor_id), p.status);
+  },
+
   // The System copy feeds the admin inspector; the actor's own goes to their notifications. Two
   // recipients, two views, one handler.
   RoleUpdate(ctx: CmdCtx, p) {

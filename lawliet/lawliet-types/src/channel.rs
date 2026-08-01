@@ -67,6 +67,15 @@ pub struct ChannelProfileView {
     pub perms: ChannelPermSet,
 }
 
+// SYSTEM-only. Who wears one name in a channel. Pairs entry-for-entry with a ChannelProfileView in
+// the roster by profile_id, and carries the single thing the roster withholds from the room: the
+// actors behind the name. An empty owners list is a name currently worn by nobody.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileOwners {
+    pub profile_id: ProfileKey,
+    pub owners: Vec<ActorKey>,
+}
+
 // A profile's permission rule. The data half only — what each one decides, and when it may be
 // applied at all, is written out in lawliet_core::channel::policies.
 //

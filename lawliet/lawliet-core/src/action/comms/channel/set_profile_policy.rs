@@ -50,6 +50,8 @@ impl ActionInterface for SetProfilePolicy {
                 .perm_policy = self.perm_policy;
         }
 
-        Ok(ActionResponse::SetProfilePolicy(SetProfilePolicyResponse {}))
+        Ok(ActionResponse::SetProfilePolicy(
+            SetProfilePolicyResponse {},
+        ))
     }
 }

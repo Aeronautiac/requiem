@@ -10,7 +10,7 @@ use crate::{
     actor::{
         modifier::{Modifier, Modifiers, Source},
         organization::LeadershipStruct,
-        state::{State, States},
+        state::{State, States, Statuses},
     },
     common::{AbilityKey, ActorKey, ChargePoolKey, NotebookKey, PassiveKey},
     config::{
@@ -56,6 +56,10 @@ pub struct Actor {
     pub notebooks: IndexSet<NotebookKey>, // any notebook currently HELD (not owned) by this actor
     pub modifiers: IndexMap<Source, Modifiers>,
     pub states: States,
+    // The last public Status set broadcast for this actor. Read back at emit time to blur only NEW
+    // presence-removing transitions during a blackout — a status the world already saw before the
+    // lights went out is never retracted — and to suppress re-emitting an unchanged set.
+    pub last_status: Statuses,
     pub actor_type: ActorType,
     pub actor_links: IndexSet<ActorLink>,
     pub pool_map: IndexMap<ActorChargePoolName, ChargePoolKey>,
@@ -70,6 +74,7 @@ impl Actor {
             notebooks: IndexSet::new(),
             modifiers: IndexMap::new(),
             states: States::empty(),
+            last_status: Statuses::empty(),
             actor_links: IndexSet::new(),
             actor_type: ActorType::Player(Player::new(true_name, role)),
             pool_map: IndexMap::new(),
@@ -89,6 +94,7 @@ impl Actor {
             modifiers: IndexMap::new(),
             actor_links: IndexSet::new(),
             states: States::empty(),
+            last_status: Statuses::empty(),
             actor_type: ActorType::Org(Organization::new(name, leadership_struct, channel_id)),
             pool_map: IndexMap::new(),
         }

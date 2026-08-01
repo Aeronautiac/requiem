@@ -347,10 +347,10 @@ mod prosecution_tests {
         assert!(matches!(err, ActionError::NotInProsecution));
     }
 
-    // Only Custody and the debate subphase accept a signal. A presentation subphase must refuse it
-    // rather than silently succeed.
+    // Grace is not a signallable subphase — a first message ends it, not a signal — so a signal
+    // during it is refused rather than silently succeeding.
     #[test]
-    fn signalling_during_a_presentation_is_refused() {
+    fn signalling_during_grace_is_refused() {
         let mut eng = Engine::new();
         let (prosecutor, defendant, _, id) = trial(&mut eng);
 
@@ -359,13 +359,93 @@ mod prosecution_tests {
         assert!(matches!(
             get_prosecution(&eng, id).unwrap().phase,
             ProsecutionPhase::Trial {
-                phase: TrialPhase::Prosecutor(_),
+                phase: TrialPhase::Prosecutor(TrialSubphase::Grace),
                 ..
             }
         ));
 
         let err = signal_ready(&mut eng, 3, prosecutor, id).unwrap_err().0;
         assert!(matches!(err, ActionError::IncompatiblePhase));
+    }
+
+    // The floor-holder ends their slot early instead of waiting out the clock. The prosecutor doing
+    // so hands the floor straight to the defence's grace.
+    #[test]
+    fn the_floor_holder_ends_their_presentation() {
+        let mut eng = Engine::new();
+        let (prosecutor, _, _, id) = trial(&mut eng);
+        advance_prosecution(&mut eng, 1, id);
+        speak(&mut eng, 2, prosecutor, id).unwrap();
+
+        signal_ready(&mut eng, 3, prosecutor, id).unwrap();
+
+        assert!(matches!(
+            get_prosecution(&eng, id).unwrap().phase,
+            ProsecutionPhase::Trial {
+                phase: TrialPhase::Defense(TrialSubphase::Grace),
+                ..
+            }
+        ));
+    }
+
+    // The defence ending its own slot is what closes the presentations and opens the debate.
+    #[test]
+    fn the_defense_ends_its_presentation() {
+        let mut eng = Engine::new();
+        let (prosecutor, defendant, _, id) = trial(&mut eng);
+        advance_prosecution(&mut eng, 1, id);
+        speak(&mut eng, 2, prosecutor, id).unwrap();
+        signal_ready(&mut eng, 3, prosecutor, id).unwrap(); // -> defense grace
+        speak(&mut eng, 4, defendant, id).unwrap(); // -> defense presentation
+
+        signal_ready(&mut eng, 5, defendant, id).unwrap();
+
+        assert!(matches!(
+            get_prosecution(&eng, id).unwrap().phase,
+            ProsecutionPhase::Trial {
+                phase: TrialPhase::Debate { .. },
+                ..
+            }
+        ));
+    }
+
+    // Only the side holding the floor may end it. The idle side — a participant, but not the one
+    // speaking — is refused, distinctly from a bystander who is not in the prosecution at all.
+    #[test]
+    fn the_idle_side_cannot_end_the_floor() {
+        let mut eng = Engine::new();
+        let (prosecutor, defendant, bystander, id) = trial(&mut eng);
+        advance_prosecution(&mut eng, 1, id);
+        speak(&mut eng, 2, prosecutor, id).unwrap();
+
+        let idle = signal_ready(&mut eng, 3, defendant, id).unwrap_err().0;
+        assert!(matches!(idle, ActionError::NotHoldingFloor));
+
+        let outsider = signal_ready(&mut eng, 4, bystander, id).unwrap_err().0;
+        assert!(matches!(outsider, ActionError::NotInProsecution));
+    }
+
+    // Choosing a lawyer is a gamble: the same counsel who can open the defence's slot can end it,
+    // cutting their own client off mid-defence.
+    #[test]
+    fn the_lawyer_can_end_the_defense_presentation() {
+        let mut eng = Engine::new();
+        let (prosecutor, defendant, bystander, id) = trial(&mut eng);
+        select_lawyer(&mut eng, 1, defendant, id, bystander).unwrap();
+        advance_prosecution(&mut eng, 2, id);
+        speak(&mut eng, 3, prosecutor, id).unwrap();
+        signal_ready(&mut eng, 4, prosecutor, id).unwrap(); // -> defense grace
+        speak(&mut eng, 5, bystander, id).unwrap(); // counsel opens -> defense presentation
+
+        signal_ready(&mut eng, 6, bystander, id).unwrap();
+
+        assert!(matches!(
+            get_prosecution(&eng, id).unwrap().phase,
+            ProsecutionPhase::Trial {
+                phase: TrialPhase::Debate { .. },
+                ..
+            }
+        ));
     }
 
     // ---- the wire ----

@@ -73,9 +73,12 @@ export const channelHandlers: Handlers = {
 
     // TODO:
     // proper handling for kidnap channel names
+    // The names will be things like:
+    // "public-${victim-name}"
+    // "anonymous-${victim-name}"
     if ("Kidnapping" in kind) {
       const kidnapping_key = kind.Kidnapping;
-      mapChannel(ctx, key, "Kidnapping", `kidnapping`);
+      mapChannel(ctx, key, "Kidnapping", `kidnapping-${kidnapping_key.idx}v${kidnapping_key.version}`);
     }
 
     // The defendant's private line to their lawyer rides its own viewport, so only those two ever
@@ -148,6 +151,7 @@ export const channelHandlers: Handlers = {
     ctx.view.channel_views.set(channel_id, {
       roster: existing?.roster ?? [],
       own: p.profiles,
+      owners: existing?.owners ?? [],
     });
 
     // A notebook channel going from no-read to read means the book is now in this view's hands.
@@ -165,6 +169,20 @@ export const channelHandlers: Handlers = {
     ctx.view.channel_views.set(channel_id, {
       roster: p.profiles,
       own: existing?.own ?? [],
+      owners: existing?.owners ?? [],
+    });
+  },
+
+  // SYSTEM only, so this only ever lands in the admin view. Who is behind each name in the roster,
+  // whole set every time — replaced like the roster it accompanies. Ordinary viewers never receive
+  // it, so their `owners` stays empty and nothing behind a mask is exposed.
+  ProfileOwnership(ctx: CmdCtx, p) {
+    const channel_id = slotKeyToString(p.channel_id);
+    const existing = ctx.view.channel_views.get(channel_id);
+    ctx.view.channel_views.set(channel_id, {
+      roster: existing?.roster ?? [],
+      own: existing?.own ?? [],
+      owners: p.owners,
     });
   },
 

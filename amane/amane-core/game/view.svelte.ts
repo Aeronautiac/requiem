@@ -10,7 +10,7 @@
 // the price of the guarantee, and it is bounded by what was actually delivered rather than by the
 // size of the game.
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import type { ActorDisplay, ProsecutionSide } from "../bindings";
+import type { ActorDisplay, ProsecutionSide, Statuses } from "../bindings";
 import { slotKeyToString } from "../bindings";
 import { NOTIF_CHANNEL, new_channel, orgDisplayName, playerLabel, t } from "./helpers.svelte";
 import type {
@@ -42,6 +42,10 @@ export class GameView {
   incarcerations = new SvelteMap<string, TrackedIncarceration>();
   // Only ever populated on System, which is the one view the personal-info System copies reach.
   player_info = new SvelteMap<string, PlayerInfo>();
+  // StatusFlag bitmask per actor: the public condition of every player this view can see, carried
+  // on the world-data viewport and re-emitted on every change. Keyed by slot rather than stored on
+  // the Player because a world sweep drives it and the two arrive by different routes.
+  actor_statuses = new SvelteMap<string, Statuses>();
 
   // News must appear to exist even after the underlying channel is removed, so the key is kept
   // rather than read off `channels`. $state so a component resolving it recomputes the moment it

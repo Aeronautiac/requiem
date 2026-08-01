@@ -5,6 +5,15 @@
 * Custody phase:
 *   Sets the caller's ready flag (prosecutor_ready or defense_ready).
 *
+* Trial Presentation subphase:
+*   The floor-holder ends the slot themselves instead of leaving it to the clock — the slot ends
+*   the same either way. Single-sided, so there is no flag to pair: this advances the subphase at
+*   once (AdvanceProsecution as System — a subphase move, never a held boundary, refused when
+*   frozen). The floor-holder is the prosecutor during Prosecutor(Presentation); during
+*   Defense(Presentation) it is the defendant OR their lawyer, the same voice grace_ended_by trusts
+*   to open the slot. Any other participant gets NotHoldingFloor. Grace is not handled here — a
+*   first message ends it.
+*
 * Trial Debate subphase:
 *   Sets the caller's done flag (prosecutor_done or defense_done).
 *   One flag set → countdown shortened.
@@ -26,12 +35,13 @@
 
 use crate::{
     action::{
-        ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse, ActionResult,
+        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
+        ActionResult, AdvanceProsecution,
     },
     common::Version,
     engine::Engine,
     helpers::{get_prosecution, get_prosecution_mut, player_id},
-    prosecution::{ProsecutionPhase, TrialPhase},
+    prosecution::{ProsecutionPhase, TrialPhase, TrialSubphase},
 };
 
 use super::reschedule_advance;
@@ -42,9 +52,9 @@ impl ActionInterface for SignalReady {
     fn handle(
         &mut self,
         eng: &mut Engine,
-        _ctx: &mut ActionContext,
+        ctx: &mut ActionContext,
         actor: &ActionActor,
-        _version: Version,
+        version: Version,
         mutate: bool,
     ) -> ActionResult {
         actor.player_only()?;
@@ -53,6 +63,45 @@ impl ActionInterface for SignalReady {
         let prosecution = get_prosecution(eng, self.prosecution_id)?;
         let is_prosecutor = prosecution.prosecution.prosecutor == caller;
         let is_defendant = prosecution.defense.defendant == caller;
+        let is_lawyer = prosecution
+            .defense
+            .lawyer
+            .as_ref()
+            .is_some_and(|lawyer| lawyer.actor_id == caller);
+
+        // A Presentation subphase is settled here rather than through the flag logic below: it is
+        // single-sided, so nothing pairs and the subphase advances at once. Some(true) means the
+        // caller holds the floor, Some(false) a participant who does not; None means this is not a
+        // presentation and the paired phases handle it.
+        let presentation_holder = match &prosecution.phase {
+            ProsecutionPhase::Trial {
+                phase: TrialPhase::Prosecutor(TrialSubphase::Presentation),
+                ..
+            } => Some(is_prosecutor),
+            ProsecutionPhase::Trial {
+                phase: TrialPhase::Defense(TrialSubphase::Presentation),
+                ..
+            } => Some(is_defendant || is_lawyer),
+            _ => None,
+        };
+
+        if let Some(holds_floor) = presentation_holder {
+            // A bystander is not in the prosecution at all; keep that distinct from a participant
+            // who simply is not the one holding the floor right now.
+            if !is_prosecutor && !is_defendant && !is_lawyer {
+                return Err(ActionError::NotInProsecution);
+            }
+            if !holds_floor {
+                return Err(ActionError::NotHoldingFloor);
+            }
+            // AdvanceProsecution enforces the freeze; this only points it at the slot being ended.
+            Action::AdvanceProsecution(AdvanceProsecution {
+                prosecution_id: self.prosecution_id,
+            })
+            .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+
+            return Ok(ActionResponse::SignalReady(SignalReadyResponse {}));
+        }
 
         if !is_prosecutor && !is_defendant {
             return Err(ActionError::NotInProsecution);

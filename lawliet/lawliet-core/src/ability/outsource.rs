@@ -31,7 +31,6 @@ impl AbilityInterface for Outsource {
         actor.org_only()?;
         let org_id = actor_id(actor).expect("org actor has an id");
 
-        // Bring the prosecutor into the org first.
         Action::AddToOrg(AddToOrg {
             leader: false,
             og: false,
@@ -40,7 +39,6 @@ impl AbilityInterface for Outsource {
         })
         .handle(eng, ctx, &ActionActor::System, version, mutate)?;
 
-        // Then file the prosecution under the invited player's identity.
         Action::StartProsecution(StartProsecution {
             autonomous: eng.config.defaults.prosecution_autonomous,
             defendant_id: self.defendant,

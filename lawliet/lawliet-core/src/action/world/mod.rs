@@ -5,6 +5,7 @@ pub mod next_iteration;
 pub mod set_blackout;
 pub mod set_random_seed;
 pub mod start_game;
+pub mod update_actor_statuses;
 pub mod update_world_viewports;
 
 #[cfg(test)]
@@ -329,8 +330,7 @@ mod world_tests {
         add_state(&mut eng, 0, p1, State::Dead);
 
         assert!(
-            !world_channel_perms(&eng, WorldChannelName::General, p1)
-                .contains(ChannelPerm::Send)
+            !world_channel_perms(&eng, WorldChannelName::General, p1).contains(ChannelPerm::Send)
         );
     }
 
@@ -342,10 +342,7 @@ mod world_tests {
 
         add_state(&mut eng, 0, p1, State::Dead);
 
-        assert!(
-            !world_channel_perms(&eng, WorldChannelName::News, p1)
-                .contains(ChannelPerm::View)
-        );
+        assert!(!world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::View));
     }
 
     #[test]
@@ -370,9 +367,7 @@ mod world_tests {
         init_engine(&mut eng);
         let p1 = add_player(&mut eng, 0, Role::NewsAnchor, "p1");
 
-        assert!(
-            world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send)
-        );
+        assert!(world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send));
     }
 
     #[test]
@@ -381,10 +376,7 @@ mod world_tests {
         init_engine(&mut eng);
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
-        assert!(
-            !world_channel_perms(&eng, WorldChannelName::News, p1)
-                .contains(ChannelPerm::Send)
-        );
+        assert!(!world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send));
     }
 
     #[test]
@@ -395,10 +387,7 @@ mod world_tests {
 
         give_role(&mut eng, 0, p1, Role::Civilian);
 
-        assert!(
-            !world_channel_perms(&eng, WorldChannelName::News, p1)
-                .contains(ChannelPerm::Send)
-        );
+        assert!(!world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send));
     }
 
     // The anchor's own standing still gates it: the role is what grants Send, and being unable to

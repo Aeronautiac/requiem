@@ -6,6 +6,7 @@ import type {
   BugContext,
   ChannelProfileView,
   ContactLog,
+  ProfileOwners,
   OrganizationName,
   PassiveType,
   PollOptionIndex,
@@ -291,6 +292,9 @@ export type ChannelView = {
   // always exactly one. Empty is a member who holds nothing, which is how being removed is stated
   // rather than left to be noticed.
   own: ChannelProfileView[];
+  // Who is behind each name in the roster, keyed by profile_id. Only ever populated for the admin
+  // (System) view — the engine sends ownership to nobody else, so for a player this stays empty.
+  owners: ProfileOwners[];
 };
 
 // A player slot this view has been told about (from MapActor).

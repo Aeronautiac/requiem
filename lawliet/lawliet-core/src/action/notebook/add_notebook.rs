@@ -32,7 +32,7 @@ impl ActionInterface for AddNotebook {
             loggable: false,
             base_profile: None,
         })
-            .handle(eng, ctx, actor, version, mutate)?;
+        .handle(eng, ctx, actor, version, mutate)?;
         let ActionResponse::CreateChannel(data) = channel_response else {
             unreachable!();
         };
