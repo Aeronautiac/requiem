@@ -9,9 +9,19 @@ import { slotKeyToString } from "../bindings";
 import { applyCommand } from "./commands";
 import { recipientToActor, recipientToView, recipientToViewport } from "./helpers.svelte";
 import { History } from "./history";
+import type { Toast } from "../lib/protocol";
 import { GameView } from "./view.svelte";
 
 export const GAME_STATE_KEY = Symbol("game_state");
+
+// Given the view a command landed in and a toast a handler already composed, decide whether the
+// human sees it. Injected by the session, which alone knows what is on screen and whether we are
+// live — the handler decided the words, this only decides delivery. A no-op until wired, so an
+// unwired GameState (a test, a fresh construction) simply raises nothing.
+export type NotifySink = (view: GameView, toast: Toast) => void;
+
+// Backfill replays history a late-arriving view missed; none of it is news, so it must never toast.
+const NO_NOTIFY: (toast: Toast) => void = () => {};
 
 export class GameState {
   // Actor key -> that actor's world. "System" is the admin view: it reads every viewport, holds no
@@ -19,6 +29,10 @@ export class GameState {
   views = new SvelteMap<string, GameView>();
 
   #history = new History();
+
+  // Where a toast-worthy event goes to be judged. The session installs the real one; until then a
+  // handler's notify is inert.
+  #notify_sink: NotifySink = () => {};
 
   // slot -> the name the SERVER gave it, for every slot this connection has been told about.
   //
@@ -32,6 +46,12 @@ export class GameState {
     this.views.set("System", new GameView());
   }
 
+  // The session wires this once, right after construction. Kept separate from the constructor so a
+  // caller that only needs to fold commands (a test) is not forced to hand one over.
+  set_notifier(sink: NotifySink) {
+    this.#notify_sink = sink;
+  }
+
   // The public seam the Sequencer drives. Command ordering within a batch is significant
   // (create-before-reference, last-write-wins perms), so never reorder.
   apply_batch(commands: CommandPayload[]) {
@@ -43,13 +63,20 @@ export class GameState {
   #apply(payload: CommandPayload) {
     const pos = this.#history.append(payload);
     for (const view of this.#recipients(payload.recipient)) {
-      this.#deliver(view, payload, pos);
+      // Live delivery: a toast a handler composes reaches the session's judge, tagged with the view
+      // it landed in so the session can ask whether that view is the one on screen.
+      this.#deliver(view, payload, pos, (toast) => this.#notify_sink(view, toast));
     }
   }
 
   // Apply one command into one view, live or replayed. Everything a handler is allowed to touch
   // reaches it through here.
-  #deliver(view: GameView, { recipient, cmd, timestamp }: CommandPayload, pos: number) {
+  #deliver(
+    view: GameView,
+    { recipient, cmd, timestamp }: CommandPayload,
+    pos: number,
+    notify: (toast: Toast) => void,
+  ) {
     const viewport = recipientToViewport(recipient);
     // So a later entry by another of this client's actors knows where its own gap begins.
     if (viewport !== undefined) view.deliver_to(viewport, pos + 1);
@@ -62,6 +89,7 @@ export class GameState {
         viewport,
         actor: recipientToActor(recipient),
         pos,
+        notify,
         backfill: (v, until) => this.#backfill(view, v, until),
       },
       cmd,
@@ -102,7 +130,7 @@ export class GameState {
   // this replays what the connection had and this view lacked. The watermark separates them.
   #backfill(view: GameView, viewport: string, until: number) {
     for (const [pos, payload] of this.#history.range(viewport, view.delivered(viewport), until)) {
-      this.#deliver(view, payload, pos);
+      this.#deliver(view, payload, pos, NO_NOTIFY);
     }
     view.deliver_to(viewport, until);
   }
@@ -134,17 +162,6 @@ export class GameState {
   // a case that already has a correct representation.
   view_of(viewer: string): GameView {
     return this.view_for(viewer === "Admin" ? "System" : viewer);
-  }
-
-  // Does the named view receive a command addressed this way? For callers that already know which
-  // view they care about, such as deciding whether to toast for the one on screen.
-  view_receives(recipient: CommandRecipient, view_key: string): boolean {
-    const viewport = recipientToViewport(recipient);
-    if (viewport !== undefined) {
-      if (view_key === "System") return true; // see #recipients
-      return this.views.get(view_key)?.viewports.has(viewport) ?? false;
-    }
-    return recipientToView(recipient) === view_key;
   }
 
   // What the SERVER knows about who occupies a slot, on its own channel beside the command stream.

@@ -44,8 +44,9 @@ export const STRINGS = {
 
   // ---- OS toasts ----
   //
-  // Only world events and personal-info changes get one. Reveals are deliberately absent: you
-  // asked for those yourself and are already looking at the answer.
+  // One fires for every world event and everything that lands in the personal log, so a player
+  // away from the screen still learns what happened to them. The wording is a touch terser than the
+  // feed's — a toast is a glance, the feed is the full record — but nothing is withheld for privacy.
   toast_death_title: "Death",
   toast_death_body: "{name} has died.",
   toast_announcement_title: "Anonymous Announcement",
@@ -68,9 +69,27 @@ export const STRINGS = {
   toast_true_name_title: "True Name",
   toast_true_name_body: "Your true name is now {name}.",
   toast_false_accusation_title: "False Accusation",
-  toast_false_accusation_body: "{name} named an innocent person as wanted. {org} has expelled and barred them.",
+  toast_false_accusation_body: "{name} (real name: {true_name}) named an innocent person as wanted. {org} has expelled and barred them.",
   toast_prosecution_title: "Prosecution",
   toast_prosecution_ended_title: "Prosecution Ended",
+  toast_game_begins_title: "The Game Begins",
+  toast_game_begins_body: "Day 1. Abilities and notebooks are live.",
+  toast_new_day_title: "New Day",
+  toast_new_day_body: "Day {day}.",
+  toast_reveal_name_title: "Name Reveal",
+  toast_reveal_name_body: "{name}'s true name is {true_name}.",
+  toast_reveal_notebook_title: "Notebook Check",
+  toast_reveal_notebook_holding: "{name} is holding a notebook.",
+  toast_reveal_notebook_empty: "{name} is not holding a notebook.",
+  toast_bugged_title: "Surveillance",
+  toast_bugged_explicit: "You have been bugged. Your messages are being monitored.",
+  toast_bugged_custody: "You are being monitored while in custody.",
+  toast_notebook_received_title: "Notebook",
+  toast_notebook_received_body: "A notebook has come into your possession.",
+  toast_tap_in_title: "Tap In",
+  toast_tap_in_found: "Contact {id} tapped — reading its record.",
+  toast_tap_in_no_contact: "Contact {id} does not exist.",
+  toast_tap_in_not_loggable: "Contact {id} has logging off — nothing was written down.",
 
   // ---- blackout, which is the only world event that announces its own silence ----
   blackout_begun_label: "Blackout",

@@ -5,7 +5,8 @@
 
 use crate::{
     action::{Action, ActionInterface, ActionResponse, GiveAbility},
-    helpers::{get_org, get_org_mut},
+    command::Command,
+    helpers::{get_org, get_org_mut, owner_view_recipient},
 };
 
 // TODO:
@@ -36,6 +37,18 @@ impl ActionInterface for GiveOrgAbility {
         let org = get_org_mut(eng, self.org_id)?;
         if mutate {
             org.add_ability(self.ability_id, self.settings.clone());
+
+            // The ability view has just been emitted to the org's viewport by GiveAbility above;
+            // its static gates ride the same viewport right after so the menu can state them, and
+            // so a member entering later replays both together.
+            ctx.push_cmd(
+                Command::OrgAbilityRequirements {
+                    ability_id: self.ability_id,
+                    requirements: self.settings.clone(),
+                },
+                owner_view_recipient(eng, self.org_id),
+                eng.time,
+            );
         }
 
         Ok(ActionResponse::GiveOrgAbility(GiveOrgAbilityResponse {}))

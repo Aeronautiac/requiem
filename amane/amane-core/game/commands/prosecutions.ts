@@ -1,5 +1,5 @@
 import { slotKeyToString } from "../../bindings";
-import { phaseViewEqual } from "../helpers.svelte";
+import { actorLabel, phaseAnnouncement, phaseViewEqual, t } from "../helpers.svelte";
 import type { CmdCtx, Handlers } from "./index";
 
 export const prosecutionHandlers: Handlers = {
@@ -33,6 +33,15 @@ export const prosecutionHandlers: Handlers = {
           },
         },
       });
+      ctx.notify({
+        title: t("toast_prosecution_title"),
+        body: phaseAnnouncement(
+          p.phase,
+          actorLabel(p.prosecutor_display, ctx.view.players),
+          actorLabel(p.defendant_display, ctx.view.players),
+          false,
+        ),
+      });
     }
   },
 
@@ -63,6 +72,16 @@ export const prosecutionHandlers: Handlers = {
           verdict: p.verdict,
         },
       },
+    });
+    ctx.notify({
+      title: t("toast_prosecution_ended_title"),
+      body: phaseAnnouncement(
+        prev.phase,
+        actorLabel(prev.prosecutor_display, ctx.view.players),
+        actorLabel(prev.defendant_display, ctx.view.players),
+        true,
+        p.verdict,
+      ),
     });
     ctx.view.prosecutions.delete(key);
   },

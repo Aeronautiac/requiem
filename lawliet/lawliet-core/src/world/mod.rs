@@ -29,7 +29,7 @@ use crate::{
     kidnapping::Kidnapping,
     lounge::Lounge,
     notebook::Notebook,
-    passive::Passive,
+    passive::{ContactLogType, Passive},
     poll::Poll,
     prosecution::Prosecution,
     timer::Timer,
@@ -91,6 +91,13 @@ pub struct World {
     // reaching for cmd_world_event or cmd_world_data.
     pub events_viewport: ViewportKey,
     pub data_viewport: ViewportKey,
+    // The three contact-log records (Full/Even/Odd), world singletons on the same terms as the two
+    // above: allocated with the world, never freed. The log lives HERE rather than on the passives
+    // that read it, so a contact is recorded whether or not anyone holds the passive yet, and
+    // holding one merely enters an actor into the matching viewport — which backfills the whole
+    // history, fixing a passive that is granted late. Membership is driven by the
+    // UpdatePassiveVisibilities sweep; contacts are addressed here by cmd_contact_log.
+    contact_log_viewports: IndexMap<ContactLogType, ViewportKey>,
     // The pending lift. Held so it can be cancelled: a blackout ended early has to take its timer
     // down with it, or the world goes dark again the moment the old one fires.
     pub blackout_job: Option<JobID>,
@@ -105,10 +112,19 @@ impl World {
         let mut viewports = SlotMap::with_key();
         let events_viewport = viewports.insert(Viewport::new(ViewportKind::WorldEvents));
         let data_viewport = viewports.insert(Viewport::new(ViewportKind::WorldData));
+        let contact_log_viewports = [
+            ContactLogType::Full,
+            ContactLogType::Even,
+            ContactLogType::Odd,
+        ]
+        .into_iter()
+        .map(|kind| (kind, viewports.insert(Viewport::new(ViewportKind::ContactLog))))
+        .collect();
         World {
             viewports,
             events_viewport,
             data_viewport,
+            contact_log_viewports,
             timers: SlotMap::with_key(),
             phase: WorldPhase::Setup,
             curr_iteration: 0,
@@ -137,6 +153,17 @@ impl World {
         }
     }
 
+    // The world viewport carrying one slice of the contact graph. Every type is present from
+    // world creation, so this never fails.
+    pub fn contact_log_viewport(&self, kind: ContactLogType) -> ViewportKey {
+        self.contact_log_viewports[&kind]
+    }
+
+    // The three contact-log viewports, in a fixed order, for the membership sweep to iterate.
+    pub fn contact_log_viewports(&self) -> impl Iterator<Item = (ContactLogType, ViewportKey)> + '_ {
+        self.contact_log_viewports.iter().map(|(k, v)| (*k, *v))
+    }
+
     // Claim a record. Whoever wants one keeps the id; there is nothing else to hold.
     pub fn add_log(&mut self) -> LogID {
         let id = self.next_log;
@@ -152,7 +179,9 @@ impl World {
 
     pub fn remove_viewport(&mut self, id: ViewportKey) {
         debug_assert!(
-            id != self.events_viewport && id != self.data_viewport,
+            id != self.events_viewport
+                && id != self.data_viewport
+                && !self.contact_log_viewports.values().any(|v| *v == id),
             "the world viewports outlive the world's contents and must never be freed"
         );
         self.viewports.remove(id);

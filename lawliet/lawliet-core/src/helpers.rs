@@ -34,7 +34,7 @@ use crate::{
     kidnapping::Kidnapping,
     lounge::Lounge,
     notebook::Notebook,
-    passive::{ContactLog, Passive, PassiveType},
+    passive::{ContactLog, ContactLogType, Passive, PassiveType},
     poll::Poll,
     prosecution::Prosecution,
     viewport::ViewportKind,
@@ -270,22 +270,20 @@ pub fn cmd_contact_log(
         return;
     }
 
-    let entitled: SmallVec<[(PassiveKey, ViewportKey); 4]> = eng
+    // The record lives on the world's three log viewports, not on any passive, so a contact is
+    // written whether or not anyone holds the passive to read it yet. Full takes every contact;
+    // Even and Odd split on the contact-id parity. A reader is entered into the matching viewport
+    // by the UpdatePassiveVisibilities sweep and backfills the history on the way in.
+    let targets: SmallVec<[(ContactLogType, ViewportKey); 3]> = eng
         .world
-        .passives
-        .iter()
-        .filter_map(|(id, passive)| match passive.passive_type {
-            PassiveType::ContactLogs(kind) if kind.covers(log.contact_id) => {
-                Some((id, passive.viewport))
-            }
-            _ => None,
-        })
+        .contact_log_viewports()
+        .filter(|(kind, _)| kind.covers(log.contact_id))
         .collect();
 
     let time = eng.time;
-    for (passive_id, viewport) in entitled {
+    for (kind, viewport) in targets {
         ctx.push_cmd(
-            Command::AddContactLog { passive_id, log },
+            Command::AddContactLog { kind, log },
             CommandRecipient::Viewport(viewport),
             time,
         );

@@ -35,22 +35,15 @@ export const feedHandlers: Handlers = {
     if (bug) bug.archived = true;
   },
 
-  // The feed is created on its first entry — nothing else is ever addressed to a passive's
-  // viewport, so there is no creation command to hang it off.
-  //
-  // Named by slot rather than by its ContactLogType (Full/Even/Odd): the type rides
-  // UpdatePassiveView, which goes to the passive's OWNER, and a view reaching the log through a
-  // passive link never receives one. Naming it from what only some readers hold would give the
-  // same feed two names.
+  // The feed is created on its first entry — nothing else is addressed to a contact-log viewport,
+  // so there is no creation command to hang it off. The record IS its ContactLogType (Full/Even/Odd)
+  // now that the entry carries it, so it names and keys the feed directly — the same feed reaches a
+  // linked reader who never learns which passive fed it.
   AddContactLog(ctx: CmdCtx, p) {
-    const key = contactLogChannelKey(p.passive_id);
+    const key = contactLogChannelKey(p.kind);
     let feed = ctx.view.contact_logs.get(key);
     if (!feed) {
-      feed = new_channel(
-        "ContactLog",
-        "Logs",
-        `contacts-${p.passive_id.idx}v${p.passive_id.version}`,
-      );
+      feed = new_channel("ContactLog", "Logs", `Contact Log (${p.kind})`);
       ctx.view.contact_logs.set(key, feed);
     }
     ctx.view.record_viewport(ctx.viewport, key);

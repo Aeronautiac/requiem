@@ -25,9 +25,10 @@ export type Reply<T> = { ok: true; value: T } | { ok: false; error: ExecError };
 // Server-stamped, per-connection, strictly +1 from 1. 0 means "nothing applied yet".
 export type Seq = number;
 
-// Deliberately NOT named `Notification`: that shadows the DOM global a web host uses to raise
-// one, and this is the desktop popup where the in-app "Notifications" channel is the persistent
-// log. The mechanism lives behind the router; deciding WHAT is toast-worthy stays in the session.
+// Deliberately NOT named `Notification`: that shadows the DOM global a web host uses to raise one,
+// and this is the desktop popup, distinct from the in-app "Notifications" channel (the persistent
+// log). A command handler composes one and calls `ctx.notify`; the session decides whether it
+// reaches the screen. The host only raises what it is given.
 export interface Toast {
   title: string;
   body: string;

@@ -158,6 +158,7 @@ export const channelHandlers: Handlers = {
     // Derived rather than delivered; fires once per gain, not on refreshes while it is held.
     if (can_read && !could_read && ctx.view.is_notebook_channel(channel_id)) {
       ctx.view.push_notif(ctx.timestamp, { NotebookReceived: {} });
+      ctx.notify({ title: t("toast_notebook_received_title"), body: t("toast_notebook_received_body") });
     }
   },
 

@@ -314,6 +314,7 @@ export type AbilityBehaviour =
   | { Ipp: { target: ActorKey } }
   | { Prosecute: { target: ActorKey } }
   | { AnonymousProsecute: { target: ActorKey } }
+  | { Autopsy: { target: ActorKey } }
   | { TrueNameInvite: { target: ActorKey; true_name: string } }
   | { ForceInvite: { target: ActorKey } }
   | { BackgroundCheck: { target: ActorKey } }
@@ -1164,9 +1165,10 @@ export type Command =
   | { KiraConnectionAttempt: { channel_id: ChannelKey; user: ActorKey; success: boolean } }
   | { NotebookWrite: { notebook_id: NotebookKey; user_id: ActorKey; message: string | null; true_name: string; delay: number; successes_remaining: number; attempts_remaining: number; success: boolean; target_saved: boolean } }
   | { NotebookBorrowingStatus: { notebook_id: NotebookKey; borrowed: boolean } }
-  | { AddContactLog: { passive_id: PassiveKey; log: ContactLog } }
+  | { AddContactLog: { kind: ContactLogType; log: ContactLog } }
   | { UpdateAbilityView: { ability_name: AbilityName; success_usages_remaining: number; failure_usages_remaining: number; iterations_to_reset: number; ability_id: AbilityKey; owner_id: ActorKey } }
   | { RemoveAbility: { ability_id: AbilityKey } }
+  | { OrgAbilityRequirements: { ability_id: AbilityKey; requirements: OrgAbility } }
   | { UpdatePassiveView: { passive_type: PassiveType; passive_id: PassiveKey; owner_id: ActorKey } }
   | { RemovePassive: { passive_id: PassiveKey } }
   // The record to read rather than whose it was: the log stores the raw messages, so answering
@@ -1208,7 +1210,7 @@ export type ActorKind = "Player" | { Org: OrganizationName };
 export type ViewportKind =
   | "Channel"
   | "Bug"
-  | "Passive"
+  | "ContactLog"
   | "WorldEvents"
   | "WorldData";
 

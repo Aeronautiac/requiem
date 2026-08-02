@@ -8,8 +8,8 @@ import type {
   BugKey,
   ChannelProfileView,
   CommandRecipient,
+  ContactLogType,
   OrganizationName,
-  PassiveKey,
   ProsecutionPhaseView,
   Statuses,
 } from "../bindings";
@@ -86,9 +86,11 @@ export function bugChannelKey(bug_id: BugKey): string {
   return `bug:${slotKeyToString(bug_id)}`;
 }
 
-// Same reason as bugs: passives have their own slot space.
-export function contactLogChannelKey(passive_id: PassiveKey): string {
-  return `contacts:${slotKeyToString(passive_id)}`;
+// There are exactly three contact-log records (Full/Even/Odd), keyed by which one they are rather
+// than by any passive — the record is a world singleton, and the same feed reaches a linked reader
+// who never sees which passive fed it.
+export function contactLogChannelKey(kind: ContactLogType): string {
+  return `contacts:${kind}`;
 }
 
 // The single per-viewer Notifications feed, and the one place every directed-at-you personal event
@@ -177,11 +179,11 @@ export function permsLabel(perms: number): string {
 }
 
 // The active flags of an actor's public status, as short badge labels. `missing` is the blackout
-// blur — worded as a vague "gone" — and never appears next to the specific flags it stands in for,
-// because the engine withholds those the moment it sets it.
+// blur, and never appears next to the specific flags it stands in for, because the engine withholds
+// those the moment it sets it.
 export function statusLabels(status: Statuses): string[] {
   const labels: string[] = [];
-  if (status & StatusFlag.Missing) labels.push("gone");
+  if (status & StatusFlag.Missing) labels.push("missing");
   if (status & StatusFlag.Dead) labels.push("dead");
   if (status & StatusFlag.Incarcerated) labels.push("incarcerated");
   if (status & StatusFlag.Kidnapped) labels.push("kidnapped");

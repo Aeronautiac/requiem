@@ -3,12 +3,13 @@
 * Fully destroy a passive: remove from the owning actor's cache, then remove from the world.
 */
 
-use indexmap::IndexSet;
-
 use crate::{
-    action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
+    action::{
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        UpdatePassiveVisibilities,
+    },
     command::Command,
-    helpers::{get_actor, get_actor_mut, get_passive, owner_view_recipient, sync_viewport},
+    helpers::{get_actor, get_actor_mut, get_passive, owner_view_recipient},
 };
 
 pub use crate::action::{DestroyPassive, DestroyPassiveResponse};
@@ -19,22 +20,17 @@ impl ActionInterface for DestroyPassive {
         eng: &mut crate::engine::Engine,
         ctx: &mut ActionContext,
         actor: &ActionActor,
-        _version: crate::common::Version,
+        version: crate::common::Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
 
         let passive = get_passive(eng, self.passive_id)?;
         let owner = passive.ownership_struct.owner;
-        let viewport = passive.viewport;
 
         if let Some(owner_id) = owner {
             get_actor(eng, owner_id)?;
         }
-
-        // Empty the log's viewport before freeing it, so everyone reading it is told they no longer
-        // are rather than simply stopping.
-        sync_viewport(eng, ctx, viewport, IndexSet::new(), mutate);
 
         if mutate {
             if let Some(owner_id) = owner {
@@ -51,7 +47,12 @@ impl ActionInterface for DestroyPassive {
                 );
             }
             eng.world.remove_passive(self.passive_id);
-            eng.world.remove_viewport(viewport);
+
+            // A contact-log reader reached the record only through effective possession of this
+            // passive; with it gone, recompute the world log viewports so anyone who has lost their
+            // last route into one is exited from it. The record itself outlives the passive.
+            Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
+                .handle(eng, ctx, actor, version, mutate)?;
         }
 
         Ok(ActionResponse::DestroyPassive(DestroyPassiveResponse {}))

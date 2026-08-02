@@ -6,7 +6,7 @@
 // recipient is what says which of the two this is.
 import { SvelteSet } from "svelte/reactivity";
 import { slotKeyToString } from "../../bindings";
-import { new_org, new_player, upsert_ability } from "../helpers.svelte";
+import { nameLabel, new_org, new_player, playerLabel, t, upsert_ability } from "../helpers.svelte";
 import type { CmdCtx, Handlers } from "./index";
 
 export const actorHandlers: Handlers = {
@@ -35,6 +35,15 @@ export const actorHandlers: Handlers = {
   RemoveAbility(ctx: CmdCtx, p) {
     const org = ctx.view.org_at(ctx.viewport);
     (org ? org.abilities : ctx.view.abilities).delete(slotKeyToString(p.ability_id));
+  },
+
+  // The static gates on an org ability, arriving just after its view on the same org viewport.
+  // Patched onto the existing entry rather than replacing it, so the usage counts already there
+  // survive. Only ever addressed to an org viewport, so org_at always resolves here.
+  OrgAbilityRequirements(ctx: CmdCtx, p) {
+    const org = ctx.view.org_at(ctx.viewport);
+    const ability = org?.abilities.get(slotKeyToString(p.ability_id));
+    if (ability) ability.requirements = p.requirements;
   },
 
   UpdatePassiveView(ctx: CmdCtx, p) {
@@ -67,6 +76,7 @@ export const actorHandlers: Handlers = {
       return;
     }
     ctx.view.push_notif(ctx.timestamp, { RoleUpdate: { role: p.role } });
+    ctx.notify({ title: t("toast_role_title"), body: t("toast_role_body", { role: p.role }) });
   },
 
   TrueNameUpdate(ctx: CmdCtx, p) {
@@ -79,23 +89,55 @@ export const actorHandlers: Handlers = {
       return;
     }
     ctx.view.push_notif(ctx.timestamp, { TrueNameUpdate: { true_name: p.true_name } });
+    ctx.notify({
+      title: t("toast_true_name_title"),
+      body: t("toast_true_name_body", { name: nameLabel(p.true_name) }),
+    });
   },
 
+  // A player's background check is private to them; an org's (background check, true-name invite,
+  // shinigami sacrifice) is viewport-addressed to the org's channel, where everyone who can see the
+  // org learns what it bought. Same routing split as TapInResult — orgs have no notif feed of their
+  // own yet, so an org copy lands in the channel rather than in each member's personal feed.
   RevealTrueName(ctx: CmdCtx, p) {
-    ctx.view.push_notif(ctx.timestamp, {
-      RevealTrueName: { target_id: slotKeyToString(p.target_id), true_name: p.true_name },
+    const target_id = slotKeyToString(p.target_id);
+    const data = { RevealTrueName: { target_id, true_name: p.true_name } };
+    const org_channel = ctx.view.org_channel_at(ctx.viewport);
+    if (org_channel) {
+      ctx.view.channels.get(org_channel)?.events.push({ timestamp: ctx.timestamp, data });
+      return;
+    }
+    ctx.view.push_notif(ctx.timestamp, data);
+    ctx.notify({
+      title: t("toast_reveal_name_title"),
+      body: t("toast_reveal_name_body", {
+        name: playerLabel(target_id, ctx.view.players),
+        true_name: nameLabel(p.true_name),
+      }),
     });
   },
 
   RevealNotebookHolding(ctx: CmdCtx, p) {
+    const target_id = slotKeyToString(p.target_id);
     ctx.view.push_notif(ctx.timestamp, {
-      RevealNotebookHolding: { target_id: slotKeyToString(p.target_id), holding: p.holding },
+      RevealNotebookHolding: { target_id, holding: p.holding },
+    });
+    const name = playerLabel(target_id, ctx.view.players);
+    ctx.notify({
+      title: t("toast_reveal_notebook_title"),
+      body: p.holding
+        ? t("toast_reveal_notebook_holding", { name })
+        : t("toast_reveal_notebook_empty", { name }),
     });
   },
 
   // Who planted it is deliberately not carried; `context` says only why.
   Bugged(ctx: CmdCtx, p) {
     ctx.view.push_notif(ctx.timestamp, { Bugged: { context: p.context } });
+    ctx.notify({
+      title: t("toast_bugged_title"),
+      body: p.context === "Custody" ? t("toast_bugged_custody") : t("toast_bugged_explicit"),
+    });
   },
 
   // A player's tap-in answer is private to whoever asked. An org's is not personal: it is
@@ -113,6 +155,13 @@ export const actorHandlers: Handlers = {
     ctx.view.push_notif(ctx.timestamp, {
       TapInResult: { contact_id: p.contact_id, outcome: p.outcome },
     });
+    const body =
+      p.outcome === "NoSuchContact"
+        ? t("toast_tap_in_no_contact", { id: p.contact_id })
+        : p.outcome === "NotLoggable"
+          ? t("toast_tap_in_not_loggable", { id: p.contact_id })
+          : t("toast_tap_in_found", { id: p.contact_id });
+    ctx.notify({ title: t("toast_tap_in_title"), body });
   },
 
   // OG standing is personal info: it reaches the member and System, and nobody else in the org.

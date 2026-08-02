@@ -28,19 +28,33 @@
   // roster, so there is nothing to filter out here.
   const members = $derived(channel_view?.roster ?? []);
 
-  // Who is behind each name, keyed by profile_id. Only the admin view is ever told this, so for a
-  // player it stays empty — a mask stays a mask. Where it IS known, a masked row can name its
-  // holder; a Raw row already is its holder, so it needs nothing added.
+  // Who actually holds each name, keyed by profile_id, as raw actor ids. Only the admin view is
+  // ever told this, so for a player the map stays empty — a mask stays a mask and a Raw name is
+  // taken at face value. Ids, not labels, because whether a Raw name is honest is an identity
+  // comparison (see trueOwners).
   const owners_by_profile = $derived.by(() => {
     const map = new Map<string, string[]>();
     for (const entry of channel_view?.owners ?? []) {
       map.set(
         slotKeyToString(entry.profile_id),
-        entry.owners.map((a) => playerLabel(slotKeyToString(a), view.players)),
+        entry.owners.map((a) => slotKeyToString(a)),
       );
     }
     return map;
   });
+
+  // The real holders to reveal beside a name (admin only), or null when the display already tells
+  // the truth and nothing need be added. A mask — Mysterious or a role — names nobody, so its
+  // holders are always worth showing. A Raw display claims one specific player; that is a lie worth
+  // exposing unless that player is the name's sole holder, in which case the row is honest.
+  function trueOwners(member: ChannelProfileView): string[] | null {
+    const ids = owners_by_profile.get(slotKeyToString(member.profile_id));
+    if (!ids || ids.length === 0) return null;
+    const d = member.display;
+    const claimed = typeof d !== "string" && "Raw" in d ? slotKeyToString(d.Raw) : null;
+    if (claimed && ids.length === 1 && ids[0] === claimed) return null;
+    return ids.map((id) => playerLabel(id, view.players));
+  }
 
   // A member who holds nothing here is present but mute — no read, no send. They render in their
   // own group so a room full of names doesn't bury who can actually act in it.
@@ -68,34 +82,43 @@
   }
 </script>
 
+{#snippet ownerRows(owners: string[])}
+  <!-- Admin only: the true holders of the name above. Greyed and stacked one per row so they read
+       as an annotation on that name — never as player entries of their own. -->
+  <div class="flex flex-col pl-3 pb-0.5">
+    {#each owners as name, i (i)}
+      <span class="text-xs text-neutral-500">{name}</span>
+    {/each}
+  </div>
+{/snippet}
+
 {#snippet memberRow(member: ChannelProfileView)}
   {@const pid = contact_target(member.display)}
-  {#if pid}
-    <Player
-      id={pid}
-      label={view.resolve_display(member.display)}
-      perms={member.perms}
-    />
-  {:else}
-    {@const owners = owners_by_profile.get(slotKeyToString(member.profile_id))}
-    <!-- nothing to contact or inspect -->
-    <div
-      class="flex items-center justify-between px-2 py-1 text-sm text-neutral-300"
-    >
-      <span class="flex items-center gap-1.5">
-        {view.resolve_display(member.display)}
-        <!-- Admin only: the holder behind a mask the room cannot see through. -->
-        {#if owners && owners.length > 0}
-          <span class="text-xs text-neutral-500">({owners.join(", ")})</span>
+  {@const owners = trueOwners(member)}
+  <div class="flex flex-col">
+    {#if pid}
+      <Player
+        id={pid}
+        label={view.resolve_display(member.display)}
+        perms={member.perms}
+      />
+    {:else}
+      <!-- nothing to contact or inspect -->
+      <div
+        class="flex items-center justify-between px-2 py-1 text-sm text-neutral-300"
+      >
+        <span>{view.resolve_display(member.display)}</span>
+        {#if permsLabel(member.perms)}
+          <span class="text-xs text-neutral-600">
+            {permsLabel(member.perms)}
+          </span>
         {/if}
-      </span>
-      {#if permsLabel(member.perms)}
-        <span class="text-xs text-neutral-600">
-          {permsLabel(member.perms)}
-        </span>
-      {/if}
-    </div>
-  {/if}
+      </div>
+    {/if}
+    {#if owners && owners.length > 0}
+      {@render ownerRows(owners)}
+    {/if}
+  </div>
 {/snippet}
 
 <div class="flex flex-col gap-2 p-2">

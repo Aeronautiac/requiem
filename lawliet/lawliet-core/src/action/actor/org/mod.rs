@@ -37,7 +37,8 @@ mod org_tests {
     use crate::{
         ability::{AbilityBehaviour, gun::Gun},
         action::{
-            ActionResponse, actor::org::create_and_give_org_ability::CreateAndGiveOrgAbility,
+            Action, ActionActor, ActionRequest, ActionResponse,
+            actor::org::create_and_give_org_ability::CreateAndGiveOrgAbility,
         },
         actor::{
             organization::{
@@ -593,6 +594,54 @@ mod org_tests {
             )
             .is_err()
         )
+    }
+
+    // The static gates are handed to the org's view when the ability is granted, riding the same
+    // viewport as the ability itself, so the menu can state them without a member having to try.
+    #[test]
+    fn org_ability_requirements_reach_the_org_view() {
+        let mut eng = started_engine();
+        let o1 = add_org(&mut eng, 0, OrganizationName::NULL);
+
+        let settings = OrgAbility {
+            require_roles: indexset![Role::RogueCivilian],
+            require_members: 3,
+            usage_policies: OrgAbilityPolicy::RequireLeader | OrgAbilityPolicy::RequireVote,
+        };
+
+        let (response, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateAndGiveOrgAbility(CreateAndGiveOrgAbility {
+                    ability_name: AbilityName::Gun,
+                    variant: 0,
+                    org_id: o1,
+                    settings: settings.clone(),
+                }),
+            })
+            .unwrap();
+        let ActionResponse::CreateAndGiveOrgAbility(data) = response else {
+            unreachable!()
+        };
+
+        let viewport = get_channel(&eng, get_org(&eng, o1).unwrap().channel_id)
+            .unwrap()
+            .viewport;
+
+        let cmd = ctx
+            .commands
+            .iter()
+            .find(|p| {
+                matches!(&p.cmd, Command::OrgAbilityRequirements { ability_id, .. }
+                    if *ability_id == data.id)
+            })
+            .expect("the org view is told the ability's requirements");
+        assert_eq!(cmd.recipient, CommandRecipient::Viewport(viewport));
+        let Command::OrgAbilityRequirements { requirements, .. } = &cmd.cmd else {
+            unreachable!()
+        };
+        assert_eq!(*requirements, settings);
     }
 
     #[test]

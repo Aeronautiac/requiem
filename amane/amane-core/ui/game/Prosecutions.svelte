@@ -15,7 +15,7 @@
   import type { ProsecutionData } from "../../game/types";
   import type { UiState } from "../../ui_state.svelte.ts";
   import type { Action, ActionRequest, ActorDisplay, ProsecutionPhaseView } from "../../bindings";
-  import { slotKeyFromString } from "../../bindings";
+  import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
   import { Flash } from "../../flash.svelte.ts";
   import FlashDisplay from "../Flash.svelte";
@@ -76,11 +76,54 @@
     return side === "Prosecutor" ? "prosecution" : "defense";
   }
 
-  // The signal the viewer still has to give, if this phase takes one from their side. A phase
-  // parked on a host has been left in everything but name, and a frozen snapshot is not something
-  // to act on, so neither offers one.
+  // Which side holds the floor during a Presentation subphase, if any. The floor holder ends the
+  // slot themselves instead of waiting out the clock; no side holds a floor in any other phase.
+  function presentation_floor(phase: ProsecutionPhaseView): "prosecution" | "defense" | null {
+    if (phase === "Voting" || !("Trial" in phase)) return null;
+    const trial = phase.Trial;
+    if ("Prosecutor" in trial) {
+      return trial.Prosecutor === "Presentation" ? "prosecution" : null;
+    }
+    if ("Defense" in trial) {
+      return trial.Defense === "Presentation" ? "defense" : null;
+    }
+    return null;
+  }
+
+  // Whether the viewer is defence counsel. Counsel has no side of their own — the engine tells only
+  // Prosecution/Defendant — but they end the defence's presentation exactly as the defendant does,
+  // and no view remembers it, so it must be read off the snapshot.
+  //
+  // Matched on the raw slot only: the display is raw whenever it can name a player, and counsel is
+  // never disguised.
+  function is_lawyer(id: string, data: ProsecutionData): boolean {
+    if (ui.viewer === "Admin") return false;
+    const display = data.lawyer_display;
+    return (
+      display !== null &&
+      typeof display !== "string" &&
+      "Raw" in display &&
+      slotKeyToString(display.Raw) === ui.viewer
+    );
+  }
+
+  // The signal the viewer still has to give, if this phase takes one from them. A phase parked on
+  // a host sits at a boundary only in the held phases, and a frozen snapshot is not something to
+  // act on — so neither the ready/done signal nor the floor hold offers itself there.
   function my_signal(id: string, data: ProsecutionData): { verb: string } | null {
     const side = my_side(id);
+    const floor = presentation_floor(data.phase);
+    const holdsFloor =
+      floor !== null &&
+      (floor === "prosecution"
+        ? side === "prosecution"
+        : side === "defense" || is_lawyer(id, data));
+
+    if (holdsFloor) {
+      // Single-sided: no flag to pair, the slot ends at once (SignalReady, System-held advance).
+      return is_frozen(id) ? null : { verb: "end my turn" };
+    }
+
     if (side === null || awaitingHost(data.phase) || is_frozen(id)) return null;
     const mine = signals(data.phase).find((s) => s.side === side);
     return mine && !mine.done ? { verb: mine.verb } : null;

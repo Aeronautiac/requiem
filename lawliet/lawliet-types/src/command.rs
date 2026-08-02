@@ -10,8 +10,8 @@ use crate::{
         IncarcerationKey, IterationCount, KidnappingKey, LogID, NotebookKey, PassiveKey, PollKey,
         PollWeight, ProsecutionKey, Time, ViewportKey,
     },
-    organization::OrganizationName,
-    passive::{ContactLog, PassiveType},
+    organization::{OrganizationName, OrgAbility},
+    passive::{ContactLog, ContactLogType, PassiveType},
     poll::{PollOptionIndex, PollOptionTally, PollOutcome, PollParent, PollSubject},
     prosecution::{ProsecutionPhaseView, ProsecutionSide},
     role::Role,
@@ -482,16 +482,19 @@ pub enum Command {
     // For this reason, there will be an owner id in the ability view command. If it is the client's
     // id, it doesn't really matter. If it is the org's id, it does.
 
-    // One line in a contact log, addressed to the passive's own viewport — so gaining the passive
-    // backfills everything it ever logged, exactly as gaining a channel does.
+    // One line in a contact log, addressed to one of the three world-level log viewports — so the
+    // record outlives every passive, and gaining the matching passive backfills everything ever
+    // logged, exactly as gaining a channel does. This is what fixes a passive granted late: the
+    // history was never tied to that passive to begin with.
     //
-    // passive_id names which log this belongs to: an actor can reach more than one contact-log
-    // passive, and the two are separate records even where they overlap.
+    // `kind` names which of the three records this belongs to (Full always, Even/Odd by contact-id
+    // parity), and is what the client keys the feed on — a reader reaching the log through a passive
+    // link learns the kind from this, not from the owner-only UpdatePassiveView.
     //
     // Only the contactor's Modifier::LogNullification suppresses it. Being contacted by someone off
     // the record does not take your own contacts off it.
     AddContactLog {
-        passive_id: PassiveKey,
+        kind: ContactLogType,
         log: ContactLog,
     },
 
@@ -510,6 +513,15 @@ pub enum Command {
     // entirely hide an ability from a user
     RemoveAbility {
         ability_id: AbilityKey,
+    },
+
+    // The static gates on one org ability — required roles, member count, and leader/vote policy —
+    // so the org's menu can state them up front rather than only surfacing them as a failed attempt.
+    // Rides the org channel's viewport exactly like the UpdateAbilityView it annotates, and is keyed
+    // by ability_id to line up with it. Never sent for a personal ability, which has no such gates.
+    OrgAbilityRequirements {
+        ability_id: AbilityKey,
+        requirements: OrgAbility,
     },
 
     // a passive the recipient now holds. Like UpdateAbilityView but with no charges/usages;

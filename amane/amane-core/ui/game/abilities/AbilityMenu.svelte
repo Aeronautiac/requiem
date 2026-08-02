@@ -4,7 +4,7 @@
   import { UI_STATE_KEY } from "../../../ui_state.svelte.ts";
   import type { GameState } from "../../../game/state.svelte";
   import type { UiState } from "../../../ui_state.svelte.ts";
-  import type { AbilityName } from "../../../bindings";
+  import type { AbilityName, OrgAbility } from "../../../bindings";
   import Dialog from "../../kit/Dialog.svelte";
   import Button from "../../kit/Button.svelte";
   import AbilityCard from "./AbilityCard.svelte";
@@ -40,6 +40,7 @@
       successUsages: number;
       failureUsages: number;
       resets: number;
+      requirements?: OrgAbility;
     }[] = [];
     for (const [id, av] of source ?? []) {
       if (EXCLUDED_ABILITIES.has(av.name)) continue;
@@ -49,6 +50,7 @@
         successUsages: av.success_usages_remaining,
         failureUsages: av.failure_usages_remaining,
         resets: av.iterations_to_reset,
+        requirements: av.requirements,
       });
     }
     return out;
@@ -106,6 +108,7 @@
           failureUsages={ab.failureUsages}
           resets={ab.resets}
           hasUi={ABILITY_UIS[ab.name] != null}
+          requirements={ab.requirements}
           onUse={() => (selectedId = ab.id)}
         />
       {/each}

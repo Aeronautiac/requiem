@@ -197,20 +197,14 @@ pub use common::{
 // it here.
 
 // CURRENT PROJECT ISSUES:
-// - organizations see abilities they cannot currently use (member counts, role requirements).
-// - most of the task force abilities dont yet have a ui.
-// - notifications dont have enough coverage, and the way theyre handled on the frontend is messy.
-// - background check works mechanically, but the frontend displays the info to every individual actor's.
-// notifications channel rather than to the org's channel.
 // - there is no way to skip time on the server. the server needs some kind of offset value. you
 // should be able to send in a "time skip" value as an admin and skip ahead by that amount. this
 // decouples game time from real world time, but this might be how it should have been from the
 // start. the game can have conceptual time starting from 0, conceptual weekdays, etc... i doubt
 // this would be hard to change. it requires no engine work.
-// - you cannot edit the game's config as an admin. you also cannot revoke keys.
-// - players cannot immediately end their prosecution speaking period. they have to wait.
-// - notebook original owners dont know if their book is fake. it should be sent to them and the system.
-// currently, nobody knows its fake.
+// - you cannot edit the game's config as an admin. key revocation and the "end my turn" and
+// fake-notebook items below are all done now; they are left off this list for that reason.
+// (see CLIENT WORK OWED BY THE ENGINE for what is still owed on them.)
 // - you cannot see the list of running games on the platform layer of the client. not important
 // yet, but eventually needs to get done.
 // - the server has no persistence layer yet. everything is held in RAM, which is fine for testing,

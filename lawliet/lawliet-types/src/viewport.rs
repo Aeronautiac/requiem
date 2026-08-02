@@ -29,7 +29,10 @@ use serde::{Deserialize, Serialize};
 pub enum ViewportKind {
     Channel,
     Bug,
-    Passive,
+    // One of the three world-level contact-log audiences (Full/Even/Odd). The record itself is a
+    // world singleton that outlives every passive; holding the matching ContactLogs passive is
+    // what enters an actor into it, which is why the log survives a passive being granted late.
+    ContactLog,
     // Everything that HAPPENED, announced to everyone present. Emptied wholesale by a blackout,
     // which is what a blackout is — nobody exits presence, the world simply stops announcing. What
     // happened still happens, and is handed over in order when the blackout lifts.

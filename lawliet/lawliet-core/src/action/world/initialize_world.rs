@@ -4,6 +4,7 @@
 */
 
 use lawliet_types::command::{Command, CommandRecipient};
+use smallvec::SmallVec;
 
 use crate::{
     action::{
@@ -11,6 +12,7 @@ use crate::{
         AddChargePool, CreateChannel, CreateOrgs,
     },
     channel::ChannelKind,
+    common::ViewportKey,
     helpers::{cmd_channel, get_charge_pool_mut},
     viewport::ViewportKind,
 };
@@ -28,13 +30,22 @@ impl ActionInterface for InitializeWorld {
     ) -> ActionResult {
         actor.admin_or_system()?;
 
-        // The two viewports no action opens: they come into existence with the world and outlive
+        // The viewports no action opens: they come into existence with the world and outlive
         // everything in it, so they are announced here instead. Pushed before anything else so
         // each heads its own viewport's history, exactly as open_viewport arranges for the rest.
-        for (viewport, kind) in [
+        // The three contact-log records are among them.
+        let world_viewports: SmallVec<[(ViewportKey, ViewportKind); 8]> = [
             (eng.world.events_viewport, ViewportKind::WorldEvents),
             (eng.world.data_viewport, ViewportKind::WorldData),
-        ] {
+        ]
+        .into_iter()
+        .chain(
+            eng.world
+                .contact_log_viewports()
+                .map(|(_, viewport)| (viewport, ViewportKind::ContactLog)),
+        )
+        .collect();
+        for (viewport, kind) in world_viewports {
             ctx.push_cmd(
                 Command::MapViewport { viewport, kind },
                 CommandRecipient::Viewport(viewport),

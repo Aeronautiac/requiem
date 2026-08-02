@@ -8,7 +8,7 @@ use crate::{
 // Which slice of the contact graph a log passive receives, split on the parity of the contact
 // channel's id. A contact belongs to one half for its whole life, so Even and Odd each see complete
 // relationships rather than fragments of every one.
-#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug, Copy, Serialize, Deserialize)]
 pub enum ContactLogType {
     Full,
     Even,

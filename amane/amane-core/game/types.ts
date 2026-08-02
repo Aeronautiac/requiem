@@ -6,6 +6,7 @@ import type {
   BugContext,
   ChannelProfileView,
   ContactLog,
+  OrgAbility,
   ProfileOwners,
   OrganizationName,
   PassiveType,
@@ -273,6 +274,9 @@ export interface AbilityView {
   success_usages_remaining: number;
   failure_usages_remaining: number;
   iterations_to_reset: number;
+  // The static gates on an ORG ability — arrives on a separate OrgAbilityRequirements command after
+  // the view itself. Undefined for a personal ability, which has no such gates.
+  requirements?: OrgAbility;
 }
 
 // The type itself may carry data (VoteAmplification's multiplier), so this is the full PassiveType.

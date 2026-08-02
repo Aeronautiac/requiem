@@ -5,6 +5,7 @@
 // writes it there. A handler therefore decides nothing about WHO sees what — only what the fact
 // means once it has arrived.
 import type { Command, CommandRecipient } from "../../bindings";
+import type { Toast } from "../../lib/protocol";
 import type { GameView } from "../view.svelte";
 
 import { actorHandlers } from "./actors";
@@ -29,6 +30,11 @@ export type CmdCtx = {
   actor: string | undefined;
   // Its position in the log. Only entering a viewport needs it.
   pos: number;
+  // Raise a toast — separate from writing the event into the view, which the handler does itself.
+  // This is only the effect. The handler is the one place with the recipient, content and channel
+  // in hand, so it composes the words; a handler with nothing to say simply doesn't call this.
+  // Inert during backfill; the session still decides whether the view it landed in is on screen.
+  notify: (toast: Toast) => void;
   // Hand this view the part of a viewport's past it has not been given.
   backfill: (viewport: string, until: number) => void;
 };

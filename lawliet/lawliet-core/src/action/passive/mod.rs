@@ -15,12 +15,12 @@ mod contact_log_tests {
         ActorKey,
         action::{Action, ActionActor, ActionContext, ActionRequest},
         actor::ActorDisplay,
-        common::{ID, PassiveKey, ViewportKey},
+        common::{ID, ViewportKey},
         config::role::Role,
         engine::Engine,
         lounge::LoungeVariant,
         passive::PassiveType,
-        test_helpers::{add_player, init_engine, quick_kill},
+        test_helpers::{add_player, init_engine, quick_kill, quick_passive},
     };
 
     fn basic_lounge(
@@ -43,24 +43,30 @@ mod contact_log_tests {
         .1
     }
 
-    // The one contact-log passive in the world, and its viewport.
-    fn the_log(eng: &Engine) -> (PassiveKey, ViewportKey) {
-        eng.world
-            .passives
-            .iter()
-            .find_map(|(id, p)| {
-                matches!(p.passive_type, PassiveType::ContactLogs(_)).then_some((id, p.viewport))
-            })
-            .expect("a contact log passive")
+    // A world-level contact-log record. It exists from world creation and belongs to no passive;
+    // holding the matching passive is only what enters an actor into it.
+    fn the_log(eng: &Engine, kind: ContactLogType) -> ViewportKey {
+        eng.world.contact_log_viewport(kind)
     }
 
+    fn members(eng: &Engine, viewport: ViewportKey) -> Vec<ActorKey> {
+        eng.world
+            .get_viewport(viewport)
+            .expect("a world log viewport")
+            .members()
+            .collect()
+    }
+
+    // Full sees every contact, so filtering to it gives exactly one row per contact — the parity
+    // copy carries identical content and would only double every count.
     fn logged(ctx: &ActionContext) -> Vec<(ID, ActorDisplay, ActorDisplay, ContactEvent)> {
         ctx.commands
             .iter()
             .filter_map(|p| match &p.cmd {
-                Command::AddContactLog { log, .. } => {
-                    Some((log.contact_id, log.contactor, log.contacted, log.event))
-                }
+                Command::AddContactLog {
+                    kind: ContactLogType::Full,
+                    log,
+                } => Some((log.contact_id, log.contactor, log.contacted, log.event)),
                 _ => None,
             })
             .collect()
@@ -125,50 +131,25 @@ mod contact_log_tests {
     fn even_and_odd_split_on_the_contact_id() {
         let mut eng = Engine::new();
         init_engine(&mut eng);
-        add_player(&mut eng, 0, Role::Near, "near");
-        add_player(&mut eng, 0, Role::Mello, "mello");
         let a = add_player(&mut eng, 0, Role::Civilian, "a");
         let b = add_player(&mut eng, 0, Role::Civilian, "b");
-
-        let near_log = eng
-            .world
-            .passives
-            .iter()
-            .find_map(|(id, p)| {
-                matches!(
-                    p.passive_type,
-                    PassiveType::ContactLogs(ContactLogType::Even)
-                )
-                .then_some(id)
-            })
-            .expect("near's log");
-        let odd_log = eng
-            .world
-            .passives
-            .iter()
-            .find_map(|(id, p)| {
-                matches!(
-                    p.passive_type,
-                    PassiveType::ContactLogs(ContactLogType::Odd)
-                )
-                .then_some(id)
-            })
-            .expect("mello's log");
 
         let first = basic_lounge(&mut eng, 1, a, b);
         let second = basic_lounge(&mut eng, 2, b, a);
 
-        let receivers = |ctx: &ActionContext| -> Vec<PassiveKey> {
+        // Which of the three records each contact was written to.
+        let kinds = |ctx: &ActionContext| -> Vec<ContactLogType> {
             ctx.commands
                 .iter()
                 .filter_map(|p| match &p.cmd {
-                    Command::AddContactLog { passive_id, .. } => Some(*passive_id),
+                    Command::AddContactLog { kind, .. } => Some(*kind),
                     _ => None,
                 })
                 .collect()
         };
 
-        // Contact ids are allocated in order, so one of these is even and the next is odd.
+        // Contact ids are allocated in order, so one of these is even and the next is odd. Full
+        // takes both; each parity takes exactly its own.
         let first_id = logged(&first)[0].0;
         let (even_ctx, odd_ctx) = if first_id.is_multiple_of(2) {
             (&first, &second)
@@ -176,10 +157,13 @@ mod contact_log_tests {
             (&second, &first)
         };
 
-        assert!(receivers(even_ctx).contains(&near_log));
-        assert!(!receivers(even_ctx).contains(&odd_log));
-        assert!(receivers(odd_ctx).contains(&odd_log));
-        assert!(!receivers(odd_ctx).contains(&near_log));
+        assert!(kinds(even_ctx).contains(&ContactLogType::Full));
+        assert!(kinds(even_ctx).contains(&ContactLogType::Even));
+        assert!(!kinds(even_ctx).contains(&ContactLogType::Odd));
+
+        assert!(kinds(odd_ctx).contains(&ContactLogType::Full));
+        assert!(kinds(odd_ctx).contains(&ContactLogType::Odd));
+        assert!(!kinds(odd_ctx).contains(&ContactLogType::Even));
     }
 
     // ---- effective possession ----
@@ -192,13 +176,7 @@ mod contact_log_tests {
         let watari = add_player(&mut eng, 0, Role::Watari, "watari");
         let l = add_player(&mut eng, 0, Role::L, "l");
 
-        let (_, viewport) = the_log(&eng);
-        let members: Vec<ActorKey> = eng
-            .world
-            .get_viewport(viewport)
-            .expect("log viewport")
-            .members()
-            .collect();
+        let members = members(&eng, the_log(&eng, ContactLogType::Full));
 
         assert!(members.contains(&watari), "the owner reads their own log");
         assert!(
@@ -219,13 +197,7 @@ mod contact_log_tests {
         // Death carries every modifier, DisablePassiveLinks among them.
         quick_kill(&mut eng, 1, false, false, false, watari);
 
-        let (_, viewport) = the_log(&eng);
-        let members: Vec<ActorKey> = eng
-            .world
-            .get_viewport(viewport)
-            .expect("log viewport")
-            .members()
-            .collect();
+        let members = members(&eng, the_log(&eng, ContactLogType::Full));
 
         assert!(!members.contains(&l));
     }
@@ -237,34 +209,68 @@ mod contact_log_tests {
         add_player(&mut eng, 0, Role::Watari, "watari");
         let stranger = add_player(&mut eng, 0, Role::Civilian, "stranger");
 
-        let (_, viewport) = the_log(&eng);
-        let members: Vec<ActorKey> = eng
-            .world
-            .get_viewport(viewport)
-            .expect("log viewport")
-            .members()
-            .collect();
+        let members = members(&eng, the_log(&eng, ContactLogType::Full));
 
         assert!(!members.contains(&stranger));
     }
 
-    // The log is addressed to the passive's viewport, so gaining the passive backfills everything
+    // The log is addressed to the world's Full record, so gaining the passive backfills everything
     // it ever recorded — the same rule channels follow.
     #[test]
-    fn entries_are_addressed_to_the_passives_viewport() {
+    fn entries_are_addressed_to_the_world_log_viewport() {
         let mut eng = Engine::new();
         init_engine(&mut eng);
         add_player(&mut eng, 0, Role::Watari, "watari");
         let a = add_player(&mut eng, 0, Role::Civilian, "a");
         let b = add_player(&mut eng, 0, Role::Civilian, "b");
-        let (passive_id, viewport) = the_log(&eng);
+        let full = the_log(&eng, ContactLogType::Full);
 
         let ctx = basic_lounge(&mut eng, 1, a, b);
 
         assert!(ctx.commands.iter().any(|p| {
-            p.recipient == CommandRecipient::Viewport(viewport)
-                && matches!(&p.cmd, Command::AddContactLog { passive_id: id, .. } if *id == passive_id)
+            p.recipient == CommandRecipient::Viewport(full)
+                && matches!(&p.cmd, Command::AddContactLog { kind: ContactLogType::Full, .. })
         }));
+    }
+
+    // The bug this whole redesign exists for: a passive granted AFTER contacts were logged still
+    // reaches them. The record lives on the world viewport, not the passive, so gaining the passive
+    // only enters the actor into a viewport that already holds the full history — and entering
+    // backfills it.
+    #[test]
+    fn a_passive_granted_late_still_reaches_earlier_contacts() {
+        let mut eng = Engine::new();
+        init_engine(&mut eng);
+        let a = add_player(&mut eng, 0, Role::Civilian, "a");
+        let b = add_player(&mut eng, 0, Role::Civilian, "b");
+        let latecomer = add_player(&mut eng, 0, Role::Civilian, "latecomer");
+
+        // A contact happens before anyone holds the log. It still lands on the world record.
+        let ctx = basic_lounge(&mut eng, 1, a, b);
+        let full = the_log(&eng, ContactLogType::Full);
+        assert!(ctx.commands.iter().any(|p| {
+            p.recipient == CommandRecipient::Viewport(full)
+                && matches!(&p.cmd, Command::AddContactLog { .. })
+        }));
+        assert!(
+            !members(&eng, full).contains(&latecomer),
+            "no route in yet"
+        );
+
+        // Only now does the latecomer gain a Full contact-log passive.
+        quick_passive(
+            &mut eng,
+            2,
+            latecomer,
+            PassiveType::ContactLogs(ContactLogType::Full),
+            false,
+        );
+
+        // Entering the record is what hands them the history it already holds.
+        assert!(
+            members(&eng, full).contains(&latecomer),
+            "gaining the passive enters them into the record that predates it"
+        );
     }
 }
 
