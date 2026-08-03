@@ -10,8 +10,9 @@
 // the price of the guarantee, and it is bounded by what was actually delivered rather than by the
 // size of the game.
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import type { ActorDisplay, ProsecutionSide, Statuses } from "../bindings";
+import type { ActorDisplay, ProsecutionSide, Role, Statuses } from "../bindings";
 import { slotKeyToString } from "../bindings";
+import { now } from "../time.svelte";
 import { NOTIF_CHANNEL, new_channel, orgDisplayName, playerLabel, t } from "./helpers.svelte";
 import type {
   AbilityView,
@@ -31,6 +32,17 @@ import type {
 } from "./types";
 
 export class GameView {
+  // This view's own actor key ("System" for the admin view). What a mention tests itself against,
+  // and how the view knows which orgs it belongs to (membership is org.members.has(own_key)).
+  readonly own_key: string;
+  // This view's own role, learned from its personal RoleUpdate. Null until told. A `@<role:…>`
+  // mention pings this view iff it names this role.
+  own_role = $state<Role | null>(null);
+
+  constructor(own_key: string) {
+    this.own_key = own_key;
+  }
+
   // ---- objects this view has been told about ----
   channels = new SvelteMap<string, Channel>();
   players = new SvelteMap<string, Player>();
@@ -55,6 +67,19 @@ export class GameView {
   // ---- this actor's own standing ----
   channel_views = new SvelteMap<string, ChannelView>();
   events: GameEvent[] = $state([]); // world events: this view's news feed
+
+  // Push a run of world events on a wall-clock schedule keyed to their own timestamps: one whose
+  // time has already passed lands at once, a future one after the clock reaches it. Used to stagger
+  // a single command (a death) into timed reveals. How late the command arrived is already baked
+  // into the timestamps versus `now`, so a fresh event plays out while a replayed one is all there —
+  // no notion of "live" needed. The feed sorts by timestamp, so each part still lands in order.
+  stage_world_events(parts: GameEvent[]) {
+    for (const part of parts) {
+      const delay = part.timestamp - now();
+      if (delay <= 0) this.events.push(part);
+      else setTimeout(() => this.events.push(part), delay);
+    }
+  }
   // Read-only feeds this view builds for itself rather than being delivered, keyed "info:*".
   info_channels = new SvelteMap<string, Channel>();
   abilities = new SvelteMap<string, AbilityView>();
@@ -89,6 +114,9 @@ export class GameView {
   // arrived yet.
   #channel_loggable = new SvelteMap<string, boolean>();
   #notebook_borrowed = new SvelteMap<string, boolean>();
+  // Only the original owner (and admin) is ever told this, so absence is meaningful: a borrower or
+  // inheritor holds no entry and is left to deduce the book's nature.
+  #notebook_fake = new SvelteMap<string, boolean>();
   // viewport -> the org whose backing channel it is. Routing rather than visibility: an org's
   // abilities are addressed to that viewport rather than to the org actor, so this is how a
   // command finds the org it belongs to.
@@ -157,6 +185,14 @@ export class GameView {
   }
   is_notebook_borrowed(notebook_key: string): boolean {
     return this.#notebook_borrowed.get(notebook_key) ?? false;
+  }
+
+  set_notebook_fake(notebook_key: string, fake: boolean) {
+    this.#notebook_fake.set(notebook_key, fake);
+  }
+  // undefined = this view was never told, which is not the same as "genuine".
+  notebook_fake(notebook_key: string): boolean | undefined {
+    return this.#notebook_fake.get(notebook_key);
   }
 
   record_org_viewport(viewport: string | undefined, org_key: string) {

@@ -40,10 +40,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Open an anonymous lounge with a player — they won't see who you are, and the
-    role you show them is one you choose to pose as.
-  </p>
   <PlayerSelect bind:value={target} placeholder="Target" />
   <label class="flex flex-col gap-1 text-xs text-neutral-500">
     Role to pose as

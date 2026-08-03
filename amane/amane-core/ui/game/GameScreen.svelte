@@ -6,9 +6,7 @@
   import Channels from "./Channels.svelte";
   import Players from "./Players.svelte";
   import GcControls from "./GcControls.svelte";
-  import OrgPanel from "./OrgPanel.svelte";
-  import Polls from "./Polls.svelte";
-  import Prosecutions from "./Prosecutions.svelte";
+  import RightControls from "./RightControls.svelte";
   import ViewSelect from "./ViewSelect.svelte";
   import AbilityMenu from "./abilities/AbilityMenu.svelte";
   import PassivesPanel from "./PassivesPanel.svelte";
@@ -32,6 +30,40 @@
   setContext(SESSION_KEY, self);
   setContext(GAME_STATE_KEY, game);
   setContext(UI_STATE_KEY, ui);
+
+  // Rail widths, in px. Drag the divider between a rail and the message column, or focus it and use
+  // the arrow keys. Bounds keep either rail from swallowing the conversation or collapsing to nothing.
+  const MIN = 160;
+  const MAX = 480;
+  let left_width = $state(208);
+  let right_width = $state(224);
+  const clamp = (v: number) => Math.min(MAX, Math.max(MIN, v));
+
+  function drag(side: "left" | "right", e: PointerEvent) {
+    e.preventDefault();
+    const start_x = e.clientX;
+    const start = side === "left" ? left_width : right_width;
+    const move = (ev: PointerEvent) => {
+      // The right rail grows as the pointer moves left, so its delta is inverted.
+      const dx = side === "left" ? ev.clientX - start_x : start_x - ev.clientX;
+      if (side === "left") left_width = clamp(start + dx);
+      else right_width = clamp(start + dx);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  function key_resize(side: "left" | "right", e: KeyboardEvent) {
+    const step = e.key === "ArrowLeft" ? -16 : e.key === "ArrowRight" ? 16 : 0;
+    if (step === 0) return;
+    e.preventDefault();
+    if (side === "left") left_width = clamp(left_width + step);
+    else right_width = clamp(right_width - step);
+  }
 </script>
 
 {#if self.viewers.length === 0}
@@ -41,32 +73,50 @@
     Waiting for the server.
   </p>
 {:else}
-<div class="flex flex-col h-full">
-  <div class="flex flex-1 overflow-hidden">
-    <aside class="w-52 shrink-0 border-r border-neutral-800 overflow-y-auto">
-      <Channels />
-    </aside>
-    <main class="flex-1 overflow-hidden">
-      <ChannelView />
-    </main>
-    <aside class="w-52 shrink-0 border-l border-neutral-800 overflow-y-auto">
-      <Polls />
-      <Prosecutions />
-      <OrgPanel />
-      <GcControls />
-      <Players />
-    </aside>
+  <div class="flex flex-col h-full">
+    <div class="flex flex-1 overflow-hidden">
+      <aside
+        class="shrink-0 overflow-y-auto"
+        style="width: {left_width}px"
+      >
+        <Channels />
+      </aside>
+      <button
+        type="button"
+        aria-label="Resize left panel"
+        class="w-1 shrink-0 cursor-col-resize bg-neutral-800 hover:bg-neutral-600"
+        onpointerdown={(e) => drag("left", e)}
+        onkeydown={(e) => key_resize("left", e)}
+      ></button>
+      <main class="min-w-0 flex-1 overflow-hidden">
+        <ChannelView />
+      </main>
+      <button
+        type="button"
+        aria-label="Resize right panel"
+        class="w-1 shrink-0 cursor-col-resize bg-neutral-800 hover:bg-neutral-600"
+        onpointerdown={(e) => drag("right", e)}
+        onkeydown={(e) => key_resize("right", e)}
+      ></button>
+      <aside
+        class="shrink-0 overflow-y-auto"
+        style="width: {right_width}px"
+      >
+        <RightControls />
+        <GcControls />
+        <Players />
+      </aside>
+    </div>
+    <div
+      class="flex items-center gap-2 px-3 py-1.5 border-t border-neutral-800 shrink-0"
+    >
+      <ViewSelect />
+      <AbilityMenu />
+      <PassivesPanel />
+      {#if self.administers}
+        <AdminPanel />
+      {/if}
+      <StatusBadges />
+    </div>
   </div>
-  <div
-    class="flex items-center gap-2 px-3 py-2 border-t border-neutral-800 shrink-0"
-  >
-    <ViewSelect />
-    <AbilityMenu />
-    <PassivesPanel />
-    {#if self.administers}
-      <AdminPanel />
-    {/if}
-    <StatusBadges />
-  </div>
-</div>
 {/if}

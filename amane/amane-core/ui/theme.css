@@ -5,23 +5,64 @@
  * `--color-x` into the full set of utilities (`bg-x`, `text-x`, `border-x`, …), so the names below
  * ARE the vocabulary components are allowed to use.
  *
- * Values currently match the neutral palette the app already renders in, so nothing shifts; they
- * are meant to be replaced wholesale later. Roles, not shades — a component asking for `panel`
+ * The look is a sharp, dark console: square corners, a monospace face, near-black panels defined by
+ * hairline edges rather than soft grey lift. Roles, not shades — a component asking for `panel`
  * keeps meaning the right thing after the palette changes, `neutral-900` does not.
  */
-@theme {
-  --color-surface: #0a0a0a; /* app background, furthest back */
-  --color-panel: #171717; /* cards, dialogs, inputs */
-  --color-raised: #262626; /* hover states and controls sitting on a panel */
-  --color-edge: #404040; /* borders and dividers */
+/* `static` so EVERY token here is emitted to :root, not just the ones Tailwind sees referenced by a
+ * literal class or `var()`. The per-role/-org accents are only ever built dynamically
+ * (`--color-role-${role}`), so without this Tailwind tree-shakes them out and every role falls back
+ * to the default amber. */
+@theme static {
+  /* Sharp everything. `--radius` is the unqualified token behind the bare `rounded` utility; the
+   * `--radius-*` scale backs `rounded-sm|md|lg|…`. Both must be zeroed, or bare `rounded` keeps
+   * Tailwind's default 0.25rem while the rest goes square. `rounded-full` is a literal 9999px and
+   * stays circular, so status dots and avatars are unaffected. */
+  --radius: 0px;
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
 
-  --color-ink: #e5e5e5; /* primary text */
-  --color-ink-dim: #737373; /* secondary text, placeholders */
+  /* A modern monospace face for the whole UI. `ui-monospace` picks the platform's own sharp mono
+   * (SF Mono / Cascadia / …); the rest are fallbacks. Overriding `--font-sans` — not just adding a
+   * `font-mono` — is what makes it the default everywhere, since the app never sets `font-sans`
+   * explicitly. No web fonts: nothing to load, nothing to flash. */
+  --font-sans:
+    ui-monospace, "Cascadia Code", "Cascadia Mono", "SF Mono", "JetBrains Mono", "Fira Code", Menlo,
+    Consolas, "Liberation Mono", monospace;
 
-  --color-accent: #e5e5e5; /* primary action fill */
-  --color-accent-ink: #171717; /* text on top of accent */
+  /* The built-in neutral ramp, redefined darker and a touch cool. The hardcoded `neutral-*` classes
+   * still scattered through the markup ride this scale, so shifting it here drags them along with
+   * the semantic tokens instead of leaving two greys fighting. */
+  --color-neutral-950: #08080a;
+  --color-neutral-900: #0d0d10;
+  --color-neutral-800: #151518;
+  --color-neutral-700: #202025;
+  --color-neutral-600: #303038;
+  --color-neutral-500: #565662;
+  --color-neutral-400: #8a8a96;
+  --color-neutral-300: #b4b4be;
+  --color-neutral-200: #d2d2da;
+  --color-neutral-100: #ededf1;
+  --color-neutral-50: #f6f6f9;
 
-  --color-danger: #dc2626; /* destructive action fill */
+  --color-surface: #08080a; /* app background, furthest back */
+  --color-panel: #151518; /* cards, dialogs, inputs */
+  --color-raised: #202025; /* hover states and controls sitting on a panel */
+  --color-edge: #2b2b33; /* borders and dividers — the hairline that defines a region */
+
+  --color-ink: #d2d2da; /* primary text — dropped off pure white to cut glare */
+  --color-ink-dim: #565662; /* secondary text, placeholders */
+
+  --color-accent: #e6e6ec; /* primary action fill — inverse-video block, the terminal idiom */
+  --color-accent-ink: #0d0d10; /* text on top of accent */
+
+  --color-danger: #b91c1c; /* destructive action fill — a deeper, grittier red */
   --color-danger-ink: #ffffff; /* text on top of danger */
 
   /* Announcement accents. Named for what the event MEANS, not what happened in it, so several
@@ -41,4 +82,35 @@
   --color-event-tap: #14b8a6; /* a record was read */
   --color-event-prosecution: #e11d48;
   --color-event-blackout: #1e1b4b; /* the world stopped telling you things */
+
+  /* Entity colours: one accent per role and per org, plus the two fixed mention kinds. This is the
+   * single place to recolour anything identity-related — the ping chips in messages, the composer's
+   * live chips, and the role-reveal on a death all read these. A role or org with no entry of its
+   * own falls back to --color-role / --color-org, so a newly-added one is legible before it is
+   * given a colour here. Keep these light enough to read on the dark surface; the chip background is
+   * derived from the same value at low opacity. */
+  --color-mention-player: #7dd3fc; /* sky-300 */
+  --color-mention-system: #fca5a5; /* red-300 */
+
+  --color-role: #fcd34d; /* default role accent (amber-300) */
+  --color-role-Kira: #f87171;
+  --color-role-SecondKira: #fb923c;
+  --color-role-L: #38bdf8;
+  --color-role-Watari: #7dd3fc;
+  --color-role-BeyondBirthday: #a78bfa;
+  --color-role-PrivateInvestigator: #2dd4bf;
+  --color-role-NewsAnchor: #facc15;
+  --color-role-Civilian: #a3a3a3;
+  --color-role-RogueCivilian: #d8b4fe;
+  --color-role-Poser: #c084fc;
+  --color-role-ConArtist: #e879f9;
+  --color-role-WantedCivilian: #fb7185;
+  --color-role-Near: #94a3b8;
+  --color-role-Mello: #f472b6;
+
+  --color-org: #c4b5fd; /* default org accent (violet-300) */
+  --color-org-KK: #f87171; /* Kira's Kingdom */
+  --color-org-TF: #60a5fa; /* Task Force */
+  --color-org-SPK: #34d399; /* SPK */
+  --color-org-NULL: #9ca3af; /* Null */
 }

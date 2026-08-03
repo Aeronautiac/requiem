@@ -6,6 +6,7 @@ pub mod set_blackout;
 pub mod set_random_seed;
 pub mod start_game;
 pub mod update_actor_statuses;
+pub mod update_org_effective_members;
 pub mod update_world_viewports;
 
 #[cfg(test)]

@@ -563,6 +563,11 @@ export type SetLoggable = {
   loggable: boolean;
 };
 
+export type SetNotebookFake = {
+  notebook_id: NotebookKey;
+  fake: boolean;
+};
+
 export type SetTrueName = {
   target_id: ActorKey;
   true_name: string;
@@ -957,6 +962,7 @@ export type Action =
   | { SetProfilePolicy: SetProfilePolicy }
   | { UpdateChannels: UpdateChannels }
   | { SetLoggable: SetLoggable }
+  | { SetNotebookFake: SetNotebookFake }
   | { SetTrueName: SetTrueName }
   | { CreateLounge: CreateLounge }
   | { LeaveLounge: LeaveLounge }
@@ -1165,6 +1171,8 @@ export type Command =
   | { KiraConnectionAttempt: { channel_id: ChannelKey; user: ActorKey; success: boolean } }
   | { NotebookWrite: { notebook_id: NotebookKey; user_id: ActorKey; message: string | null; true_name: string; delay: number; successes_remaining: number; attempts_remaining: number; success: boolean; target_saved: boolean } }
   | { NotebookBorrowingStatus: { notebook_id: NotebookKey; borrowed: boolean } }
+  | { NotebookFakeStatus: { notebook_id: NotebookKey; fake: boolean } }
+  | { OrgEffectiveMembers: { org_id: ActorKey; members: ActorKey[] } }
   | { AddContactLog: { kind: ContactLogType; log: ContactLog } }
   | { UpdateAbilityView: { ability_name: AbilityName; success_usages_remaining: number; failure_usages_remaining: number; iterations_to_reset: number; ability_id: AbilityKey; owner_id: ActorKey } }
   | { RemoveAbility: { ability_id: AbilityKey } }

@@ -35,13 +35,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Read a contact channel's record by guessing its number. Lounges and group chats are numbered
-    in one running sequence — you tap what you can work out from what you already know.
-  </p>
-  <p class="text-sm text-neutral-500">
-    Wrong guesses are limited, and the channel is told it was read — though never by whom.
-  </p>
   <input
     type="number"
     min="0"

@@ -1325,6 +1325,12 @@ pub struct UpdateActorStatusesResponse {}
 pub struct UpdateActorStatuses {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateOrgEffectiveMembersResponse {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateOrgEffectiveMembers {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct SetBlackoutResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1463,6 +1469,7 @@ pub enum Action {
     UpdateWorldViewports(UpdateWorldViewports),
     UpdateTimers(UpdateTimers),
     UpdateActorStatuses(UpdateActorStatuses),
+    UpdateOrgEffectiveMembers(UpdateOrgEffectiveMembers),
     SetBlackout(SetBlackout),
     InitializeEngine(InitializeEngine),
     SetRandomSeed(SetRandomSeed),
@@ -1583,6 +1590,7 @@ pub enum ActionResponse {
     UpdateWorldViewports(UpdateWorldViewportsResponse),
     UpdateTimers(UpdateTimersResponse),
     UpdateActorStatuses(UpdateActorStatusesResponse),
+    UpdateOrgEffectiveMembers(UpdateOrgEffectiveMembersResponse),
     SetBlackout(SetBlackoutResponse),
     InitializeEngine(InitializeEngineResponse),
     SetRandomSeed(SetRandomSeedResponse),

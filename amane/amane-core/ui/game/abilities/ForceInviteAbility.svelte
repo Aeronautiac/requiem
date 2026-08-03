@@ -34,14 +34,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-ink-dim">
-    Put a player into the organization immediately. No true name is needed and they are not
-    asked — they are simply in, and they will see the organization's channel from the moment
-    it lands.
-  </p>
-  <p class="text-sm text-ink-dim">
-    Someone the organization has blacklisted cannot be brought back in this way.
-  </p>
   <PlayerSelect bind:value={target} placeholder="Target" />
   <button
     class="rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:brightness-110"

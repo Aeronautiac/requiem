@@ -105,11 +105,11 @@
     {:else}
       <!-- nothing to contact or inspect -->
       <div
-        class="flex items-center justify-between px-2 py-1 text-sm text-neutral-300"
+        class="flex items-start justify-between gap-2 px-2 py-1.5 text-sm text-neutral-300"
       >
-        <span>{view.resolve_display(member.display)}</span>
+        <span class="min-w-0 break-words">{view.resolve_display(member.display)}</span>
         {#if permsLabel(member.perms)}
-          <span class="text-xs text-neutral-600">
+          <span class="shrink-0 text-xs text-neutral-600">
             {permsLabel(member.perms)}
           </span>
         {/if}
@@ -121,13 +121,21 @@
   </div>
 {/snippet}
 
-<div class="flex flex-col gap-2 p-2">
-  <section class="flex flex-col gap-0.5">
+<div class="flex flex-col gap-1.5 pb-2">
+  <section class="flex flex-col border-y border-neutral-700">
     <button
-      class="flex items-center gap-1 px-2 py-1 text-xs font-medium uppercase tracking-wide text-neutral-500 hover:text-neutral-300"
+      class="flex items-center gap-2 border-neutral-700 bg-neutral-800/40 px-3 py-2 text-xs font-medium uppercase tracking-wide text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 {channel_open
+        ? 'border-b'
+        : ''}"
       onclick={() => (channel_open = !channel_open)}
     >
-      <span class="text-[0.6rem]">{channel_open ? "▾" : "▸"}</span>
+      <span
+        class="inline-block w-3 text-center text-[0.7rem] leading-none transition-transform {channel_open
+          ? 'rotate-90'
+          : ''}"
+      >
+        ▸
+      </span>
       Channel Members
     </button>
 
@@ -155,12 +163,20 @@
     {/if}
   </section>
 
-  <section class="flex flex-col gap-0.5">
+  <section class="flex flex-col border-y border-neutral-700">
     <button
-      class="flex items-center gap-1 px-2 py-1 text-xs font-medium uppercase tracking-wide text-neutral-500 hover:text-neutral-300"
+      class="flex items-center gap-2 border-neutral-700 bg-neutral-800/40 px-3 py-2 text-xs font-medium uppercase tracking-wide text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 {players_open
+        ? 'border-b'
+        : ''}"
       onclick={() => (players_open = !players_open)}
     >
-      <span class="text-[0.6rem]">{players_open ? "▾" : "▸"}</span>
+      <span
+        class="inline-block w-3 text-center text-[0.7rem] leading-none transition-transform {players_open
+          ? 'rotate-90'
+          : ''}"
+      >
+        ▸
+      </span>
       Other Players
     </button>
 

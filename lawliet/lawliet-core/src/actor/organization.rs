@@ -53,6 +53,10 @@ pub struct Organization {
     pub abilities: IndexMap<AbilityKey, OrgAbility>,
     pub org_name: OrganizationName,
     pub channel_id: ChannelKey,
+    // Last effective (present) member set broadcast on the org viewport — the diff cache for the
+    // effective-members sweep, the org counterpart to an actor's last_status. Order-insensitive:
+    // IndexSet equality ignores order, so a roster reshuffle alone never re-broadcasts.
+    pub last_effective: IndexSet<ActorKey>,
 }
 
 impl Organization {
@@ -68,6 +72,7 @@ impl Organization {
             blacklist: IndexSet::new(),
             org_name: name,
             channel_id,
+            last_effective: IndexSet::new(),
         }
     }
 

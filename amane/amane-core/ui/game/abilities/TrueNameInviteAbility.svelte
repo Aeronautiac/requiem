@@ -39,10 +39,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Invite a player by guessing their true name. Get it right and they join the org and their
-    name is revealed to the members. Get it wrong and you have spent the attempt for nothing.
-  </p>
   <PlayerSelect bind:value={target} placeholder="Who to invite" />
   <input
     bind:value={trueName}

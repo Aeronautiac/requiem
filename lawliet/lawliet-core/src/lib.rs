@@ -202,9 +202,8 @@ pub use common::{
 // decouples game time from real world time, but this might be how it should have been from the
 // start. the game can have conceptual time starting from 0, conceptual weekdays, etc... i doubt
 // this would be hard to change. it requires no engine work.
-// - you cannot edit the game's config as an admin. key revocation and the "end my turn" and
-// fake-notebook items below are all done now; they are left off this list for that reason.
-// (see CLIENT WORK OWED BY THE ENGINE for what is still owed on them.)
+// - you cannot edit the game's config as an admin. key revocation, the "end my turn" item and the
+// fake-notebook client work are all done now; they are left off this list for that reason.
 // - you cannot see the list of running games on the platform layer of the client. not important
 // yet, but eventually needs to get done.
 // - the server has no persistence layer yet. everything is held in RAM, which is fine for testing,
@@ -215,17 +214,6 @@ pub use common::{
 //
 // The good news is that basically all of the hard parts are done. This final phase is just polish.
 // After this, deployment. We have a hetzner cx23 waiting as well as a cloudflare domain.
-
-// CLIENT WORK OWED BY THE ENGINE:
-// protocol the engine now emits or accepts that the frontend doesn't yet handle. hand-written TS.
-// - NotebookFakeStatus command: render whether a book is a decoy in its notebook channel. reaches
-// only the original owner + System (admin), never a mere holder — so it is not a true-name-style
-// leak; a borrower/inheritor is left to deduce it.
-// - SignalReady during a Presentation subphase: an "end my turn" affordance in the trial channel,
-// shown to whoever holds the floor (prosecutor, or defendant/lawyer on the defense slot). ends the
-// speaking slot early instead of waiting out the clock.
-// - SetNotebookFake action: as admin, clicking the fake display toggles it — flips a book
-// real<->fake after creation. same display as the NotebookFakeStatus bullet, just interactive.
 
 // TODO:
 // - Press conferences

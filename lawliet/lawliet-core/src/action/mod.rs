@@ -139,6 +139,7 @@ impl ActionInterface for Action {
             Action::UpdateWorldViewports(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::UpdateTimers(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::UpdateActorStatuses(a) => a.handle(eng, ctx, actor, version, mutate),
+            Action::UpdateOrgEffectiveMembers(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::SetBlackout(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::InitializeEngine(a) => a.handle(eng, ctx, actor, version, mutate),
             Action::SetRandomSeed(a) => a.handle(eng, ctx, actor, version, mutate),

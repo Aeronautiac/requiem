@@ -20,7 +20,7 @@ body,
 }
 
 body {
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-sans);
   background: var(--color-surface);
   color: var(--color-ink);
 }

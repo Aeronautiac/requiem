@@ -38,7 +38,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">Choose who to shoot.</p>
   <PlayerSelect bind:value={target} placeholder="Target" />
   <button
     class="rounded-md bg-red-500 px-3 py-2 text-sm font-medium text-white hover:bg-red-400"

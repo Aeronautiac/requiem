@@ -37,11 +37,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Give a player a new true name, drawn by the server. Anyone holding the old one is holding
-    something worthless — and you will not be told the new one.
-  </p>
-  <p class="text-sm text-neutral-500">Single use.</p>
   <PlayerSelect bind:value={target} placeholder="Whose name to reroll" />
   <button
     class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500"

@@ -33,4 +33,4 @@
   });
 </script>
 
-<Select bind:value={ui.viewer} {options} class="h-8" />
+<Select bind:value={ui.viewer} {options} />

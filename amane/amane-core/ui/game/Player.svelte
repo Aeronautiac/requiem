@@ -69,15 +69,15 @@
 
 <div class="rounded text-sm">
   <button
-    class="flex w-full items-center justify-between rounded px-2 py-1 text-neutral-300 hover:bg-neutral-800"
+    class="flex w-full items-start justify-between gap-2 rounded px-2 py-1.5 text-left text-neutral-300 hover:bg-neutral-800"
     onclick={() => {
       expanded = !expanded;
       flash.error = null;
       flash.success = null;
     }}
   >
-    <span class="flex items-center gap-1.5">
-      {label}
+    <span class="flex min-w-0 flex-wrap items-center gap-1.5">
+      <span class="break-words">{label}</span>
       {#each statuses as s (s)}
         <span
           class="rounded bg-neutral-800 px-1 py-px text-[0.6rem] uppercase tracking-wide text-neutral-400"
@@ -87,7 +87,7 @@
       {/each}
     </span>
     {#if perms !== null && permsLabel(perms)}
-      <span class="text-xs text-neutral-600">{permsLabel(perms)}</span>
+      <span class="shrink-0 text-xs text-neutral-600">{permsLabel(perms)}</span>
     {/if}
   </button>
 

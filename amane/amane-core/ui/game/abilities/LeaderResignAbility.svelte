@@ -40,10 +40,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Step down as leader. Leadership passes on per the org's policy — some orgs require you to
-    name your successor, others decide for themselves.
-  </p>
   <PlayerSelect bind:value={successor} placeholder="Successor (if your org requires one)" ids={members} />
   <button
     class="rounded-md bg-neutral-700 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-600"

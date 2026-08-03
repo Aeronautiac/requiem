@@ -21,7 +21,7 @@
 <select
   bind:value
   {disabled}
-  class="h-9 rounded-md border border-edge bg-panel px-3 text-sm text-ink
+  class="h-8 rounded-md border border-edge bg-panel px-3 text-sm text-ink
          focus:outline-none focus:ring-1 focus:ring-edge disabled:opacity-50 {klass}"
 >
   {#each options as option (option.value)}

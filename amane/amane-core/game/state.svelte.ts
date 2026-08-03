@@ -43,7 +43,7 @@ export class GameState {
   #profiles = new SvelteMap<string, string | null>();
 
   constructor() {
-    this.views.set("System", new GameView());
+    this.views.set("System", new GameView("System"));
   }
 
   // The session wires this once, right after construction. Kept separate from the constructor so a
@@ -144,7 +144,7 @@ export class GameState {
   view_for(key: string): GameView {
     let view = this.views.get(key);
     if (!view) {
-      view = new GameView();
+      view = new GameView(key);
       this.views.set(key, view);
     }
     return view;

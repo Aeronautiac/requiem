@@ -38,10 +38,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Check whether a player is currently holding a notebook. The result appears
-    privately in your Info channel.
-  </p>
   <PlayerSelect bind:value={target} placeholder="Target" />
   <button
     class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"

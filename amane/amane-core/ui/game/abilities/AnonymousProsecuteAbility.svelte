@@ -38,10 +38,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Prosecute a player anonymously — they'll be put into custody and the trial is
-    filed under your role, not your identity.
-  </p>
   <PlayerSelect bind:value={target} placeholder="Defendant" />
   <button
     class="rounded-md bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-500"

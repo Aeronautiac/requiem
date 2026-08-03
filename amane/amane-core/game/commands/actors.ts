@@ -75,6 +75,7 @@ export const actorHandlers: Handlers = {
       ctx.view.player_info.set(key, { ...ctx.view.player_info.get(key), role: p.role });
       return;
     }
+    ctx.view.own_role = p.role;
     ctx.view.push_notif(ctx.timestamp, { RoleUpdate: { role: p.role } });
     ctx.notify({ title: t("toast_role_title"), body: t("toast_role_body", { role: p.role }) });
   },

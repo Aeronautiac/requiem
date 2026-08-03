@@ -5,7 +5,7 @@
 // answer whether it has gone quiet, so both go through `mapChannel`.
 import { slotKeyToString } from "../../bindings";
 import type { ChannelCategory } from "../types";
-import { new_channel, orgDisplayName, ownPerms, t } from "../helpers.svelte";
+import { actorLabel, mentionsViewer, new_channel, orgDisplayName, ownPerms, t } from "../helpers.svelte";
 import { type CmdCtx, type Handlers } from "./index";
 
 function mapChannel(ctx: CmdCtx, key: string, category: ChannelCategory, name: string) {
@@ -112,10 +112,22 @@ export const channelHandlers: Handlers = {
 
   AddMessage(ctx: CmdCtx, p) {
     const key = slotKeyToString(p.channel_id);
-    ctx.view.channels.get(key)?.events.push({
+    const channel = ctx.view.channels.get(key);
+    channel?.events.push({
       timestamp: ctx.timestamp,
       data: { Message: { content: p.content, sender_display: p.sender_display } },
     });
+
+    // Ping the viewer if the message names them — by their key, their role, or an org they are in.
+    if (mentionsViewer(ctx.view, p.content)) {
+      ctx.notify({
+        title: t("toast_mention_title"),
+        body: t("toast_mention_body", {
+          sender: actorLabel(p.sender_display, ctx.view.players),
+          channel: channel?.name ?? "",
+        }),
+      });
+    }
   },
 
   // Unlike a message this carries no display: the user is named raw, which is the whole cost of

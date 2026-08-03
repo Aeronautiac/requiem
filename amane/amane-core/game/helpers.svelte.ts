@@ -10,7 +10,9 @@ import type {
   CommandRecipient,
   ContactLogType,
   OrganizationName,
+  PassiveType,
   ProsecutionPhaseView,
+  Role,
   Statuses,
 } from "../bindings";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
@@ -122,6 +124,7 @@ export function new_org(name: OrganizationName): Org {
   return {
     name,
     members: new SvelteSet<string>(),
+    effective: new SvelteSet<string>(),
     abilities: new SvelteMap<string, AbilityView>(),
   };
 }
@@ -238,6 +241,147 @@ export function playerLabel(id: string, players: ReadonlyMap<string, Player>): s
 export function orgDisplayName(name: OrganizationName): string {
   const key = `org_name_${name}` as StringKey;
   return key in STRINGS ? t(key) : name;
+}
+
+// Same fallback shape as orgDisplayName: a role with no copy yet renders as its raw config name
+// rather than blank. Roles have no display strings today, so every role currently reads raw.
+export function roleLabel(role: Role): string {
+  const key = `role_name_${role}` as StringKey;
+  return key in STRINGS ? t(key) : role;
+}
+
+// What an ability does, sourced from the one place it is written. Empty for an ability with no copy
+// yet, which the callers treat as "no description to show" rather than a blank line.
+export function abilityDescription(name: AbilityName): string {
+  const key = `ability_desc_${name}` as StringKey;
+  return key in STRINGS ? t(key) : "";
+}
+
+// The irreversible cost of firing an ability, shown apart from the description and in the danger
+// colour. Empty for the abilities that carry no such price.
+export function abilityWarning(name: AbilityName): string {
+  const key = `ability_warn_${name}` as StringKey;
+  return key in STRINGS ? t(key) : "";
+}
+
+// A passive carrying data (a multiplier, a log kind) still reads the same base description, so the
+// key comes from the variant name alone.
+export function passiveDescription(passive: PassiveType): string {
+  const base = typeof passive === "string" ? passive : (Object.keys(passive)[0] ?? "");
+  const key = `passive_desc_${base}` as StringKey;
+  return key in STRINGS ? t(key) : "";
+}
+
+// A Discord-style mention embedded in message text: `@<player:3:0>`, `@<role:Kira>`, `@<org:KK>`,
+// `@<system>`. The token travels through the engine as opaque content — the client is the only
+// thing that knows what an id resolves to — so parsing and resolution both live here, client-side.
+// System is the one kind with no value: there is exactly one, so it needs no id.
+export type Mention =
+  | { kind: "player"; id: string }
+  | { kind: "role"; role: Role }
+  | { kind: "org"; org: OrganizationName }
+  | { kind: "system" };
+
+// The accent for an entity, as a `var(...)` reference into the tokens in ui/theme.css. Per-entity
+// tokens fall back to the kind's default, so a role/org with no colour of its own still resolves.
+// Returned as a var reference rather than a resolved value so recolouring stays a theme.css edit.
+export function roleColorVar(role: Role): string {
+  return `var(--color-role-${role}, var(--color-role))`;
+}
+export function orgColorVar(org: OrganizationName): string {
+  return `var(--color-org-${org}, var(--color-org))`;
+}
+export function mentionColorVar(mention: Mention): string {
+  switch (mention.kind) {
+    case "player":
+      return "var(--color-mention-player)";
+    case "system":
+      return "var(--color-mention-system)";
+    case "role":
+      return roleColorVar(mention.role);
+    case "org":
+      return orgColorVar(mention.org);
+  }
+}
+
+// The inline style for a ping chip, given its accent var reference. The background is the same
+// accent at low opacity, so one token drives both. Shared by the message renderer, the composer's
+// live chips, and the death card, so a chip looks identical everywhere.
+export function chipStyle(colorVar: string): string {
+  return `--chip:${colorVar};color:var(--chip);background-color:color-mix(in srgb, var(--chip) 16%, transparent)`;
+}
+
+// A message body is a run of plain text and mentions. `parseMentions` is the one splitter, shared
+// by rendering (segment → chip) and notification (does a mention name me?).
+export type MessageSegment = { text: string } | { mention: Mention };
+
+// Two alternatives: a kinded token whose value is `[^>]+` (so a player's `idx:version` key keeps
+// its own colon — only the first colon, after the kind, is the separator), or bare `@<system>`.
+const MENTION_RE = /@<(player|role|org):([^>]+)>|@<(system)>/g;
+
+export function parseMentions(content: string): MessageSegment[] {
+  const segments: MessageSegment[] = [];
+  let last = 0;
+  for (const match of content.matchAll(MENTION_RE)) {
+    const start = match.index;
+    if (start > last) segments.push({ text: content.slice(last, start) });
+    const [, kind, value, system] = match;
+    const mention: Mention = system
+      ? { kind: "system" }
+      : kind === "player"
+        ? { kind: "player", id: value }
+        : kind === "role"
+          ? { kind: "role", role: value as Role }
+          : { kind: "org", org: value as OrganizationName };
+    segments.push({ mention });
+    last = start + match[0].length;
+  }
+  if (last < content.length) segments.push({ text: content.slice(last) });
+  return segments;
+}
+
+// The token text for a mention — the inverse of one `parseMentions` segment. The composer inserts
+// this into the message body, where the parser above turns it back into a chip.
+export function mentionToken(mention: Mention): string {
+  if (mention.kind === "player") return `@<player:${mention.id}>`;
+  if (mention.kind === "role") return `@<role:${mention.role}>`;
+  if (mention.kind === "org") return `@<org:${mention.org}>`;
+  return "@<system>";
+}
+
+// The display string a mention chip shows — the `@` is dropped, the id/name becomes a real label.
+export function mentionLabel(mention: Mention, players: ReadonlyMap<string, Player>): string {
+  if (mention.kind === "player") return playerLabel(mention.id, players);
+  if (mention.kind === "org") return orgDisplayName(mention.org);
+  if (mention.kind === "role") return roleLabel(mention.role);
+  return t("display_system");
+}
+
+// Just enough of a view to answer "does this mention name me?". A structural subset so the check
+// can live here beside the parser without helpers importing GameView (which imports helpers).
+export interface ViewerIdentity {
+  own_key: string;
+  own_role: Role | null;
+  orgs: ReadonlyMap<string, Org>;
+}
+
+// Whether a message body mentions this viewer — by their own key, their role, or an org they are a
+// member of. The one predicate behind notify-on-mention; it reuses the same parse the chips render
+// from, which is the whole reason mentions are tokens and not a side channel.
+export function mentionsViewer(id: ViewerIdentity, content: string): boolean {
+  for (const seg of parseMentions(content)) {
+    if (!("mention" in seg)) continue;
+    const m = seg.mention;
+    if (m.kind === "system" && id.own_key === "System") return true;
+    if (m.kind === "player" && m.id === id.own_key) return true;
+    if (m.kind === "role" && m.role === id.own_role) return true;
+    if (m.kind === "org") {
+      for (const org of id.orgs.values()) {
+        if (org.name === m.org && org.members.has(id.own_key)) return true;
+      }
+    }
+  }
+  return false;
 }
 
 // Takes the players map rather than closing over a view, so a component can call it with whichever

@@ -235,6 +235,16 @@ pub enum Command {
         org_id: ActorKey,
     },
 
+    // BROADCAST (org channel viewport): which members currently COUNT toward the org's ability
+    // member requirements — the present subset of the roster, matching the gate SystemUseOrgAbility
+    // applies. A member who has lost presence (kidnapped, jailed, dead) stays in the roster and
+    // behaves like a normal member, but is not counted here. Whole set every time, replaced not
+    // merged; a settled sweep re-sends nothing because it is diffed against the last.
+    OrgEffectiveMembers {
+        org_id: ActorKey,
+        members: Vec<ActorKey>,
+    },
+
     ////////////////////////////////////////////////
     // COMMS //
     ////////////////////////////////////////////////

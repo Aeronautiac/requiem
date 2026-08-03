@@ -37,7 +37,7 @@ mod org_tests {
     use crate::{
         ability::{AbilityBehaviour, gun::Gun},
         action::{
-            Action, ActionActor, ActionRequest, ActionResponse,
+            Action, ActionActor, ActionContext, ActionRequest, ActionResponse,
             actor::org::create_and_give_org_ability::CreateAndGiveOrgAbility,
         },
         actor::{
@@ -46,6 +46,7 @@ mod org_tests {
             },
             state::State,
         },
+        common::ActorKey,
         config::{ability::AbilityName, actor::organization::OrganizationName, role::Role},
         engine::Engine,
         helpers::{actor_get_effective_passive, get_actor, get_channel, get_org},
@@ -79,6 +80,44 @@ mod org_tests {
 
         let org = get_org(&eng, o1).unwrap();
         assert!(!org.has_member(p1));
+    }
+
+    // The most recent effective (present) member set the org viewport was told about.
+    fn latest_effective(ctx: &ActionContext, org: ActorKey) -> Option<IndexSet<ActorKey>> {
+        ctx.commands.iter().rev().find_map(|c| match &c.cmd {
+            Command::OrgEffectiveMembers { org_id, members } if *org_id == org => {
+                Some(members.iter().copied().collect())
+            }
+            _ => None,
+        })
+    }
+
+    // A member who loses presence stops counting toward the org's ability requirements but stays in
+    // the roster, so the org is shown a separate "effective" set that drops them. Presence here is
+    // the exact predicate SystemUseOrgAbility gates on, so the list can never disagree with it.
+    #[test]
+    fn losing_presence_drops_a_member_from_the_effective_set() {
+        let mut eng = started_engine();
+        let o1 = add_org(&mut eng, 0, OrganizationName::NULL);
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
+        let p3 = add_player(&mut eng, 0, Role::Civilian, "p3");
+        add_to_org(&mut eng, 1, o1, p1, false, false).unwrap();
+        add_to_org(&mut eng, 1, o1, p2, false, false).unwrap();
+        add_to_org(&mut eng, 1, o1, p3, false, false).unwrap();
+
+        // All present, so all three are effective.
+        assert_eq!(get_org(&eng, o1).unwrap().last_effective, indexset! {p1, p2, p3});
+
+        // Incarceration carries NoPresence; the sweep re-broadcasts the effective set without p2,
+        // who nonetheless remains a member.
+        let (_, ctx) = add_state(&mut eng, 2, p2, State::Incarcerated);
+        assert_eq!(latest_effective(&ctx, o1).unwrap(), indexset! {p1, p3});
+        assert!(get_org(&eng, o1).unwrap().has_member(p2));
+
+        // Release restores presence and the full effective set.
+        let (_, ctx) = remove_state(&mut eng, 3, p2, State::Incarcerated);
+        assert_eq!(latest_effective(&ctx, o1).unwrap(), indexset! {p1, p2, p3});
     }
 
     // operations on dead people should be allowed. these restrictions are only applied through

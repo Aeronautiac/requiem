@@ -38,11 +38,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Plant a bug on a player. Their messages in loggable channels are relayed to a
-    private surveillance feed only you can see. They're told they've been bugged, but
-    not by whom.
-  </p>
   <PlayerSelect bind:value={target} placeholder="Target" />
   <button
     class="rounded-md bg-yellow-600 px-3 py-2 text-sm font-medium text-white hover:bg-yellow-500"

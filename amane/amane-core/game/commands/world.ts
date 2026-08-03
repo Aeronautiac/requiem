@@ -14,22 +14,54 @@ import { nameLabel, orgDisplayName, playerLabel, t } from "../helpers.svelte";
 import { formatDuration } from "../../lib/utils";
 import type { CmdCtx, Handlers } from "./index";
 
+// A death is dealt out as three reveals, this far apart: the death itself, then who they were, then
+// what they left behind. Staged against the command's own timestamp (see stage_world_events), so a
+// fresh death plays out over these gaps while a replayed one is simply all there.
+const DEATH_STAGGER_MS = 5000;
+
 export const worldHandlers: Handlers = {
   Death(ctx: CmdCtx, p) {
     const target_id = slotKeyToString(p.target_id);
-    ctx.view.events.push({
-      timestamp: ctx.timestamp,
-      data: {
-        Death: {
-          target_id,
-          true_name: p.true_name,
-          death_message: p.death_message,
-          role: p.role,
-          notebook_transferred: p.notebook_transferred,
-          ability_transferred: p.ability_transferred,
+    const ts = ctx.timestamp;
+
+    // The transfer reveal is skipped entirely when nothing changed hands — an empty third beat would
+    // just deflate the sequence.
+    const has_transfer = p.notebook_transferred || p.ability_transferred;
+
+    ctx.view.stage_world_events([
+      {
+        timestamp: ts,
+        data: {
+          Death: {
+            target_id,
+            true_name: p.true_name,
+            death_message: p.death_message,
+            role: p.role,
+            notebook_transferred: p.notebook_transferred,
+            ability_transferred: p.ability_transferred,
+          },
         },
       },
-    });
+      {
+        timestamp: ts + DEATH_STAGGER_MS,
+        data: { DeathRole: { target_id, role: p.role } },
+      },
+      ...(has_transfer
+        ? [
+            {
+              timestamp: ts + 2 * DEATH_STAGGER_MS,
+              data: {
+                DeathTransfer: {
+                  target_id,
+                  notebook_transferred: p.notebook_transferred,
+                  ability_transferred: p.ability_transferred,
+                },
+              },
+            },
+          ]
+        : []),
+    ]);
+
     ctx.notify({
       title: t("toast_death_title"),
       body: t("toast_death_body", { name: playerLabel(target_id, ctx.view.players) }),

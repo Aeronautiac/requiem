@@ -38,10 +38,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Delegate a prosecution: pull a player into the org and set them prosecuting someone on the
-    org's behalf. Draws the org's invite and prosecution pools.
-  </p>
   <span class="text-xs uppercase tracking-wide text-neutral-500">Prosecutor</span>
   <PlayerSelect bind:value={invitee} placeholder="Who to bring in and set prosecuting" />
   <span class="text-xs uppercase tracking-wide text-neutral-500">Defendant</span>

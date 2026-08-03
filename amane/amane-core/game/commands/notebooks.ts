@@ -31,4 +31,11 @@ export const notebookHandlers: Handlers = {
   NotebookBorrowingStatus(ctx: CmdCtx, p) {
     ctx.view.set_notebook_borrowed(slotKeyToString(p.notebook_id), p.borrowed);
   },
+
+  // Whether the book is a decoy — a fake book's writes can't kill. Reaches only the original owner
+  // (and admin), so an inheritor is left to deduce it; a view that never receives this shows no
+  // badge rather than claiming the book is genuine.
+  NotebookFakeStatus(ctx: CmdCtx, p) {
+    ctx.view.set_notebook_fake(slotKeyToString(p.notebook_id), p.fake);
+  },
 };

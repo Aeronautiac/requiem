@@ -4,17 +4,22 @@
   // `color` is any CSS colour string. The translucency is applied here so callers hand in a solid
   // colour and don't have to think about Tailwind's class purging — dynamic colours cannot be
   // Tailwind classes.
+  import type { Snippet } from "svelte";
+
   interface Props {
     color: string;
     description: string;
-    content: string;
+    // Plain text is the common case. Pass `children` instead when the body needs markup — an
+    // embedded ping chip, say — and it renders in the same styled slot.
+    content?: string;
+    children?: Snippet;
   }
-  let { color, description, content }: Props = $props();
+  let { color, description, content, children }: Props = $props();
 </script>
 
-<div class="px-4 py-1">
+<div class="px-3 py-0.5">
   <div
-    class="relative overflow-hidden rounded-md border-l-2 px-3 py-2"
+    class="relative overflow-hidden border-l-2 px-2.5 py-1.5"
     style="border-color: {color}"
   >
     <div
@@ -29,8 +34,14 @@
       >
         {description}
       </div>
-      <div class="mt-0.5 whitespace-pre-wrap break-words text-sm text-neutral-200">
-        {content}
+      <!-- pre-wrap only for the plain-text case, where the copy carries its own newlines. Markup
+           children lay out with their own elements, so collapsing source whitespace is what's wanted. -->
+      <div
+        class="mt-0.5 break-words text-sm text-neutral-200 {children
+          ? ''
+          : 'whitespace-pre-wrap'}"
+      >
+        {#if children}{@render children()}{:else}{content}{/if}
       </div>
     </div>
   </div>

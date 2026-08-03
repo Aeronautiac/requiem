@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { execErrorText, orgDisplayName } from "../../game/helpers.svelte";
+  import { execErrorText } from "../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
@@ -38,13 +38,13 @@
     Prosecution: "Trials",
     Logs: "Logs",
     Personal: "Personal",
-    // Orgs get their own membership-gated section below, not the generic category loop.
     Org: "Organizations",
   };
 
   const CATEGORY_ORDER: ChannelCategory[] = [
     "World",
     "Role",
+    "Org",
     "Personal",
     "Notebook",
     "Lounge",
@@ -84,22 +84,6 @@
     for (const [key, ch] of view.contact_logs) bucket(ch.category, key);
 
     return map;
-  });
-
-  // Each entry opens the org's backing channel; the member/ability panel lives in the right
-  // sidebar. Same rule as above — the org is here because it was delivered.
-  const visible_orgs = $derived.by(() => {
-    const out: { key: string; name: string; channel: string }[] = [];
-    for (const [key, org] of view.orgs) {
-      const channel = view.channel_of_org(key);
-      if (!channel) continue;
-      out.push({
-        key,
-        name: view.channels.get(channel)?.name ?? orgDisplayName(org.name),
-        channel,
-      });
-    }
-    return out;
   });
 
   // Categories start expanded.
@@ -151,7 +135,7 @@
   }
 </script>
 
-<div class="flex flex-col p-2">
+<div class="flex flex-col gap-1.5 pb-2">
   {#each CATEGORY_ORDER as category}
     {@const keys = channel_categories.get(category) ?? []}
     {@const open = !collapsed.has(category)}
@@ -159,19 +143,27 @@
          their create buttons reachable, and Lounges is there purely so the sidebar reads
          consistently above Group Chats. -->
     {#if keys.length > 0 || category === "World" || category === "Lounge" || (category === "Personal" && !is_admin) || (category === "Groupchat" && gc_ability_id)}
-      <section class="flex flex-col mt-1">
+      <section class="flex flex-col border-y border-neutral-700">
         <button
-          class="flex items-center gap-1 px-2 py-1 text-xs font-medium uppercase tracking-wide text-neutral-500 hover:text-neutral-300"
+          class="flex items-center gap-2 border-neutral-700 bg-neutral-800/40 px-3 py-2 text-xs font-medium uppercase tracking-wide text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 {open
+            ? 'border-b'
+            : ''}"
           onclick={() => toggle(category)}
         >
-          <span class="text-[0.6rem]">{open ? "▾" : "▸"}</span>
+          <span
+            class="inline-block w-3 text-center text-[0.7rem] leading-none transition-transform {open
+              ? 'rotate-90'
+              : ''}"
+          >
+            ▸
+          </span>
           {CATEGORY_LABELS[category]}
         </button>
 
         {#if open}
           {#if category === "World"}
             <button
-              class="w-full text-left px-3 py-1 rounded text-sm hover:bg-neutral-800 {ui.is_news
+              class="w-full text-left px-3 py-2 rounded text-sm leading-none hover:bg-neutral-800 {ui.is_news
                 ? 'bg-neutral-800'
                 : ''} text-neutral-300"
               onclick={() => ui.select_news()}
@@ -183,7 +175,7 @@
           {#each keys as key}
             {@const channel = view.channel(key)!}
             <button
-              class="w-full text-left px-3 py-1 rounded text-sm hover:bg-neutral-800 {channel.archived
+              class="w-full text-left px-3 py-2 rounded text-sm leading-none hover:bg-neutral-800 {channel.archived
                 ? 'text-neutral-600'
                 : 'text-neutral-300'} {ui.selected_channel === key
                 ? 'bg-neutral-800'
@@ -196,7 +188,7 @@
 
           {#if category === "Groupchat" && gc_ability_id}
             <button
-              class="w-full text-left px-3 py-1 rounded text-sm text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+              class="w-full text-left px-3 py-2 rounded text-sm leading-none text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
               onclick={() => create_gc(gc_ability_id)}
             >
               + Create group chat
@@ -208,7 +200,7 @@
 
           {#if category === "Personal" && !is_admin}
             <button
-              class="w-full text-left px-3 py-1 rounded text-sm text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+              class="w-full text-left px-3 py-2 rounded text-sm leading-none text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
               onclick={() => create_personal_channel()}
             >
               + Add personal channel
@@ -221,30 +213,4 @@
       </section>
     {/if}
   {/each}
-
-  {#if visible_orgs.length > 0}
-    {@const open = !collapsed.has("Org")}
-    <section class="flex flex-col mt-1">
-      <button
-        class="flex items-center gap-1 px-2 py-1 text-xs font-medium uppercase tracking-wide text-neutral-500 hover:text-neutral-300"
-        onclick={() => toggle("Org")}
-      >
-        <span class="text-[0.6rem]">{open ? "▾" : "▸"}</span>
-        {CATEGORY_LABELS["Org"]}
-      </button>
-      {#if open}
-        {#each visible_orgs as org (org.key)}
-          <button
-            class="w-full text-left px-3 py-1 rounded text-sm hover:bg-neutral-800 {ui.selected_channel ===
-            org.channel
-              ? 'bg-neutral-800'
-              : ''} text-neutral-300"
-            onclick={() => ui.select_channel(org.channel)}
-          >
-            {org.name}
-          </button>
-        {/each}
-      {/if}
-    </section>
-  {/if}
 </div>

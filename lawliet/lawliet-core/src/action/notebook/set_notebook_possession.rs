@@ -36,19 +36,21 @@ impl ActionInterface for SetNotebookPossession {
         // Callers finalize the notebook's ownership fields before this action, so the borrow flag
         // reflects the post-transfer state.
         //
-        // Addressed to whoever now holds the book, and to nobody else: this is a status flag saying
-        // "the book in your hands is not yours", which is a fact about one person. It is no part of
-        // what the channel carried, so it never reaches the record.
+        // The holder is told "the book in your hands is not yours"; System mirrors it for the admin
+        // overview, exactly as the fake status does. Nobody else — it is a fact about one person,
+        // and no part of what the channel carried, so it never reaches the record.
         let borrowed = notebook.borrowed.is_some();
         if let Some(holder) = self.to {
-            ctx.push_cmd(
-                Command::NotebookBorrowingStatus {
-                    notebook_id: self.notebook_id,
-                    borrowed,
-                },
-                CommandRecipient::Actor(holder),
-                eng.time,
-            );
+            for recipient in [CommandRecipient::Actor(holder), CommandRecipient::System] {
+                ctx.push_cmd(
+                    Command::NotebookBorrowingStatus {
+                        notebook_id: self.notebook_id,
+                        borrowed,
+                    },
+                    recipient,
+                    eng.time,
+                );
+            }
         }
 
         if let Some(from) = self.from {

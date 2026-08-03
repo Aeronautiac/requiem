@@ -10,4 +10,14 @@ export const orgHandlers: Handlers = {
   RemoveOrgMember(ctx: CmdCtx, p) {
     ctx.view.orgs.get(slotKeyToString(p.org_id))?.members.delete(slotKeyToString(p.player_id));
   },
+
+  // The present subset that counts toward ability requirements. Whole set every time — replace it,
+  // don't merge, so a member who regained presence is added and one who lost it is dropped in one
+  // shot.
+  OrgEffectiveMembers(ctx: CmdCtx, p) {
+    const org = ctx.view.orgs.get(slotKeyToString(p.org_id));
+    if (!org) return;
+    org.effective.clear();
+    for (const member of p.members) org.effective.add(slotKeyToString(member));
+  },
 };

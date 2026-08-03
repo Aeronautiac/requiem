@@ -120,7 +120,7 @@
       class="flex items-center gap-1 px-2 py-1 text-xs font-medium uppercase tracking-wide text-neutral-400 hover:text-neutral-200"
       onclick={() => (open = !open)}
     >
-      <span class="text-[0.6rem]">{open ? "▾" : "▸"}</span>
+      <span class="text-sm leading-none">{open ? "▾" : "▸"}</span>
       Group Chat Controls
     </button>
 

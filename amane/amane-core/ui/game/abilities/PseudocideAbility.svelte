@@ -56,10 +56,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Fake a target's death (yourself included). They're revived after a delay; the
-    fields below are announced as the death reveal.
-  </p>
 
   <label class="flex flex-col gap-1 text-xs text-neutral-500">
     Target

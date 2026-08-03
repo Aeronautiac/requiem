@@ -47,11 +47,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Fabricate a private lounge between two players. Only you can see it, and you
-    hold both of their identities — letting you author a conversation that never
-    happened.
-  </p>
   <PlayerSelect bind:value={contactor} placeholder="First player" />
   <PlayerSelect bind:value={contacted} placeholder="Second player" />
   <button

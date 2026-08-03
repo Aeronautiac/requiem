@@ -4,6 +4,7 @@
   // the ability's own configuration UI (see AbilityMenu / the registry).
   import type { AbilityName, OrgAbility } from "../../../bindings";
   import { OrgAbilityPolicyFlag } from "../../../bindings";
+  import { abilityDescription, abilityWarning } from "../../../game/helpers.svelte";
   import { prettyAbility } from "./registry";
 
   let {
@@ -48,40 +49,72 @@
     if (requirements.usage_policies & OrgAbilityPolicyFlag.RequireVote) out.push("vote");
     return out;
   });
+
+  const description = $derived(abilityDescription(name));
+  const warning = $derived(abilityWarning(name));
+  let show_desc = $state(false);
 </script>
 
 <div
-  class="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 px-3 py-2"
+  class="flex flex-col gap-2 border border-neutral-700 bg-gradient-to-b from-neutral-800 to-neutral-900 px-3 py-2 shadow-md"
 >
-  <div class="flex flex-col gap-1">
-    <span class="text-sm text-neutral-200">{prettyAbility(name)}</span>
-    <span class="text-xs text-neutral-500">
-      {#if same}
-        {successUsages} use{successUsages === 1 ? "" : "s"} left
-      {:else}
-        {successUsages} on success · {failureUsages} on failure
-      {/if}
-      {#if resets > 0}· resets in {resets}{/if}
-      {#if !hasUi}· no UI yet{/if}
-    </span>
-    {#if gates.length > 0}
-      <span class="flex flex-wrap gap-1">
-        {#each gates as gate (gate)}
-          <span
-            class="rounded bg-neutral-800 px-1.5 py-px text-[0.65rem] text-neutral-400"
-          >
-            {gate}
-          </span>
-        {/each}
+  <div class="flex items-center justify-between gap-3">
+    <div class="flex flex-col gap-1">
+      <span class="text-sm text-neutral-200">{prettyAbility(name)}</span>
+      <span class="text-xs text-neutral-500">
+        {#if same}
+          {successUsages} use{successUsages === 1 ? "" : "s"} left
+        {:else}
+          {successUsages} on success · {failureUsages} on failure
+        {/if}
+        {#if resets > 0}· resets in {resets}{/if}
+        {#if !hasUi}· no UI yet{/if}
       </span>
-    {/if}
+      {#if gates.length > 0}
+        <span class="flex flex-wrap gap-1">
+          {#each gates as gate (gate)}
+            <span
+              class="bg-neutral-800 px-1.5 py-px text-[0.65rem] text-neutral-400"
+            >
+              {gate}
+            </span>
+          {/each}
+        </span>
+      {/if}
+    </div>
+
+    <div class="flex shrink-0 items-center gap-1.5">
+      {#if description || warning}
+        <button
+          class="h-6 w-6 border text-xs font-medium {show_desc
+            ? 'border-neutral-500 bg-neutral-600 text-white'
+            : 'border-neutral-600 bg-neutral-700 text-neutral-200 hover:bg-neutral-600 hover:text-white'}"
+          aria-label="Toggle description"
+          aria-pressed={show_desc}
+          title="What this does"
+          onclick={() => (show_desc = !show_desc)}
+        >
+          ?
+        </button>
+      {/if}
+      <button
+        class="bg-neutral-100 px-3 py-1 text-sm font-medium text-neutral-900 shadow-sm hover:bg-white disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-600"
+        disabled={!usable}
+        onclick={onUse}
+      >
+        Use
+      </button>
+    </div>
   </div>
 
-  <button
-    class="shrink-0 rounded-md bg-neutral-100 px-3 py-1 text-sm font-medium text-neutral-900 hover:bg-white disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-600"
-    disabled={!usable}
-    onclick={onUse}
-  >
-    Use
-  </button>
+  {#if show_desc && (description || warning)}
+    <div class="flex flex-col gap-1.5 border-t border-neutral-800 pt-2">
+      {#if description}
+        <p class="text-xs text-neutral-400">{description}</p>
+      {/if}
+      {#if warning}
+        <p class="text-xs text-danger">{warning}</p>
+      {/if}
+    </div>
+  {/if}
 </div>

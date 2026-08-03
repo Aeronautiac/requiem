@@ -1,33 +1,47 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import Input from "../kit/Input.svelte";
+  import MentionInput from "./MentionInput.svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import {
     PERM_SEND,
     actorLabel,
     displayKey,
     isReadOnlyKind,
+    mentionsViewer,
     nameLabel,
     orgDisplayName,
     ownPerms,
     phaseAnnouncement,
     playerLabel,
+    roleColorVar,
+    roleLabel,
     t,
   } from "../../game/helpers.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
   import type { GameState } from "../../game/state.svelte";
-  import type { GameEvent, WriteEvent } from "../../game/types";
+  import type { GameEvent, PollData, PollView, WriteEvent } from "../../game/types";
   import type { UiState } from "../../ui_state.svelte.ts";
-  import type { ActionRequest, ActorDisplay, PollOutcome, PollSubject, ProfileKey, ProsecutionPhaseView, TapInOutcome } from "../../bindings";
+  import type {
+    ActionRequest,
+    ActorDisplay,
+    PollOutcome,
+    PollSubject,
+    ProfileKey,
+    ProsecutionPhaseView,
+    TapInOutcome,
+  } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
   import { formatDuration } from "../../lib/utils";
   import Button from "../kit/Button.svelte";
   import Message from "./Message.svelte";
   import Announcement from "./Announcement.svelte";
+  import Chip from "./Chip.svelte";
   import ContactLogRow from "./ContactLogRow.svelte";
+  import TopPanel from "./TopPanel.svelte";
+  import PollCard from "./PollCard.svelte";
   import NotebookWrite from "./NotebookWrite.svelte";
   import NotebookPass from "./NotebookPass.svelte";
 
@@ -56,9 +70,7 @@
   );
 
   const current_channel = $derived(
-    backing_channel_id
-      ? view.channel(backing_channel_id)
-      : undefined,
+    backing_channel_id ? view.channel(backing_channel_id) : undefined,
   );
   // What this view may do here at all, folded over every name it holds. The composer asks the
   // chosen name instead; this is only "is there a send box".
@@ -67,7 +79,7 @@
       ? ownPerms(view.channel_views.get(backing_channel_id)?.own ?? [])
       : undefined,
   );
-  const is_info = $derived(current_channel?.kind === "Info");
+
   const is_bug = $derived(current_channel?.kind === "Bug");
   const is_contact_log = $derived(current_channel?.kind === "ContactLog");
   // A feed rather than a room: no perms, no send box, no loggability control. Always readable to
@@ -95,19 +107,20 @@
   // relaying exactly the way a channel stops carrying messages, and a surveillance feed that has
   // quietly gone dead is the worst thing on the screen to mistake for a live one.
   const frozen = $derived(
-    backing_channel_id != null && view.frozen(view.viewport_of(backing_channel_id)),
+    backing_channel_id != null &&
+      view.frozen(view.viewport_of(backing_channel_id)),
   );
   // News is not a channel, so it goes stale on its own terms: world events ride the world-events
   // viewport, and a viewer who has left it keeps every event they were given while receiving no
   // more. Without this the feed just stops, which reads as "nothing has happened" — whether the
   // viewer lost presence or the world went dark.
-  const news_frozen = $derived(is_news && view.frozen(view.world_events_viewport()));
+  const news_frozen = $derived(
+    is_news && view.frozen(view.world_events_viewport()),
+  );
   // Notebook-ness isn't a channel kind. A non-undefined notebook_id both identifies the channel
   // as a notebook and gives the Write affordance its target.
   const notebook_id = $derived(
-    backing_channel_id
-      ? view.notebook_of(backing_channel_id)
-      : undefined,
+    backing_channel_id ? view.notebook_of(backing_channel_id) : undefined,
   );
   const loggable = $derived(
     backing_channel_id ? view.is_loggable(backing_channel_id) : false,
@@ -116,10 +129,16 @@
   // never applies there. It becomes an interactive toggle only with loggability control.
   const show_loggability = $derived(current_channel != null && !read_only_feed);
   const can_control_loggability = $derived(
-    show_loggability && (is_admin || (current_perms?.loggability_control ?? false)),
+    show_loggability &&
+      (is_admin || (current_perms?.loggability_control ?? false)),
   );
   const notebook_borrowed = $derived(
     notebook_id ? view.is_notebook_borrowed(notebook_id) : false,
+  );
+  // undefined for a view that was never told (a borrower/inheritor) — no badge at all, not a claim
+  // the book is genuine. The admin always receives it, so the badge doubles as the toggle.
+  const notebook_fake = $derived(
+    notebook_id ? view.notebook_fake(notebook_id) : undefined,
   );
   let write_open = $state(false);
   let pass_open = $state(false);
@@ -198,7 +217,8 @@
     prev: GameEvent | undefined,
     curr: GameEvent,
   ): boolean {
-    if (!prev || !("Message" in prev.data) || !("Message" in curr.data)) return false;
+    if (!prev || !("Message" in prev.data) || !("Message" in curr.data))
+      return false;
     if (
       displayKey(prev.data.Message.sender_display) !==
       displayKey(curr.data.Message.sender_display)
@@ -210,7 +230,9 @@
   // success = the name matched a real player; target_saved = the kill didn't land (write
   // immunity, or an earlier pending death on that target was cancelled by this write).
   function write_event_text(w: WriteEvent): string {
-    const lines = [`${player_name(w.user_id)} wrote the name "${nameLabel(w.true_name)}".`];
+    const lines = [
+      `${player_name(w.user_id)} wrote the name "${nameLabel(w.true_name)}".`,
+    ];
     if (!w.success) {
       lines.push("Outcome: the name matched no one — no effect.");
     } else if (w.target_saved) {
@@ -218,7 +240,9 @@
         "Outcome: valid name, but the target was saved (write immunity, or a pending death was cancelled).",
       );
     } else if (w.delay > 0) {
-      lines.push(`Outcome: lethal — the target dies in ${formatDuration(w.delay)}.`);
+      lines.push(
+        `Outcome: lethal — the target dies in ${formatDuration(w.delay)}.`,
+      );
     } else {
       lines.push("Outcome: lethal — the target dies immediately.");
     }
@@ -253,6 +277,18 @@
     return `Tapped into contact ${contact_id}. Reading ${scope}.`;
   }
 
+  // The third death beat, when something changed hands. Never names who received it — that is the
+  // mystery the reveal is built around.
+  function death_transfer_text(tr: {
+    notebook_transferred: boolean;
+    ability_transferred: boolean;
+  }): string {
+    if (tr.notebook_transferred && tr.ability_transferred) {
+      return "their notebook and their power have";
+    }
+    return tr.notebook_transferred ? "their notebook has" : "their power has";
+  }
+
   function prosecution_event_text(pe: {
     prosecutor_display: ActorDisplay;
     defendant_display: ActorDisplay;
@@ -267,6 +303,22 @@
       pe.ended,
       pe.verdict,
     );
+  }
+
+  // A poll's start notice rides its home channel's stream, so its position in the log IS where the
+  // poll belongs chronologically. While the poll is still live we render the interactive card in
+  // place of the "vote started" announcement; once it resolves, the announcement (with its outcome)
+  // takes over again. Absent/resolved polls answer null and fall through to the announcement.
+  function live_poll(
+    poll_id: string,
+  ): { data: PollData; pollView: PollView | null; frozen: boolean } | null {
+    const data = view.polls.get(poll_id);
+    if (!data || data.outcome) return null;
+    return {
+      data,
+      pollView: view.poll_views.get(poll_id) ?? null,
+      frozen: view.frozen(view.poll_viewport(poll_id)),
+    };
   }
 
   async function send_message() {
@@ -286,6 +338,20 @@
     await session.submit_action(request);
     message_content = "";
     console.log("message sent");
+  }
+
+  async function toggle_notebook_fake() {
+    if (!notebook_id) return;
+    await session.submit_action({
+      actor: viewerToActor(ui.viewer),
+      timestamp: now(),
+      payload: {
+        SetNotebookFake: {
+          notebook_id: slotKeyFromString(notebook_id),
+          fake: !notebook_fake,
+        },
+      },
+    });
   }
 
   async function toggle_loggable() {
@@ -345,12 +411,12 @@
 
 <div class="h-full w-full bg-neutral-900 text-neutral-100">
   {#if ui.selected}
-    <div class="grid h-full w-full grid-rows-[auto_1fr_auto]">
+    <div class="flex h-full w-full flex-col">
       <header
-        class="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-800 px-4 shadow-sm"
+        class="flex h-10 shrink-0 items-center gap-2 border-b border-neutral-800 px-3"
       >
-        <span class="text-lg font-medium text-neutral-500">#</span>
-        <span class="font-semibold text-neutral-100">{header_name}</span>
+        <span class="text-base font-semibold text-neutral-100">{header_name}</span
+        >
         {#if archived}
           <span
             class="ml-1 rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-neutral-400"
@@ -367,6 +433,28 @@
             >
               Borrowed
             </span>
+          {/if}
+
+          {#if notebook_fake !== undefined}
+            {@const cls = notebook_fake
+              ? "bg-rose-600/20 text-rose-300"
+              : "bg-emerald-600/20 text-emerald-300"}
+            {#if is_admin}
+              <button
+                class="rounded px-2 py-0.5 text-xs font-medium hover:brightness-125 {cls}"
+                title="Toggle whether this notebook is a decoy — a fake book's writes cannot kill."
+                onclick={toggle_notebook_fake}
+              >
+                {notebook_fake ? "Fake" : "Real"}
+              </button>
+            {:else}
+              <span
+                class="rounded px-2 py-0.5 text-xs font-medium {cls}"
+                title="A fake notebook's writes cannot kill. Only you and the host know this book's nature."
+              >
+                {notebook_fake ? "Fake" : "Real"}
+              </span>
+            {/if}
           {/if}
 
           {#if show_loggability}
@@ -393,14 +481,21 @@
         </div>
       </header>
 
-      <main bind:this={scroller} class="min-h-0 overflow-y-auto py-4">
+      {#if ui.top_panel}
+        <TopPanel />
+      {/if}
+
+      <main bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto py-4">
         {#each events as event, i (event)}
           {#if "Message" in event.data}
             <Message
               sender={display_string(event.data.Message.sender_display)}
               content={event.data.Message.content}
+              players={view.players}
               timestamp={event.timestamp}
               grouped={is_grouped_message(events[i - 1], event)}
+              last={!events[i + 1] || !is_grouped_message(event, events[i + 1])}
+              mentioned={mentionsViewer(view, event.data.Message.content)}
             />
           {:else if "Write" in event.data}
             {@const w = event.data.Write}
@@ -411,11 +506,41 @@
             />
           {:else if "Death" in event.data}
             {@const d = event.data.Death}
-            <Announcement
-              color="var(--color-event-death)"
-              description="Death"
-              content={`${player_name(d.target_id)} has died.\nReal name: ${nameLabel(d.true_name)}\nRole: ${d.role}${d.death_message ? `\n\n${d.death_message}` : ""}`}
-            />
+            <!-- Beat 1 of the staged reveal: the death and the name behind it. The role and any
+                 inheritance follow as their own events (DeathRole / DeathTransfer), timed apart. -->
+            <Announcement color="var(--color-event-death)" description="Death">
+              <Chip
+                label={player_name(d.target_id)}
+                colorVar="var(--color-mention-player)"
+              /> has died.
+              {#if d.death_message}
+                <div class="mt-1 italic text-neutral-300">{d.death_message}</div>
+              {/if}
+              <div class="mt-1 text-neutral-400">
+                Their true name was <span class="text-neutral-200"
+                  >{nameLabel(d.true_name)}</span
+                >.
+              </div>
+            </Announcement>
+          {:else if "DeathRole" in event.data}
+            {@const r = event.data.DeathRole}
+            <!-- Beat 2: who they turned out to be, in that role's own colour. -->
+            <Announcement color={roleColorVar(r.role)} description="Role Revealed">
+              <Chip
+                label={player_name(r.target_id)}
+                colorVar="var(--color-mention-player)"
+              /> was
+              <Chip label={roleLabel(r.role)} colorVar={roleColorVar(r.role)} />.
+            </Announcement>
+          {:else if "DeathTransfer" in event.data}
+            {@const tr = event.data.DeathTransfer}
+            <!-- Beat 3: what they left behind — never to whom. -->
+            <Announcement color="var(--color-event-death)" description="Inheritance">
+              <Chip
+                label={player_name(tr.target_id)}
+                colorVar="var(--color-mention-player)"
+              /> is gone — but {death_transfer_text(tr)} passed to someone new.
+            </Announcement>
           {:else if "AnonymousAnnouncement" in event.data}
             <Announcement
               color="var(--color-event-anonymous)"
@@ -453,11 +578,13 @@
                 : "You have been bugged. Your messages are being monitored."}
             />
           {:else if "RoleUpdate" in event.data}
-            <Announcement
-              color="var(--color-event-personal)"
-              description="Role"
-              content={`Your role is now ${event.data.RoleUpdate.role}.`}
-            />
+            {@const role = event.data.RoleUpdate.role}
+            <Announcement color="var(--color-event-personal)" description="Role">
+              Your role is now <Chip
+                label={roleLabel(role)}
+                colorVar={roleColorVar(role)}
+              />.
+            </Announcement>
           {:else if "TrueNameUpdate" in event.data}
             <Announcement
               color="var(--color-event-personal)"
@@ -472,15 +599,28 @@
             />
           {:else if "PollNotice" in event.data}
             {@const pn = event.data.PollNotice}
-            <Announcement
-              color="var(--color-event-vote)"
-              description={pn.outcome
-                ? `Vote: ${poll_outcome_text(pn.poll_id, pn.outcome)}`
-                : "Vote started"}
-              content={pn.opener
-                ? `${poll_notice_text(pn.subject)}\nStarted by ${view.actor_name(pn.opener)}`
-                : poll_notice_text(pn.subject)}
-            />
+            {@const live = pn.outcome ? null : live_poll(pn.poll_id)}
+            {#if live}
+              <div class="px-3 py-1">
+                <PollCard
+                  id={pn.poll_id}
+                  data={live.data}
+                  pollView={live.pollView}
+                  frozen={live.frozen}
+                  variant="inline"
+                />
+              </div>
+            {:else}
+              <Announcement
+                color="var(--color-event-vote)"
+                description={pn.outcome
+                  ? `Vote: ${poll_outcome_text(pn.poll_id, pn.outcome)}`
+                  : "Vote started"}
+                content={pn.opener
+                  ? `${poll_notice_text(pn.subject)}\nStarted by ${view.actor_name(pn.opener)}`
+                  : poll_notice_text(pn.subject)}
+              />
+            {/if}
           {:else if "PseudocideRevival" in event.data}
             {@const r = event.data.PseudocideRevival}
             <Announcement
@@ -534,7 +674,9 @@
             {@const on = event.data.Blackout.active}
             <Announcement
               color="var(--color-event-blackout)"
-              description={on ? t("blackout_begun_label") : t("blackout_over_label")}
+              description={on
+                ? t("blackout_begun_label")
+                : t("blackout_over_label")}
               content={on ? t("blackout_begun") : t("blackout_over")}
             />
           {:else if "ChannelTapped" in event.data}
@@ -546,14 +688,18 @@
           {:else if "TapInResult" in event.data}
             {@const tr = event.data.TapInResult}
             <Announcement
-              color={typeof tr.outcome === "string" ? "var(--color-event-nothing)" : "var(--color-event-tap)"}
+              color={typeof tr.outcome === "string"
+                ? "var(--color-event-nothing)"
+                : "var(--color-event-tap)"}
               description="Tap In"
               content={tap_in_text(tr.contact_id, tr.outcome)}
             />
           {:else if "KiraConnectionAttempt" in event.data}
             {@const ka = event.data.KiraConnectionAttempt}
             <Announcement
-              color={ka.success ? "var(--color-event-death)" : "var(--color-event-nothing)"}
+              color={ka.success
+                ? "var(--color-event-death)"
+                : "var(--color-event-nothing)"}
               description="Kira Connection"
               content={ka.success
                 ? `${player_name(ka.user)} reached for Kira through this line — and Kira answered.`
@@ -580,19 +726,21 @@
         {#if is_news}
           {#if news_frozen}
             <div class="px-4 py-3 text-center text-xs text-amber-500/70">
-              You are no longer receiving news. Everything above is what you last heard.
+              You are no longer receiving news. Everything above is what you
+              last heard.
             </div>
           {/if}
           {#if !can_read}
             <div class="px-4 py-3 text-center text-xs text-neutral-500">
-              You don't have access to this channel. Announcements above are game
-              events and are always shown here — but you can't see chat messages.
+              You don't have access to this channel. Announcements above are
+              game events and are always shown here — but you can't see chat
+              messages.
             </div>
           {/if}
         {:else if !can_read}
           <div class="px-4 py-3 text-center text-xs text-neutral-500">
-            You no longer have read access to this channel. Everything above is what you
-            were given.
+            You no longer have read access to this channel. Everything above is
+            what you were given.
           </div>
         {/if}
         {#if archived}
@@ -602,12 +750,12 @@
         {/if}
       </main>
 
-      <footer class="shrink-0 px-4 pb-6 pt-1">
+      <footer class="shrink-0 px-3 pb-2 pt-1">
         <div class="flex items-center gap-2">
           {#if can_send && sendable_profiles.length > 1}
             <select
               bind:value={selected_profile_key}
-              class="rounded-lg bg-neutral-800 px-2 py-2 text-sm text-neutral-200"
+              class="bg-neutral-800 px-2 py-1.5 text-sm text-neutral-200"
             >
               {#each sendable_profiles as p (slotKeyToString(p.profile_id))}
                 <option value={slotKeyToString(p.profile_id)}>
@@ -619,35 +767,29 @@
 
           <div class="flex-1">
             {#if can_send}
-              <form
-                onsubmit={async (event) => {
-                  event.preventDefault();
-                  await send_message();
-                }}
-              >
-                <div
-                  class="flex items-center gap-2 rounded-lg bg-neutral-800 px-2 py-1"
+              <div class="flex items-center gap-2 bg-neutral-800 px-2 py-1">
+                <MentionInput
+                  bind:value={message_content}
+                  players={view.players}
+                  orgs={view.orgs}
+                  placeholder={`Message ${channel_name ?? ""}`}
+                  onsubmit={send_message}
+                />
+                <Button
+                  size="sm"
+                  onclick={async () => {
+                    await send_message();
+                  }}>Send</Button
                 >
-                  <Input
-                    bind:value={message_content}
-                    placeholder={`Message #${channel_name ?? ""}`}
-                    class="flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
-                  />
-                  <Button
-                    size="sm"
-                    onclick={async () => {
-                      await send_message();
-                    }}>Send</Button
-                  >
-                </div>
-              </form>
-            <!-- Frozen outranks the read-only blurbs: "this is no longer live" is the more
+              </div>
+              <!-- Frozen outranks the read-only blurbs: "this is no longer live" is the more
                  important of the two facts, and the blurb would otherwise hide it. -->
             {:else if frozen && read_only_feed}
               <div
                 class="rounded-lg bg-neutral-800/50 px-4 py-2.5 text-center text-sm italic text-neutral-500"
               >
-                This feed no longer reaches you. Everything above is what it last relayed.
+                This feed no longer reaches you. Everything above is what it
+                last relayed.
               </div>
             {:else if is_bug}
               <div
@@ -661,8 +803,8 @@
               <div
                 class="rounded-lg bg-neutral-800/50 px-4 py-2.5 text-center text-sm italic text-neutral-500"
               >
-                Read-only contact log. Names here are how each contact appeared, not who
-                was really behind it.
+                Read-only contact log. Names here are how each contact appeared,
+                not who was really behind it.
               </div>
             {:else if archived}
               <div
@@ -674,7 +816,8 @@
               <div
                 class="rounded-lg bg-neutral-800/50 px-4 py-2.5 text-center text-sm italic text-neutral-500"
               >
-                You are no longer in this channel. Everything above is what you last saw.
+                You are no longer in this channel. Everything above is what you
+                last saw.
               </div>
             {:else}
               <div
@@ -686,15 +829,27 @@
           </div>
 
           {#if notebook_id}
-            <Button size="sm" variant="ghost" onclick={() => (pass_open = true)}>Pass</Button>
-            <Button size="sm" variant="danger" onclick={() => (write_open = true)}>Write</Button>
+            <Button size="sm" variant="ghost" onclick={() => (pass_open = true)}
+              >Pass</Button
+            >
+            <Button
+              size="sm"
+              variant="danger"
+              onclick={() => (write_open = true)}>Write</Button
+            >
           {/if}
         </div>
       </footer>
 
       {#if notebook_id}
-        <NotebookWrite bind:open={write_open} notebookId={slotKeyFromString(notebook_id)} />
-        <NotebookPass bind:open={pass_open} notebookId={slotKeyFromString(notebook_id)} />
+        <NotebookWrite
+          bind:open={write_open}
+          notebookId={slotKeyFromString(notebook_id)}
+        />
+        <NotebookPass
+          bind:open={pass_open}
+          notebookId={slotKeyFromString(notebook_id)}
+        />
       {/if}
     </div>
   {:else}

@@ -138,7 +138,7 @@
   }
 </script>
 
-<Button size="sm" onclick={() => (open = true)}>Keys</Button>
+<Button variant="ghost" size="sm" onclick={() => (open = true)}>Keys</Button>
 
 <Dialog bind:open title="Keys">
   <p class="text-xs text-ink-dim">

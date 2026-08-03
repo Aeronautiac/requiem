@@ -51,13 +51,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Reach for Kira down a line you already have. Only a direct, non-anonymous line can
-    establish who is really on the other end.
-  </p>
-  <p class="text-sm text-neutral-500">
-    The attempt lands in that lounge either way, naming you and saying whether it worked.
-  </p>
   <select
     bind:value={lounge}
     class="w-full rounded-md border border-edge bg-panel px-2 py-2 text-sm text-ink"

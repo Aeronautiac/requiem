@@ -8,12 +8,9 @@
   import type { ActionRequest, Role } from "../../bindings";
   import { ROLES } from "../../constants";
   import { now } from "../../time.svelte.ts";
-  import { GAME_STATE_KEY, GameState } from "../../game/state.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
   import { Flash } from "../../flash.svelte.ts";
   import FlashDisplay from "../Flash.svelte";
-
-  const game_state = getContext<GameState>(GAME_STATE_KEY);
 
   const session = getContext<SessionState>(SESSION_KEY);
 
@@ -24,7 +21,7 @@
   const flash = new Flash();
 </script>
 
-<Button size="sm" onclick={() => (open = true)}>Add Players</Button>
+<Button variant="ghost" size="sm" onclick={() => (open = true)}>Add Players</Button>
 
 <Dialog bind:open title="Add Players">
   <!-- No display name here: creating the SLOT and saying who is on it are separate facts with
@@ -34,7 +31,10 @@
        reservoir and keeps anything you type. -->
   <Input bind:value={true_name} placeholder="True Name (blank to draw one)" />
 
-  <Select bind:value={role} options={ROLES.map((r) => ({ value: r, label: r }))} />
+  <Select
+    bind:value={role}
+    options={ROLES.map((r) => ({ value: r, label: r }))}
+  />
 
   <Button
     onclick={async () => {
@@ -56,7 +56,9 @@
         // The drawn name never comes back on the response, so a blank submission cannot be
         // echoed here — the player's own Notifications log is where the name lands.
         flash.set_success(
-          true_name ? `Added ${true_name}.` : "Added a player with a drawn name.",
+          true_name
+            ? `Added ${true_name}.`
+            : "Added a player with a drawn name.",
         );
       }
     }}>Add</Button

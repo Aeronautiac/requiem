@@ -230,7 +230,11 @@ export type GameEvent = {
   | PollNoticeEvent
   | ContactLogEvent
   | KiraConnectionEvent
-  | ChannelTappedEvent,
+  | ChannelTappedEvent
+  // Client-only. A Death command is staged into three timed reveals (see stage_world_events); these
+  // are the second and third. The engine never sends them — they are derived from the one Death.
+  | { DeathRole: { target_id: string, role: Role } }
+  | { DeathTransfer: { target_id: string, notebook_transferred: boolean, ability_transferred: boolean } },
 }
 
 export type PollData = {
@@ -324,6 +328,10 @@ export interface PlayerInfo {
 export interface Org {
   name: OrganizationName;
   members: Set<string>; // dead members included
+  // The present subset of `members` — those who count toward the org's ability member
+  // requirements. A member who has lost presence (kidnapped, jailed, dead) stays in `members` but
+  // drops out of here. Whole set, replaced by OrgEffectiveMembers.
+  effective: Set<string>;
   abilities: Map<string, AbilityView>;
 }
 

@@ -47,10 +47,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Trade one of your own to a shinigami for another player's true name. The sacrifice dies,
-    and the world is told what they were spent on. The name goes to the org.
-  </p>
   <span class="text-xs uppercase tracking-wide text-neutral-500">Spend</span>
   <PlayerSelect
     bind:value={sacrifice}

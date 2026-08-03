@@ -805,6 +805,47 @@ pub fn cmd_actor_status(eng: &mut Engine, ctx: &mut ActionContext, actor_id: Act
     }
 }
 
+// Broadcast which of an org's members currently COUNT toward its ability member requirements — the
+// present subset of the roster — on the org's channel viewport. The org counterpart to
+// cmd_actor_status: emitted only on a genuine change (diffed against last_effective) and stored
+// back, so sweeping every org on every Update is silent when nothing has moved.
+//
+// "Present" is `!NoPresence`, exactly the predicate SystemUseOrgAbility counts with, so the list
+// never disagrees with the gate it describes. Not witnessed — this is membership bookkeeping the
+// room does not "see", so it never reaches the record.
+pub fn cmd_org_effective_members(eng: &mut Engine, ctx: &mut ActionContext, org_id: ActorKey) {
+    let Ok(org) = get_org(eng, org_id) else {
+        return;
+    };
+    let channel_id = org.channel_id;
+    let member_ids: SmallVec<[ActorKey; 16]> = org.members.keys().copied().collect();
+
+    let present: IndexSet<ActorKey> = member_ids
+        .into_iter()
+        .filter(|id| get_actor(eng, *id).is_ok_and(|a| !a.has_modifier(Modifier::NoPresence)))
+        .collect();
+
+    if get_org(eng, org_id).is_ok_and(|o| o.last_effective == present) {
+        return;
+    }
+
+    let members: Vec<ActorKey> = present.iter().copied().collect();
+    cmd_channel(
+        eng,
+        ctx,
+        Command::OrgEffectiveMembers { org_id, members },
+        channel_id,
+        false,
+        None,
+    );
+
+    if ctx.mutate {
+        if let Ok(org) = get_org_mut(eng, org_id) {
+            org.last_effective = present;
+        }
+    }
+}
+
 // Tell a member whether they are an OG of an org, and mirror it to System for the admin inspector.
 //
 // Personal info, addressed exactly like a role or a true name: yours alone. The rest of the org

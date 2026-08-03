@@ -6,8 +6,8 @@
 
 pub use crate::action::{
     Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-    UpdateActorStatuses, UpdateChannels, UpdateKidnappings, UpdatePolls, UpdatePrisonChannel,
-    UpdateProsecutions, UpdateTimers, UpdateWorldViewports,
+    UpdateActorStatuses, UpdateChannels, UpdateKidnappings, UpdateOrgEffectiveMembers, UpdatePolls,
+    UpdatePrisonChannel, UpdateProsecutions, UpdateTimers, UpdateWorldViewports,
 };
 
 pub use crate::action::{Update, UpdateResponse};
@@ -58,6 +58,11 @@ impl ActionInterface for Update {
         // After the final viewport sweep, so a newly-created player is already on the world-data
         // viewport their status broadcasts to. Reads the settled states, bugs and blackout flag.
         Action::UpdateActorStatuses(UpdateActorStatuses {})
+            .handle(eng, ctx, actor, version, mutate)?;
+
+        // Reads the same settled presence the statuses do: who counts toward an org's ability
+        // member requirements is exactly who is present.
+        Action::UpdateOrgEffectiveMembers(UpdateOrgEffectiveMembers {})
             .handle(eng, ctx, actor, version, mutate)?;
 
         // Last, because a timer's gate is a viewport and every one of them has just settled.

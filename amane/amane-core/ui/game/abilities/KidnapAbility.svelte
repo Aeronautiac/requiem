@@ -64,15 +64,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    {#if isPublic}
-      Kidnap a player: they're pulled into a private channel until released. When it ends,
-      <span class="text-neutral-200">the kidnapper is revealed</span>.
-    {:else}
-      Kidnap a player: they're pulled into a private channel until released. The kidnapping is
-      <span class="text-neutral-200">anonymous</span> — the kidnapper stays hidden on release.
-    {/if}
-  </p>
 
   <label class="text-xs text-neutral-500">Target</label>
   <PlayerSelect bind:value={target} placeholder="Who to kidnap" />

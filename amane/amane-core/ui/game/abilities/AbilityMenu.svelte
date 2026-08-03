@@ -5,6 +5,7 @@
   import type { GameState } from "../../../game/state.svelte";
   import type { UiState } from "../../../ui_state.svelte.ts";
   import type { AbilityName, OrgAbility } from "../../../bindings";
+  import { abilityDescription, abilityWarning } from "../../../game/helpers.svelte";
   import Dialog from "../../kit/Dialog.svelte";
   import Button from "../../kit/Button.svelte";
   import AbilityCard from "./AbilityCard.svelte";
@@ -98,7 +99,17 @@
   header={selectedId && SelectedUi && selectedAbility ? drilledTitle : undefined}
 >
   {#if selectedId && SelectedUi && selectedAbility}
-    <SelectedUi abilityId={selectedId} {orgId} onDone={close} />
+    {@const desc = abilityDescription(selectedAbility.name)}
+    {@const warn = abilityWarning(selectedAbility.name)}
+    <div class="flex flex-col gap-3">
+      {#if desc}
+        <p class="text-sm text-ink-dim">{desc}</p>
+      {/if}
+      {#if warn}
+        <p class="text-sm text-danger">{warn}</p>
+      {/if}
+      <SelectedUi abilityId={selectedId} {orgId} onDone={close} />
+    </div>
   {:else}
     <div class="flex flex-col gap-2">
       {#each listed as ab (ab.id)}

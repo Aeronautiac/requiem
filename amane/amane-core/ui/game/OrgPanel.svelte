@@ -14,6 +14,8 @@
   import { Flash } from "../../flash.svelte.ts";
   import FlashDisplay from "../Flash.svelte";
   import AbilityMenu from "./abilities/AbilityMenu.svelte";
+  import Dialog from "../kit/Dialog.svelte";
+  import Button from "../kit/Button.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
 
@@ -22,7 +24,7 @@
   // The one view this component renders. Everything it can show is what this view was delivered.
   const view = $derived(game.view_of(ui.viewer));
 
-  let open = $state(true);
+  let open = $state(false);
   const flash = new Flash();
 
   // The org backing the selected channel, if it's an org channel.
@@ -49,13 +51,17 @@
     ui.viewer === "Admin" || (!!org && org.members.has(ui.viewer)),
   );
 
-  // The full list; every member sees it.
+  // The full list; every member sees it. `effective` marks the present members — the ones who
+  // count toward the org's ability member requirements. An absent member (kidnapped, jailed, dead)
+  // stays listed and acts like a normal member, but does not count, so the org sees its real reach.
   const org_members = $derived(
     [...(org?.members ?? [])].map((id) => ({
       id,
       name: playerLabel(id, view.players),
+      effective: org?.effective.has(id) ?? false,
     })),
   );
+  const effective_count = $derived(org_members.filter((m) => m.effective).length);
 
   // As far as THIS view is entitled to know, which needs no check of who is looking: OG standing
   // reaches the member and System and nobody else, so `player_info` is populated only on System
@@ -133,20 +139,16 @@
 </script>
 
 {#if visible && org && org_key}
-  <div class="flex flex-col gap-1 border-b border-neutral-800 p-2">
-    <button
-      class="flex items-center gap-1 px-2 py-1 text-xs font-medium uppercase tracking-wide text-neutral-400 hover:text-neutral-200"
-      onclick={() => (open = !open)}
-    >
-      <span class="text-[0.6rem]">{open ? "▾" : "▸"}</span>
-      Organization
-    </button>
+  <Button variant="ghost" size="sm" class="w-full justify-start" onclick={() => (open = true)}>
+    Organization
+  </Button>
 
-    {#if open}
+  <Dialog bind:open title="Organization" class="max-w-sm">
+    <div class="flex flex-col gap-1">
       <!-- frozen outranks is_member, because is_member reads the global roster and the roster is
            one of the things that stopped updating. A view that has lost the viewport can still be
            listed in an org it was thrown out of. -->
-      <div class="px-2 pt-1">
+      <div class="pt-1">
         {#if frozen}
           <p class="text-xs text-amber-500/70">
             This organization no longer reaches you. Everything here is what you last saw.
@@ -160,15 +162,24 @@
         {/if}
       </div>
 
-      <p class="px-2 pt-2 text-[0.65rem] uppercase tracking-wide text-neutral-600">
-        Members ({org_members.length})
+      <p class="flex flex-wrap gap-x-1 px-2 pt-2 text-[0.65rem] uppercase tracking-wide text-neutral-600">
+        <span>Members</span>
+        <span class="whitespace-nowrap">[ {org_members.length} total | {effective_count} counted ]</span>
       </p>
       {#if org_members.length === 0}
         <p class="px-2 py-1 text-xs text-neutral-600">No members</p>
       {:else}
         {#each org_members as m (m.id)}
           <div class="flex items-center justify-between gap-1 rounded px-2 py-1 text-sm text-neutral-300">
-            <span class="truncate">{m.name}</span>
+            <span class="truncate {m.effective ? '' : 'text-neutral-500'}">{m.name}</span>
+            {#if !m.effective}
+              <span
+                class="shrink-0 rounded bg-neutral-800 px-1.5 py-0.5 text-[0.65rem] font-medium text-neutral-500"
+                title="Not present, so not counted toward this org's ability member requirements. Still a full member."
+              >
+                not counted
+              </span>
+            {/if}
             {#if is_og(m.id)}
               <span
                 class="shrink-0 rounded bg-violet-600/20 px-1.5 py-0.5 text-[0.65rem] font-medium text-violet-300"
@@ -227,6 +238,6 @@
           <FlashDisplay {flash} />
         </div>
       {/if}
-    {/if}
-  </div>
+    </div>
+  </Dialog>
 {/if}

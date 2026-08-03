@@ -34,10 +34,6 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm text-neutral-400">
-    Examine a dead player's record. Everything they said — including under a name that was not
-    theirs — is laid out privately to you, named as them.
-  </p>
   <PlayerSelect bind:value={target} placeholder="Whose body to examine" />
   <button
     class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
