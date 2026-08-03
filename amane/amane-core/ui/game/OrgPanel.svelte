@@ -2,7 +2,11 @@
   import { execErrorText } from "../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
-  import { playerLabel } from "../../game/helpers.svelte";
+  import {
+    orgColorVar,
+    orgDisplayName,
+    playerLabel,
+  } from "../../game/helpers.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
@@ -139,102 +143,126 @@
 </script>
 
 {#if visible && org && org_key}
+  {@const accent = orgColorVar(org.name)}
+
   <Button variant="ghost" size="sm" class="w-full justify-start" onclick={() => (open = true)}>
     Organization
   </Button>
 
-  <Dialog bind:open title="Organization" class="max-w-sm">
-    <div class="flex flex-col gap-1">
+  {#snippet head()}
+    <span class="flex items-center gap-2.5">
+      <span class="h-3 w-3 shrink-0" style="background-color:{accent}"></span>
+      <span class="text-lg font-semibold" style="color:{accent}">{orgDisplayName(org.name)}</span>
+      <span class="text-[0.7rem] font-normal uppercase tracking-widest text-ink-dim">Organization</span>
+    </span>
+  {/snippet}
+
+  <Dialog bind:open header={head} class="max-w-lg">
+    <div class="flex flex-col divide-y divide-edge">
       <!-- frozen outranks is_member, because is_member reads the global roster and the roster is
            one of the things that stopped updating. A view that has lost the viewport can still be
            listed in an org it was thrown out of. -->
-      <div class="pt-1">
+      <div class="pb-4">
         {#if frozen}
-          <p class="text-xs text-amber-500/70">
+          <p class="border-l-2 border-event-alarm bg-event-alarm/10 px-3 py-2 text-xs text-event-alarm">
             This organization no longer reaches you. Everything here is what you last saw.
           </p>
         {:else if is_member}
           <AbilityMenu orgId={org_key} />
         {:else}
-          <p class="text-xs text-neutral-600">
+          <p class="border-l-2 border-edge bg-raised px-3 py-2 text-xs text-ink-dim">
             You are no longer in this organization. Everything here is what you last saw.
           </p>
         {/if}
       </div>
 
-      <p class="flex flex-wrap gap-x-1 px-2 pt-2 text-[0.65rem] uppercase tracking-wide text-neutral-600">
-        <span>Members</span>
-        <span class="whitespace-nowrap">[ {org_members.length} total | {effective_count} counted ]</span>
-      </p>
-      {#if org_members.length === 0}
-        <p class="px-2 py-1 text-xs text-neutral-600">No members</p>
-      {:else}
-        {#each org_members as m (m.id)}
-          <div class="flex items-center justify-between gap-1 rounded px-2 py-1 text-sm text-neutral-300">
-            <span class="truncate {m.effective ? '' : 'text-neutral-500'}">{m.name}</span>
-            {#if !m.effective}
-              <span
-                class="shrink-0 rounded bg-neutral-800 px-1.5 py-0.5 text-[0.65rem] font-medium text-neutral-500"
-                title="Not present, so not counted toward this org's ability member requirements. Still a full member."
-              >
-                not counted
-              </span>
-            {/if}
-            {#if is_og(m.id)}
-              <span
-                class="shrink-0 rounded bg-violet-600/20 px-1.5 py-0.5 text-[0.65rem] font-medium text-violet-300"
-                title="An original member. Only they and the host know this."
-              >
-                OG
-              </span>
-            {/if}
-            <span class="flex-1"></span>
-            {#if ui.viewer === "Admin"}
-              <button
-                class="shrink-0 rounded px-1.5 py-0.5 text-xs text-violet-400/80 hover:bg-neutral-800 hover:text-violet-300"
-                onclick={() => toggle_og(m.id)}
-                title="Toggle OG status"
-              >
-                og
-              </button>
-              <button
-                class="shrink-0 rounded px-1.5 py-0.5 text-xs text-red-400/80 hover:bg-neutral-800 hover:text-red-300"
-                onclick={() => remove_member(m.id)}
-                title="Remove from org"
-              >
-                remove
-              </button>
-            {/if}
+      <div class="flex flex-col gap-2 py-4">
+        <div class="flex items-baseline justify-between gap-2">
+          <span class="text-[0.7rem] font-semibold uppercase tracking-widest text-neutral-400">Members</span>
+          <span class="text-[0.7rem] tabular-nums text-ink-dim">
+            <span class="text-neutral-300">{org_members.length}</span> total
+            ·
+            <span style="color:{accent}">{effective_count}</span> counted
+          </span>
+        </div>
+
+        {#if org_members.length === 0}
+          <p class="py-1 text-xs text-ink-dim">No members.</p>
+        {:else}
+          <div class="border border-edge">
+            {#each org_members as m (m.id)}
+              <div class="flex items-center gap-2 border-b border-edge px-3 py-2 last:border-b-0">
+                <span class="min-w-0 flex-1 truncate text-sm {m.effective ? 'text-ink' : 'text-neutral-500'}">
+                  {m.name}
+                </span>
+                {#if !m.effective}
+                  <span
+                    class="shrink-0 border border-edge px-1.5 py-0.5 text-[0.6rem] font-medium uppercase tracking-wide text-neutral-400"
+                    title="Not present, so not counted toward this org's ability member requirements. Still a full member."
+                  >
+                    not counted
+                  </span>
+                {/if}
+                {#if is_og(m.id)}
+                  <span
+                    class="shrink-0 border px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide"
+                    style="color:{accent};border-color:{accent}"
+                    title="An original member. Only they and the host know this."
+                  >
+                    OG
+                  </span>
+                {/if}
+                {#if ui.viewer === "Admin"}
+                  <button
+                    class="shrink-0 border border-edge px-2 py-0.5 text-[0.65rem] uppercase tracking-wide text-neutral-400 hover:border-neutral-500 hover:text-ink"
+                    onclick={() => toggle_og(m.id)}
+                    title="Toggle OG status"
+                  >
+                    og
+                  </button>
+                  <button
+                    class="shrink-0 border border-edge px-2 py-0.5 text-[0.65rem] uppercase tracking-wide text-danger hover:border-danger hover:bg-danger/10"
+                    onclick={() => remove_member(m.id)}
+                    title="Remove from org"
+                  >
+                    remove
+                  </button>
+                {/if}
+              </div>
+            {/each}
           </div>
-        {/each}
-      {/if}
+        {/if}
+      </div>
 
       {#if ui.viewer === "Admin"}
-        <p class="px-2 pt-2 text-[0.65rem] uppercase tracking-wide text-neutral-600">
-          Add member
-        </p>
-        <div class="flex gap-3 px-2 py-1 text-xs text-neutral-400">
-          <label class="flex items-center gap-1">
-            <input type="checkbox" bind:checked={add_leader} /> leader
-          </label>
-          <label class="flex items-center gap-1">
-            <input type="checkbox" bind:checked={add_og} /> og
-          </label>
-        </div>
-        {#if candidates.length === 0}
-          <p class="px-2 py-1 text-xs text-neutral-600">No one to add</p>
-        {:else}
-          {#each candidates as [id] (id)}
-            <button
-              class="flex w-full items-center justify-between rounded px-2 py-1 text-sm text-neutral-300 hover:bg-neutral-800"
-              onclick={() => add_member(id)}
-            >
-              <span>{playerLabel(id, view.players)}</span>
-              <span class="text-xs text-neutral-600">add</span>
-            </button>
-          {/each}
-        {/if}
-        <div class="px-2 pt-1">
+        <div class="flex flex-col gap-2 pt-4">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[0.7rem] font-semibold uppercase tracking-widest text-neutral-400">Add member</span>
+            <div class="flex gap-3 text-xs text-neutral-300">
+              <label class="flex items-center gap-1.5">
+                <input type="checkbox" bind:checked={add_leader} /> leader
+              </label>
+              <label class="flex items-center gap-1.5">
+                <input type="checkbox" bind:checked={add_og} /> og
+              </label>
+            </div>
+          </div>
+
+          {#if candidates.length === 0}
+            <p class="py-1 text-xs text-ink-dim">No one to add.</p>
+          {:else}
+            <div class="border border-edge">
+              {#each candidates as [id] (id)}
+                <button
+                  class="flex w-full items-center justify-between border-b border-edge px-3 py-2 text-sm text-ink last:border-b-0 hover:bg-raised"
+                  onclick={() => add_member(id)}
+                >
+                  <span class="truncate">{playerLabel(id, view.players)}</span>
+                  <span class="shrink-0 text-[0.65rem] uppercase tracking-wide text-ink-dim">add</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
           <FlashDisplay {flash} />
         </div>
       {/if}

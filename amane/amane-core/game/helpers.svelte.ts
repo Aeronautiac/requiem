@@ -250,6 +250,13 @@ export function roleLabel(role: Role): string {
   return key in STRINGS ? t(key) : role;
 }
 
+// Fixed channels the engine names with a code (e.g. "LAndWatari") map to readable copy; everything
+// dynamic — lounges, group chats, notebooks — has no entry and renders the name it was given.
+export function channelLabel(name: string): string {
+  const key = `channel_name_${name}` as StringKey;
+  return key in STRINGS ? t(key) : name;
+}
+
 // What an ability does, sourced from the one place it is written. Empty for an ability with no copy
 // yet, which the callers treat as "no description to show" rather than a blank line.
 export function abilityDescription(name: AbilityName): string {

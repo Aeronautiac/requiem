@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { execErrorText } from "../../../game/helpers.svelte";
+  import { channelLabel, execErrorText } from "../../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../../game/state.svelte";
   import { SESSION_KEY, type SessionState } from "../../../session.svelte.ts";
@@ -57,7 +57,7 @@
   >
     <option value="" disabled>Select a line</option>
     {#each lounges as l (l.lounge_id)}
-      <option value={l.lounge_id}>{l.name}</option>
+      <option value={l.lounge_id}>{channelLabel(l.name)}</option>
     {/each}
   </select>
   <button

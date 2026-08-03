@@ -21,7 +21,9 @@
   const flash = new Flash();
 </script>
 
-<Button variant="ghost" size="sm" onclick={() => (open = true)}>Add Players</Button>
+<Button variant="ghost" size="sm" onclick={() => (open = true)}
+  >Add Players</Button
+>
 
 <Dialog bind:open title="Add Players">
   <!-- No display name here: creating the SLOT and saying who is on it are separate facts with

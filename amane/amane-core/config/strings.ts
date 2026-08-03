@@ -122,6 +122,10 @@ export const STRINGS = {
   org_name_TF: "Task Force",
   org_name_SPK: "SPK",
 
+  // ---- fixed channels the engine names with a code. Dynamic channels (lounges, group chats,
+  // notebooks) carry their own names and simply fall through to what they were given. ----
+  channel_name_LAndWatari: "L & Watari",
+
   // ---- unnamed objects, which the engine never names for us ----
   player_unnamed: "player-{idx}v{version}",
   display_mysterious: "???",

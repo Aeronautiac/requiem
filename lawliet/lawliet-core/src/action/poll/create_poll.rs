@@ -7,8 +7,8 @@
 
 use crate::{
     action::{
-        Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
-        ActionResult, PollTimeout,
+        Action, ActionActor, ActionContext, ActionError, ActionExt, ActionInterface,
+        ActionResponse, ActionResult, PollTimeout,
     },
     common::PollKey,
     engine::Engine,
@@ -25,13 +25,20 @@ impl ActionInterface for CreatePoll {
         eng: &mut crate::engine::Engine,
         ctx: &mut ActionContext,
         actor: &ActionActor,
-        _version: crate::common::Version,
+        version: crate::common::Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
         // A ballot with nothing on it can only ever time out inconclusively.
         if self.options.is_empty() {
             return Err(ActionError::PollHasNoOptions);
+        }
+
+        // Validate
+        for opt in self.options.iter_mut() {
+            if let Some(payload) = &mut opt.payload {
+                payload.validate(eng, ctx, &ActionActor::System, version)?;
+            }
         }
 
         let id = if mutate {

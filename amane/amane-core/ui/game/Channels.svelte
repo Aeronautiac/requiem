@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { execErrorText } from "../../game/helpers.svelte";
+  import { channelLabel, execErrorText } from "../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
@@ -14,6 +14,7 @@
   import { viewerToActor } from "../../types";
   import { Flash } from "../../flash.svelte.ts";
   import FlashDisplay from "../Flash.svelte";
+  import Dropdown from "../kit/Dropdown.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
 
@@ -44,6 +45,7 @@
   const CATEGORY_ORDER: ChannelCategory[] = [
     "World",
     "Role",
+    "Logs",
     "Org",
     "Personal",
     "Notebook",
@@ -51,7 +53,6 @@
     "Groupchat",
     "Prosecution",
     "Kidnapping",
-    "Logs",
     "Raw",
   ];
 
@@ -143,24 +144,7 @@
          their create buttons reachable, and Lounges is there purely so the sidebar reads
          consistently above Group Chats. -->
     {#if keys.length > 0 || category === "World" || category === "Lounge" || (category === "Personal" && !is_admin) || (category === "Groupchat" && gc_ability_id)}
-      <section class="flex flex-col border-y border-neutral-700">
-        <button
-          class="flex items-center gap-2 border-neutral-700 bg-neutral-800/40 px-3 py-2 text-xs font-medium uppercase tracking-wide text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 {open
-            ? 'border-b'
-            : ''}"
-          onclick={() => toggle(category)}
-        >
-          <span
-            class="inline-block w-3 text-center text-[0.7rem] leading-none transition-transform {open
-              ? 'rotate-90'
-              : ''}"
-          >
-            ▸
-          </span>
-          {CATEGORY_LABELS[category]}
-        </button>
-
-        {#if open}
+      <Dropdown label={CATEGORY_LABELS[category]} {open} onToggle={() => toggle(category)}>
           {#if category === "World"}
             <button
               class="w-full text-left px-3 py-2 rounded text-sm leading-none hover:bg-neutral-800 {ui.is_news
@@ -182,7 +166,7 @@
                 : ''}"
               onclick={() => ui.select_channel(key)}
             >
-              {channel.name}
+              {channelLabel(channel.name)}
             </button>
           {/each}
 
@@ -209,8 +193,7 @@
               <FlashDisplay flash={pc_flash} />
             </div>
           {/if}
-        {/if}
-      </section>
+      </Dropdown>
     {/if}
   {/each}
 </div>

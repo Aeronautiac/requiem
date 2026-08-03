@@ -8,6 +8,7 @@
   import type { ActorDisplay, ChannelProfileView } from "../../bindings";
   import { slotKeyToString } from "../../bindings";
   import Player from "./Player.svelte";
+  import Dropdown from "../kit/Dropdown.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
@@ -122,24 +123,7 @@
 {/snippet}
 
 <div class="flex flex-col gap-1.5 pb-2">
-  <section class="flex flex-col border-y border-neutral-700">
-    <button
-      class="flex items-center gap-2 border-neutral-700 bg-neutral-800/40 px-3 py-2 text-xs font-medium uppercase tracking-wide text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 {channel_open
-        ? 'border-b'
-        : ''}"
-      onclick={() => (channel_open = !channel_open)}
-    >
-      <span
-        class="inline-block w-3 text-center text-[0.7rem] leading-none transition-transform {channel_open
-          ? 'rotate-90'
-          : ''}"
-      >
-        ▸
-      </span>
-      Channel Members
-    </button>
-
-    {#if channel_open}
+  <Dropdown label="Channel Members" open={channel_open} onToggle={() => (channel_open = !channel_open)}>
       {#if !channel_id}
         <p class="px-2 py-1 text-xs text-neutral-600">No channel selected</p>
       {:else if members.length === 0}
@@ -160,27 +144,9 @@
           {/each}
         {/if}
       {/if}
-    {/if}
-  </section>
+  </Dropdown>
 
-  <section class="flex flex-col border-y border-neutral-700">
-    <button
-      class="flex items-center gap-2 border-neutral-700 bg-neutral-800/40 px-3 py-2 text-xs font-medium uppercase tracking-wide text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 {players_open
-        ? 'border-b'
-        : ''}"
-      onclick={() => (players_open = !players_open)}
-    >
-      <span
-        class="inline-block w-3 text-center text-[0.7rem] leading-none transition-transform {players_open
-          ? 'rotate-90'
-          : ''}"
-      >
-        ▸
-      </span>
-      Other Players
-    </button>
-
-    {#if players_open}
+  <Dropdown label="Other Players" open={players_open} onToggle={() => (players_open = !players_open)}>
       {#each other_players as [id] (id)}
         <Player {id} label={playerLabel(id, view.players)} />
       {/each}
@@ -188,6 +154,5 @@
       {#if other_players.length === 0}
         <p class="px-2 py-1 text-xs text-neutral-600">No other players</p>
       {/if}
-    {/if}
-  </section>
+  </Dropdown>
 </div>

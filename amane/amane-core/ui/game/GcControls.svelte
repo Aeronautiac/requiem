@@ -13,6 +13,7 @@
   import { viewerToActor } from "../../types";
   import { Flash } from "../../flash.svelte.ts";
   import FlashDisplay from "../Flash.svelte";
+  import Dropdown from "../kit/Dropdown.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
 
@@ -115,18 +116,10 @@
 </script>
 
 {#if is_owner}
-  <div class="flex flex-col gap-1 border-b border-neutral-800 p-2">
-    <button
-      class="flex items-center gap-1 px-2 py-1 text-xs font-medium uppercase tracking-wide text-neutral-400 hover:text-neutral-200"
-      onclick={() => (open = !open)}
-    >
-      <span class="text-sm leading-none">{open ? "▾" : "▸"}</span>
-      Group Chat Controls
-    </button>
-
-    {#if open}
+  <div class="flex flex-col pb-1.5">
+    <Dropdown label="Group Chat Controls" {open} onToggle={() => (open = !open)}>
       <!-- Add a member -->
-      <p class="px-2 pt-1 text-[0.65rem] uppercase tracking-wide text-neutral-600">
+      <p class="px-3 pt-2 pb-0.5 text-[0.6rem] font-medium uppercase tracking-wide text-neutral-600">
         Add member
       </p>
       {#if candidates.length === 0}
@@ -134,17 +127,17 @@
       {:else}
         {#each candidates as [id] (id)}
           <button
-            class="flex w-full items-center justify-between rounded px-2 py-1 text-sm text-neutral-300 hover:bg-neutral-800"
+            class="flex w-full items-center justify-between px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
             onclick={() => add(id)}
           >
-            <span>{playerLabel(id, view.players)}</span>
-            <span class="text-xs text-neutral-600">add</span>
+            <span class="min-w-0 truncate">{playerLabel(id, view.players)}</span>
+            <span class="shrink-0 text-xs text-neutral-600">add</span>
           </button>
         {/each}
       {/if}
 
       <!-- Existing members: remove or hand ownership -->
-      <p class="px-2 pt-2 text-[0.65rem] uppercase tracking-wide text-neutral-600">
+      <p class="px-3 pt-2 pb-0.5 text-[0.6rem] font-medium uppercase tracking-wide text-neutral-600">
         Members
       </p>
       {#if members.length === 0}
@@ -152,19 +145,19 @@
       {:else}
         {#each members as m (m.id)}
           <div
-            class="flex items-center justify-between gap-1 rounded px-2 py-1 text-sm text-neutral-300"
+            class="flex items-center justify-between gap-2 px-3 py-1.5 text-sm text-neutral-300"
           >
-            <span class="truncate">{m.name}</span>
+            <span class="min-w-0 truncate">{m.name}</span>
             <span class="flex shrink-0 gap-1">
               <button
-                class="rounded px-1.5 py-0.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                class="px-1.5 py-0.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
                 onclick={() => transfer(m.id)}
                 title="Make owner"
               >
                 owner
               </button>
               <button
-                class="rounded px-1.5 py-0.5 text-xs text-red-400/80 hover:bg-neutral-800 hover:text-red-300"
+                class="px-1.5 py-0.5 text-xs text-red-400/80 hover:bg-neutral-800 hover:text-red-300"
                 onclick={() => remove(m.id)}
                 title="Remove from group chat"
               >
@@ -175,9 +168,9 @@
         {/each}
       {/if}
 
-      <div class="px-2 pt-1">
+      <div class="px-3 py-1.5">
         <FlashDisplay {flash} />
       </div>
-    {/if}
+    </Dropdown>
   </div>
 {/if}

@@ -5,6 +5,7 @@
   import {
     PERM_SEND,
     actorLabel,
+    channelLabel,
     displayKey,
     isReadOnlyKind,
     mentionsViewer,
@@ -167,9 +168,10 @@
   const header_name = $derived(channel_name ?? (is_news ? "News" : ""));
 
   function get_channel_name(): string | null {
-    return backing_channel_id
-      ? (view.channel(backing_channel_id)?.name ?? null)
+    const name = backing_channel_id
+      ? view.channel(backing_channel_id)?.name
       : null;
+    return name != null ? channelLabel(name) : null;
   }
 
   function player_name(id: string): string {

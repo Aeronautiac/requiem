@@ -35,7 +35,7 @@
     <span class="min-w-0 flex-1 text-neutral-300">
       {from}
       <span style="color: {phrase.color}">{phrase.verb}</span>
-      {to}{#if phrase.suffix}<span class="text-neutral-500"> {phrase.suffix}</span>{/if}
+      {to}{#if phrase.suffix}<span class="text-neutral-500">&nbsp;{phrase.suffix}</span>{/if}
     </span>
   </div>
 </div>

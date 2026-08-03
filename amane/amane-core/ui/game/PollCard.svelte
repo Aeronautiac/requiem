@@ -2,6 +2,7 @@
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import {
+    channelLabel,
     execErrorText,
     orgDisplayName,
     playerLabel,
@@ -65,7 +66,8 @@
       const org = view.orgs.get(slotKeyToString(parent.Org));
       return org ? orgDisplayName(org.name) : "Org";
     }
-    return view.channels.get(slotKeyToString(parent.Channel))?.name ?? "Channel";
+    const ch = view.channels.get(slotKeyToString(parent.Channel));
+    return ch ? channelLabel(ch.name) : "Channel";
   }
 
   function optionLabel(label: PollOptionLabel): string {

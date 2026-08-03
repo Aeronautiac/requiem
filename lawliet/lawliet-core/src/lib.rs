@@ -208,9 +208,6 @@ pub use common::{
 // yet, but eventually needs to get done.
 // - the server has no persistence layer yet. everything is held in RAM, which is fine for testing,
 // but needs to get done for actual long-running games.
-// - the frontend lacks overall polish features like role display strings, rich text usage,
-// discord-like mentions, channel notifications/pings, greyed out channels which have been read with
-// no new messages, channels white with unreads, client side notification settings, etc...
 //
 // The good news is that basically all of the hard parts are done. This final phase is just polish.
 // After this, deployment. We have a hetzner cx23 waiting as well as a cloudflare domain.
