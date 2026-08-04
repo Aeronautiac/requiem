@@ -6,7 +6,7 @@
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        UpdatePassiveVisibilities,
+        UpdateContactLogViewports,
     },
     command::Command,
     helpers::{get_actor, get_actor_mut, get_passive, owner_view_recipient},
@@ -51,7 +51,7 @@ impl ActionInterface for DestroyPassive {
             // A contact-log reader reached the record only through effective possession of this
             // passive; with it gone, recompute the world log viewports so anyone who has lost their
             // last route into one is exited from it. The record itself outlives the passive.
-            Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
+            Action::UpdateContactLogViewports(UpdateContactLogViewports {})
                 .handle(eng, ctx, actor, version, mutate)?;
         }
 

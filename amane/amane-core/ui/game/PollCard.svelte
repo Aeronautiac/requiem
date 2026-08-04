@@ -5,7 +5,8 @@
     channelLabel,
     execErrorText,
     orgDisplayName,
-    playerLabel,
+    pollSubjectArgs,
+    pollSubjectHeading,
   } from "../../game/helpers.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
@@ -18,7 +19,6 @@
     PollOptionIndex,
     PollOptionLabel,
     PollParent,
-    PollSubject,
   } from "../../bindings";
   import { slotKeyFromString, slotKeyToString } from "../../bindings";
   import { viewerToActor } from "../../types";
@@ -49,17 +49,6 @@
 
   const flash = new Flash();
 
-  // The ability's arguments render separately via subjectArgs, so the voter sees exactly what is
-  // being proposed.
-  function subjectHeading(subject: PollSubject): string {
-    if ("Generic" in subject) return subject.Generic;
-    if ("CivilianArrest" in subject) {
-      return `Arrest ${playerLabel(slotKeyToString(subject.CivilianArrest), view.players)}`;
-    }
-    const name = Object.keys(subject.OrgAbility as Record<string, unknown>)[0] ?? "";
-    return name.replace(/([a-z])([A-Z])/g, "$1 $2");
-  }
-
   function parentLabel(parent: PollParent): string {
     if (parent === "World") return "Everyone";
     if ("Org" in parent) {
@@ -74,35 +63,7 @@
     return typeof label === "string" ? label : label.Generic;
   }
 
-  // "true_name" -> "True name", "target_id" -> "Target" (the _id suffix is noise here).
-  function prettyKey(k: string): string {
-    const s = k.replace(/_id$/, "").replace(/_/g, " ");
-    return s.charAt(0).toUpperCase() + s.slice(1);
-  }
-
-  // Actor keys are the only object-typed args, so they are what resolves to a player name.
-  function formatArgValue(v: unknown): string {
-    if (typeof v === "boolean") return v ? "yes" : "no";
-    if (typeof v === "object" && v !== null) {
-      return playerLabel(slotKeyToString(v as never), view.players);
-    }
-    return String(v);
-  }
-
-  // Empty for non-ability subjects; absent args are skipped so optional fields don't show blank.
-  const args = $derived.by(() => {
-    const subject = data.subject;
-    if (!("OrgAbility" in subject)) return [] as { label: string; value: string }[];
-    const beh = subject.OrgAbility as Record<string, unknown>;
-    const name = Object.keys(beh)[0] ?? "";
-    const raw = (beh[name] ?? {}) as Record<string, unknown>;
-    const out: { label: string; value: string }[] = [];
-    for (const [k, v] of Object.entries(raw)) {
-      if (v === null || v === undefined) continue;
-      out.push({ label: prettyKey(k), value: formatArgValue(v) });
-    }
-    return out;
-  });
+  const args = $derived(pollSubjectArgs(data.subject, view.players));
 
   // The channel (or news) this poll calls home, derived from its parent scope. World polls live in
   // News, org polls in the org's channel, channel polls in that channel.
@@ -121,7 +82,12 @@
       // Already in the channel — jump means "see it in the full panel with every other poll".
       ui.top_panel = "polls";
     } else {
+      // Land on the poll's home channel, drop the panel, and ask that channel to scroll the poll's
+      // inline card into view. Without the scroll request the switch just drops you at the bottom,
+      // so the jump barely moves. Set after navigating so it rides the same flush as the switch.
       home_selection()?.();
+      ui.top_panel = null;
+      ui.jump_poll = id;
     }
   }
 
@@ -151,7 +117,7 @@
     : 'w-full'}"
 >
   <div class="flex items-start justify-between gap-2">
-    <span class="text-sm font-medium text-neutral-100">{subjectHeading(data.subject)}</span>
+    <span class="text-sm font-medium text-neutral-100">{pollSubjectHeading(data.subject, view.players)}</span>
     <button
       class="shrink-0 text-[0.65rem] uppercase tracking-wide text-neutral-500 hover:text-neutral-200"
       onclick={jump}

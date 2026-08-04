@@ -10,6 +10,9 @@ export class UiState {
   viewer = $state<string>("Admin");
   selected = $state<Selection | null>(null);
   top_panel = $state<TopPanel | null>(null);
+  // Set by a poll-panel "jump" to ask the open channel to scroll that poll's inline card into
+  // view; the channel view consumes and clears it. Outlives the channel switch it rides in on.
+  jump_poll = $state<string | null>(null);
 
   get is_news(): boolean {
     return this.selected?.kind === "news";

@@ -6,7 +6,7 @@
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
-        ActionResult, UpdatePassiveVisibilities,
+        ActionResult, UpdateContactLogViewports,
     },
     command::Command,
     helpers::{get_actor, get_actor_mut, get_passive, get_passive_mut, owner_view_recipient},
@@ -72,7 +72,7 @@ impl ActionInterface for GivePassive {
 
         // Ownership moved, so who effectively possesses this passive — and therefore who reads its
         // log — moved with it.
-        Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
+        Action::UpdateContactLogViewports(UpdateContactLogViewports {})
             .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::GivePassive(GivePassiveResponse {}))

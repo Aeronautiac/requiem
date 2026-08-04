@@ -10,7 +10,7 @@
 * granted late still see everything logged before it existed.
 *
 * Should be called when:
-* - a passive is created, given, or destroyed
+* - a passive is created, given, taken, or destroyed
 * - an actor link is created or severed
 * - an actor's state changes (DisablePassiveLinks rides on states)
 *
@@ -30,9 +30,9 @@ use crate::{
     passive::{ContactLogType, PassiveType},
 };
 
-pub use crate::action::{UpdatePassiveVisibilities, UpdatePassiveVisibilitiesResponse};
+pub use crate::action::{UpdateContactLogViewports, UpdateContactLogViewportsResponse};
 
-impl ActionInterface for UpdatePassiveVisibilities {
+impl ActionInterface for UpdateContactLogViewports {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
@@ -87,8 +87,8 @@ impl ActionInterface for UpdatePassiveVisibilities {
             sync_viewport(eng, ctx, viewport, readers, mutate);
         }
 
-        Ok(ActionResponse::UpdatePassiveVisibilities(
-            UpdatePassiveVisibilitiesResponse {},
+        Ok(ActionResponse::UpdateContactLogViewports(
+            UpdateContactLogViewportsResponse {},
         ))
     }
 }

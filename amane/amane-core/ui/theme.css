@@ -82,6 +82,7 @@
   --color-event-tap: #14b8a6; /* a record was read */
   --color-event-prosecution: #e11d48;
   --color-event-blackout: #1e1b4b; /* the world stopped telling you things */
+  --color-event-news: #0ea5e9; /* who runs the news, and who may speak on it */
 
   /* Entity colours: one accent per role and per org, plus the two fixed mention kinds. This is the
    * single place to recolour anything identity-related — the ping chips in messages, the composer's
@@ -91,6 +92,11 @@
    * derived from the same value at low opacity. */
   --color-mention-player: #7dd3fc; /* sky-300 */
   --color-mention-system: #fca5a5; /* red-300 */
+  /* The news anchor and the press conference are positions, not roles, but they read like one each:
+   * their own accent, shared by the chip on the announcement and the @-ping of whoever currently
+   * holds the post / sits in the conference. */
+  --color-news-anchor: #facc15; /* yellow-400 */
+  --color-press-conference: #5eead4; /* teal-300 */
 
   --color-role: #fcd34d; /* default role accent (amber-300) */
   --color-role-Kira: #f87171;
@@ -99,7 +105,6 @@
   --color-role-Watari: #7dd3fc;
   --color-role-BeyondBirthday: #a78bfa;
   --color-role-PrivateInvestigator: #2dd4bf;
-  --color-role-NewsAnchor: #facc15;
   --color-role-Civilian: #a3a3a3;
   --color-role-RogueCivilian: #d8b4fe;
   --color-role-Poser: #c084fc;

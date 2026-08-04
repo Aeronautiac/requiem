@@ -43,6 +43,7 @@ use crate::{
     ability::AbilityBehaviour,
     action::{
         Action, ActionActor, ActionContext, ActionRequest, ActionResponse, ActionResult,
+        PressConfAccess, SetNewsAnchor,
         ability::{
             add_link::AddLink, clear_links::ClearLinks,
             create_and_give_ability::CreateAndGiveAbility, use_ability::UseAbility,
@@ -877,6 +878,27 @@ pub fn give_role(eng: &mut Engine, time: Time, target_id: ActorKey, role: Role) 
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::GiveRole(GiveRole { target_id, role }),
+    })
+    .unwrap();
+}
+
+pub fn set_news_anchor(eng: &mut Engine, time: Time, target_id: Option<ActorKey>) {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::SetNewsAnchor(SetNewsAnchor { target_id }),
+    })
+    .unwrap();
+}
+
+pub fn press_conf_access(eng: &mut Engine, time: Time, target_id: ActorKey, has_access: bool) {
+    eng.execute(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: time,
+        payload: Action::PressConfAccess(PressConfAccess {
+            target_id,
+            has_access,
+        }),
     })
     .unwrap();
 }

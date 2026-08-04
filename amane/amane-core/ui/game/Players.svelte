@@ -98,11 +98,7 @@
   {@const owners = trueOwners(member)}
   <div class="flex flex-col">
     {#if pid}
-      <Player
-        id={pid}
-        label={view.resolve_display(member.display)}
-        perms={member.perms}
-      />
+      <Player id={pid} perms={member.perms} />
     {:else}
       <!-- nothing to contact or inspect -->
       <div
@@ -148,7 +144,7 @@
 
   <Dropdown label="Other Players" open={players_open} onToggle={() => (players_open = !players_open)}>
       {#each other_players as [id] (id)}
-        <Player {id} label={playerLabel(id, view.players)} />
+        <Player {id} />
       {/each}
 
       {#if other_players.length === 0}

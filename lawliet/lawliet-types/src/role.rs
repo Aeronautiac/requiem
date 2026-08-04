@@ -11,7 +11,6 @@ pub enum Role {
     Watari,
     BeyondBirthday,
     PrivateInvestigator,
-    NewsAnchor,
     Civilian,
     RogueCivilian,
     Poser,

@@ -7,7 +7,8 @@
 pub use crate::action::{
     Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
     UpdateActorStatuses, UpdateChannels, UpdateKidnappings, UpdateOrgEffectiveMembers, UpdatePolls,
-    UpdatePrisonChannel, UpdateProsecutions, UpdateTimers, UpdateWorldViewports,
+    UpdatePressConference, UpdatePrisonChannel, UpdateProsecutions, UpdateTimers,
+    UpdateWorldViewports,
 };
 
 pub use crate::action::{Update, UpdateResponse};
@@ -49,6 +50,11 @@ impl ActionInterface for Update {
         // that is what this reads to work out who is holding somebody.
         Action::UpdateKidnappings(UpdateKidnappings {}).handle(eng, ctx, actor, version, mutate)?;
         Action::UpdatePrisonChannel(UpdatePrisonChannel {})
+            .handle(eng, ctx, actor, version, mutate)?;
+
+        // Before the final channel sweep, so dropping a guest who has lost presence is already
+        // reflected when the news channel's Send perms are recomputed below.
+        Action::UpdatePressConference(UpdatePressConference {})
             .handle(eng, ctx, actor, version, mutate)?;
 
         Action::UpdateWorldViewports(UpdateWorldViewports {})

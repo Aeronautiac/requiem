@@ -20,6 +20,7 @@
   import AbilityMenu from "./abilities/AbilityMenu.svelte";
   import Dialog from "../kit/Dialog.svelte";
   import Button from "../kit/Button.svelte";
+  import Name from "./Name.svelte";
 
   const game = getContext<GameState>(GAME_STATE_KEY);
 
@@ -257,7 +258,7 @@
                   class="flex w-full items-center justify-between border-b border-edge px-3 py-2 text-sm text-ink last:border-b-0 hover:bg-raised"
                   onclick={() => add_member(id)}
                 >
-                  <span class="truncate">{playerLabel(id, view.players)}</span>
+                  <span class="truncate"><Name {id} {view} menu={false} /></span>
                   <span class="shrink-0 text-[0.65rem] uppercase tracking-wide text-ink-dim">add</span>
                 </button>
               {/each}

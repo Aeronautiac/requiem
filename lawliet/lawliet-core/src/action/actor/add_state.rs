@@ -6,7 +6,7 @@
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        UpdateBugVisibilities, UpdatePassiveVisibilities, UpdateWorldViewports,
+        UpdateBugVisibilities, UpdateContactLogViewports, UpdateWorldViewports,
     },
     common::Version,
     engine::Engine,
@@ -59,7 +59,7 @@ impl ActionInterface for AddState {
             .handle(eng, ctx, actor, version, mutate)?;
 
         // DisablePassiveLinks rides on a state, so who reaches which passive log can change here.
-        Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
+        Action::UpdateContactLogViewports(UpdateContactLogViewports {})
             .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::AddState(AddStateResponse {}))

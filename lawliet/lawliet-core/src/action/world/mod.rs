@@ -2,11 +2,15 @@ pub mod create_orgs;
 pub mod initialize_engine;
 pub mod initialize_world;
 pub mod next_iteration;
+pub mod press_conf_access;
 pub mod set_blackout;
+pub mod set_news_anchor;
 pub mod set_random_seed;
 pub mod start_game;
 pub mod update_actor_statuses;
+pub mod update_contact_log_viewports;
 pub mod update_org_effective_members;
+pub mod update_press_conference;
 pub mod update_world_viewports;
 
 #[cfg(test)]
@@ -360,13 +364,22 @@ mod world_tests {
         assert!(gen_perms.contains(ChannelPerm::View));
     }
 
-    // ---- roles ----
+    // ---- the news anchor ----
 
+    // Speaking on the news is a status, not a role: naming someone anchor hands them the NewsAccess
+    // passive, which is what the news policy grants Send on.
     #[test]
     fn news_anchor_gets_send_on_news() {
         let mut eng = Engine::new();
         init_engine(&mut eng);
-        let p1 = add_player(&mut eng, 0, Role::NewsAnchor, "p1");
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+
+        assert!(
+            !world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send),
+            "not the anchor yet"
+        );
+
+        set_news_anchor(&mut eng, 0, Some(p1));
 
         assert!(world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send));
     }
@@ -380,24 +393,76 @@ mod world_tests {
         assert!(!world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send));
     }
 
+    // Handing the post to someone else takes the old anchor's Send with it: the kit moves, it is
+    // not copied.
     #[test]
-    fn role_change_clears_news_send() {
+    fn reassigning_the_anchor_clears_the_old_ones_send() {
         let mut eng = Engine::new();
         init_engine(&mut eng);
-        let p1 = add_player(&mut eng, 0, Role::NewsAnchor, "p1");
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
 
-        give_role(&mut eng, 0, p1, Role::Civilian);
+        set_news_anchor(&mut eng, 0, Some(p1));
+        set_news_anchor(&mut eng, 0, Some(p2));
+
+        assert!(!world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send));
+        assert!(world_channel_perms(&eng, WorldChannelName::News, p2).contains(ChannelPerm::Send));
+    }
+
+    // Vacating the post strips the kit back to ownerless, so the last anchor can no longer broadcast.
+    #[test]
+    fn vacating_the_anchor_clears_send() {
+        let mut eng = Engine::new();
+        init_engine(&mut eng);
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+
+        set_news_anchor(&mut eng, 0, Some(p1));
+        set_news_anchor(&mut eng, 0, None);
 
         assert!(!world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send));
     }
 
-    // The anchor's own standing still gates it: the role is what grants Send, and being unable to
-    // be there at all takes it back.
+    // A guest in the press conference speaks on the news without being the anchor: press-conf
+    // membership grants Send on its own.
+    #[test]
+    fn a_press_conference_guest_gets_send_on_news() {
+        let mut eng = Engine::new();
+        init_engine(&mut eng);
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+
+        assert!(!world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send));
+
+        press_conf_access(&mut eng, 0, p1, true);
+
+        assert!(world_channel_perms(&eng, WorldChannelName::News, p1).contains(ChannelPerm::Send));
+    }
+
+    // Losing presence drops a guest from the conference on the next sweep, and their news Send goes
+    // with it — the host does not have to walk anyone out.
+    #[test]
+    fn losing_presence_evicts_a_press_conference_guest() {
+        let mut eng = Engine::new();
+        init_engine(&mut eng);
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        press_conf_access(&mut eng, 0, p1, true);
+        assert!(eng.world.news.press_conf.contains(&p1));
+
+        add_state(&mut eng, 0, p1, State::Dead);
+
+        assert!(
+            !eng.world.news.press_conf.contains(&p1),
+            "a guest who cannot be present is not in the conference"
+        );
+    }
+
+    // The anchor's own standing still gates it: NewsAccess grants Send, and being unable to be there
+    // at all takes it back.
     #[test]
     fn a_dead_anchor_does_not_broadcast() {
         let mut eng = Engine::new();
         init_engine(&mut eng);
-        let p1 = add_player(&mut eng, 0, Role::NewsAnchor, "p1");
+        let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
+        set_news_anchor(&mut eng, 0, Some(p1));
 
         add_state(&mut eng, 0, p1, State::Dead);
 

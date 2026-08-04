@@ -2,7 +2,7 @@
   import { execErrorText } from "../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
-  import { playerLabel } from "../../game/helpers.svelte";
+  import Name from "./Name.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
@@ -130,7 +130,7 @@
             class="flex w-full items-center justify-between px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
             onclick={() => add(id)}
           >
-            <span class="min-w-0 truncate">{playerLabel(id, view.players)}</span>
+            <span class="min-w-0 truncate"><Name {id} {view} menu={false} /></span>
             <span class="shrink-0 text-xs text-neutral-600">add</span>
           </button>
         {/each}

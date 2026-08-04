@@ -68,6 +68,58 @@ export const worldHandlers: Handlers = {
     });
   },
 
+  // Public: who runs the news now (null = vacant). Rides world-events like the rest of the news.
+  // The personal "you are now/no longer the anchor" is derived here from the client's own key rather
+  // than delivered — the engine names the anchor, not the reader.
+  NewsAnchor(ctx: CmdCtx, p) {
+    const target = p.target_id ? slotKeyToString(p.target_id) : null;
+    const previous = ctx.view.news_anchor;
+    ctx.view.news_anchor = target;
+    ctx.view.events.push({
+      timestamp: ctx.timestamp,
+      data: { NewsAnchor: { target_id: target } },
+    });
+
+    const own = ctx.view.own_key;
+    if (target === own) {
+      ctx.view.push_notif(ctx.timestamp, { NewsAnchorStatus: { holding: true } });
+      ctx.notify({ title: t("toast_news_anchor_title"), body: t("toast_news_anchor_you_gained") });
+    } else if (previous === own) {
+      ctx.view.push_notif(ctx.timestamp, { NewsAnchorStatus: { holding: false } });
+      ctx.notify({ title: t("toast_news_anchor_title"), body: t("toast_news_anchor_you_lost") });
+    } else {
+      ctx.notify({
+        title: t("toast_news_anchor_title"),
+        body: target
+          ? t("toast_news_anchor_named", { name: playerLabel(target, ctx.view.players) })
+          : t("toast_news_anchor_vacated"),
+      });
+    }
+  },
+
+  // A press-conference roster change: someone gained or lost the right to speak on the news.
+  PressConfStatus(ctx: CmdCtx, p) {
+    const target_id = slotKeyToString(p.target_id);
+    if (p.has_access) ctx.view.press_conf.add(target_id);
+    else ctx.view.press_conf.delete(target_id);
+    ctx.view.events.push({
+      timestamp: ctx.timestamp,
+      data: { PressConfStatus: { target_id, has_access: p.has_access } },
+    });
+    // Personal notif derived from the public roster change, the same way NewsAnchor does it: only
+    // when the actor named is the client's own key.
+    if (target_id === ctx.view.own_key) {
+      ctx.view.push_notif(ctx.timestamp, { PressConfMembership: { in_conf: p.has_access } });
+    }
+    const name = playerLabel(target_id, ctx.view.players);
+    ctx.notify({
+      title: t("toast_press_conf_title"),
+      body: p.has_access
+        ? t("toast_press_conf_joined", { name })
+        : t("toast_press_conf_left", { name }),
+    });
+  },
+
   AnonymousAnnouncement(ctx: CmdCtx, p) {
     ctx.view.events.push({
       timestamp: ctx.timestamp,

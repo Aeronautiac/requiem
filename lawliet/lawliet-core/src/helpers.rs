@@ -273,7 +273,7 @@ pub fn cmd_contact_log(
     // The record lives on the world's three log viewports, not on any passive, so a contact is
     // written whether or not anyone holds the passive to read it yet. Full takes every contact;
     // Even and Odd split on the contact-id parity. A reader is entered into the matching viewport
-    // by the UpdatePassiveVisibilities sweep and backfills the history on the way in.
+    // by the UpdateContactLogViewports sweep and backfills the history on the way in.
     let targets: SmallVec<[(ContactLogType, ViewportKey); 3]> = eng
         .world
         .contact_log_viewports()

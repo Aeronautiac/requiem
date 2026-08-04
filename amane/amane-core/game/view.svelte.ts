@@ -52,6 +52,11 @@ export class GameView {
   contact_logs = new SvelteMap<string, Channel>();
   kidnappings = new SvelteMap<string, TrackedKidnapping>();
   incarcerations = new SvelteMap<string, TrackedIncarceration>();
+  // Current news anchor (null = vacant) and the press-conference roster — the people who may speak
+  // on the news. Both are live state kept current from the world-events feed, alongside the feed
+  // announcement of each change.
+  news_anchor = $state<string | null>(null);
+  press_conf = new SvelteSet<string>();
   // Only ever populated on System, which is the one view the personal-info System copies reach.
   player_info = new SvelteMap<string, PlayerInfo>();
   // StatusFlag bitmask per actor: the public condition of every player this view can see, carried

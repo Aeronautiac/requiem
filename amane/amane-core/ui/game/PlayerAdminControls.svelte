@@ -30,7 +30,7 @@
   // Hand-maintained to mirror the Role union in bindings (no runtime enum to derive from).
   const ROLES: Role[] = [
     "Kira", "SecondKira", "L", "Watari", "BeyondBirthday", "PrivateInvestigator",
-    "NewsAnchor", "Civilian", "RogueCivilian", "Poser", "ConArtist", "WantedCivilian",
+    "Civilian", "RogueCivilian", "Poser", "ConArtist", "WantedCivilian",
     "Near", "Mello",
   ];
 
@@ -83,6 +83,16 @@
     if (!reply.ok) flash.set_error(execErrorText(reply.error));
     else flash.set_success("Profile updated.");
   }
+  // News anchor is a status, not a role — handing over the anchor's kit rather than changing who
+  // the player is. The engine rejects naming the current anchor again, surfaced as a flash.
+  function make_news_anchor() {
+    run({ SetNewsAnchor: { target_id: target } }, "Set as news anchor.");
+  }
+  // Vacate the post entirely — there is only one anchor, so target_id: null takes it off whoever
+  // holds it without handing it on. The engine rejects this when nobody holds it (AlreadyNewsAnchor).
+  function clear_news_anchor() {
+    run({ SetNewsAnchor: { target_id: null } }, "News anchor post vacated.");
+  }
   function kill() {
     run(
       {
@@ -104,7 +114,7 @@
   }
 </script>
 
-<div class="flex flex-col gap-1.5 px-2 py-1 text-xs">
+<div class="flex flex-col gap-2 py-1 text-sm">
   <div class="text-neutral-500">
     <div><span class="text-neutral-600">Role:</span> {info?.role ?? "—"}</div>
     <div>
@@ -113,60 +123,75 @@
     </div>
   </div>
 
-  <div class="flex items-center gap-1">
+  <div class="flex items-center gap-1.5">
     <select
       bind:value={role}
-      class="min-w-0 flex-1 rounded bg-neutral-800 px-1 py-0.5 text-neutral-200"
+      class="min-w-0 flex-1 rounded bg-neutral-800 px-2 py-1.5 text-neutral-200"
     >
       {#each ROLES as r (r)}
         <option value={r}>{r}</option>
       {/each}
     </select>
     <button
-      class="shrink-0 rounded bg-neutral-700 px-2 py-0.5 text-neutral-200 hover:bg-neutral-600"
+      class="shrink-0 rounded bg-neutral-700 px-3 py-1.5 text-neutral-200 hover:bg-neutral-600"
       onclick={set_role}
     >
       Set role
     </button>
   </div>
 
-  <div class="flex items-center gap-1">
+  <div class="flex items-center gap-1.5">
+    <button
+      class="flex-1 rounded bg-neutral-700 px-3 py-1.5 text-neutral-200 hover:bg-neutral-600"
+      onclick={make_news_anchor}
+    >
+      Set as news anchor
+    </button>
+    <button
+      class="shrink-0 rounded bg-neutral-700 px-3 py-1.5 text-neutral-200 hover:bg-neutral-600"
+      onclick={clear_news_anchor}
+    >
+      Vacate
+    </button>
+  </div>
+
+  <div class="flex items-center gap-1.5">
     <input
       bind:value={true_name}
       placeholder="New true name"
-      class="min-w-0 flex-1 rounded bg-neutral-800 px-1 py-0.5 text-neutral-200"
+      class="min-w-0 flex-1 rounded bg-neutral-800 px-2 py-1.5 text-neutral-200"
     />
     <button
-      class="shrink-0 rounded bg-neutral-700 px-2 py-0.5 text-neutral-200 hover:bg-neutral-600"
+      class="shrink-0 rounded bg-neutral-700 px-3 py-1.5 text-neutral-200 hover:bg-neutral-600"
       onclick={set_true_name}
     >
       Set true name
     </button>
   </div>
 
-  <div class="flex items-center gap-1">
+  <div class="flex items-center gap-1.5">
     <input
       bind:value={display_name}
       placeholder="New display name"
-      class="min-w-0 flex-1 rounded bg-neutral-800 px-1 py-0.5 text-neutral-200"
+      class="min-w-0 flex-1 rounded bg-neutral-800 px-2 py-1.5 text-neutral-200"
     />
     <button
-      class="shrink-0 rounded bg-neutral-700 px-2 py-0.5 text-neutral-200 hover:bg-neutral-600"
+      class="shrink-0 rounded bg-neutral-700 px-3 py-1.5 text-neutral-200 hover:bg-neutral-600"
       onclick={set_profile}
     >
       Set display name
     </button>
   </div>
 
-  <div class="flex items-center gap-1">
+  <div class="flex items-center gap-1.5">
     <button
-      class="flex-1 rounded bg-red-900/60 px-2 py-0.5 text-red-200 hover:bg-red-900"
+      class="flex-1 rounded bg-red-900/60 px-3 py-1.5 text-red-200 hover:bg-red-900"
       onclick={kill}
     >
       Kill
     </button>
     <button
-      class="flex-1 rounded bg-emerald-900/60 px-2 py-0.5 text-emerald-200 hover:bg-emerald-900"
+      class="flex-1 rounded bg-emerald-900/60 px-3 py-1.5 text-emerald-200 hover:bg-emerald-900"
       onclick={revive}
     >
       Revive

@@ -2,14 +2,14 @@ use lawliet_types::{
     actor::{ActorDisplay, Modifier, State},
     channel::{ChannelPerm, ChannelPermSet},
     common::ActorKey,
-    role::Role,
+    passive::PassiveType,
 };
 
 use crate::{
     actor::Actor,
     channel::{Channel, ChannelProfile, ProfileOwnership},
     engine::Engine,
-    helpers::{get_actor, get_player, get_prosecution},
+    helpers::{actor_get_effective_passive, get_actor, get_prosecution},
     prosecution::{ProsecutionPhase, TrialPhase},
 };
 
@@ -86,9 +86,10 @@ impl IPermUpdatePolicy for NewsPolicy {
         matches!(profile.ownership, ProfileOwnership::Single(_))
     }
 
-    // Everyone present listens; the anchor is the one who talks. The whole channel goes quiet
-    // under a blackout, which is the one world channel that happens to — the news stopping is
-    // what the lights going out looks like from inside.
+    // Everyone present listens; speaking on the news is a capability, not a role. It is granted by
+    // holding NewsAccess (the anchor's own passive) or by being in the press conference (a guest the
+    // anchor has let speak). The whole channel goes quiet under a blackout, which is the one world
+    // channel that happens to — the news stopping is what the lights going out looks like from inside.
     fn eval(&self, eng: &Engine, _channel: &Channel, profile: &ChannelProfile) -> ChannelPermSet {
         if eng.world.blackout {
             return ChannelPermSet::EMPTY;
@@ -99,7 +100,10 @@ impl IPermUpdatePolicy for NewsPolicy {
         let actor = get_actor(eng, owner).expect("Invalid actor key found within profile");
 
         let mut max: ChannelPermSet = ChannelPerm::View.into();
-        if get_player(eng, owner).is_ok_and(|player| player.role == Role::NewsAnchor) {
+        let can_speak = eng.world.news.press_conf.contains(&owner)
+            || actor_get_effective_passive(eng, owner, |p| matches!(p, PassiveType::NewsAccess))
+                .is_some();
+        if can_speak {
             max |= ChannelPerm::Send;
         }
         max & !mod_gate(actor, Modifier::NoPresence)

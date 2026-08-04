@@ -44,6 +44,16 @@ impl ActionInterface for GiveAbility {
                 // the ability is storing the id of an actor that doesn't exist, there is something
                 // wrong with the engine.
                 other_actor.remove_ability(self.ability_id);
+                // Drop the ability from the previous owner's observable list; the new owner's view
+                // is revealed below. Mirrors GivePassive — without this the old owner's client keeps
+                // showing an ability it no longer holds.
+                ctx.push_cmd(
+                    Command::RemoveAbility {
+                        ability_id: self.ability_id,
+                    },
+                    owner_view_recipient(eng, owner),
+                    eng.time,
+                );
             }
         }
 

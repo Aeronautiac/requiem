@@ -46,6 +46,7 @@ pub struct DefaultConfig {
     // extend it and nothing can cut it short but a host.
     pub blackout_duration: Time,
     pub prosecution_autonomous: bool, // whether the plain Prosecute ability files autonomous trials
+    pub press_conf_limit: u16,
 }
 
 pub fn default_defaults() -> DefaultConfig {
@@ -89,5 +90,6 @@ pub fn default_defaults() -> DefaultConfig {
         iteration_duration: hrs(24),
         blackout_duration: hrs(24),
         prosecution_autonomous: true,
+        press_conf_limit: 5,
     }
 }

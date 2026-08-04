@@ -28,6 +28,7 @@ use crate::{
     incarceration::Incarceration,
     kidnapping::Kidnapping,
     lounge::Lounge,
+    news::News,
     notebook::Notebook,
     passive::{ContactLogType, Passive},
     poll::Poll,
@@ -71,39 +72,16 @@ pub struct World {
     pub world_channel_map: IndexMap<WorldChannelName, ChannelKey>,
     pub phase: WorldPhase,
     pub curr_iteration: IterationCount,
-    // The scheduled turn of the next day, when days turn on their own. Held so it can be cancelled:
-    // an early manual advance has to take the pending one down with it, or the day it starts gets
-    // cut short by a timer belonging to the day before. Always None when the host owns the clock.
     pub iteration_job: Option<JobID>,
     pub contact_channels: IndexMap<ID, ContactChannel>,
     pub contact_channel_id: ID,
     pub viewports: SlotMap<ViewportKey, Viewport>,
-    // Every countdown in the game, held here rather than on the objects they belong to so that
-    // stopping time is one sweep over one map. See the timer module.
     pub timers: SlotMap<TimerKey, Timer>,
-    // The two world-level singletons every present player has access to. Every other viewport is
-    // allocated by the action that creates its object and freed by the action that tears that
-    // object down; these belong to no object, so they are allocated here and never freed.
-    //
-    // Both carry the same membership except under blackout, which empties the events one and
-    // leaves the data one alone. That is the entire mechanism: nobody loses presence, the world
-    // just stops announcing. Which of the two a command belongs on is decided at the call site by
-    // reaching for cmd_world_event or cmd_world_data.
     pub events_viewport: ViewportKey,
     pub data_viewport: ViewportKey,
-    // The three contact-log records (Full/Even/Odd), world singletons on the same terms as the two
-    // above: allocated with the world, never freed. The log lives HERE rather than on the passives
-    // that read it, so a contact is recorded whether or not anyone holds the passive yet, and
-    // holding one merely enters an actor into the matching viewport — which backfills the whole
-    // history, fixing a passive that is granted late. Membership is driven by the
-    // UpdatePassiveVisibilities sweep; contacts are addressed here by cmd_contact_log.
-    contact_log_viewports: IndexMap<ContactLogType, ViewportKey>,
-    // The pending lift. Held so it can be cancelled: a blackout ended early has to take its timer
-    // down with it, or the world goes dark again the moment the old one fires.
     pub blackout_job: Option<JobID>,
-    // The next record to hand out. A bare counter rather than a slotmap because a log is an
-    // identity and nothing else: it holds no state to store, nobody is ever granted one, and it is
-    // never freed — the record of what was said outlives whatever was saying it.
+    pub news: News,
+    contact_log_viewports: IndexMap<ContactLogType, ViewportKey>,
     next_log: LogID,
 }
 
@@ -118,7 +96,12 @@ impl World {
             ContactLogType::Odd,
         ]
         .into_iter()
-        .map(|kind| (kind, viewports.insert(Viewport::new(ViewportKind::ContactLog))))
+        .map(|kind| {
+            (
+                kind,
+                viewports.insert(Viewport::new(ViewportKind::ContactLog)),
+            )
+        })
         .collect();
         World {
             viewports,
@@ -148,6 +131,7 @@ impl World {
             incarcerations: SlotMap::with_key(),
             world_channel_map: IndexMap::new(),
             contact_channels: IndexMap::new(),
+            news: News::new(),
             contact_channel_id: 0,
             next_log: 0,
         }
@@ -160,7 +144,9 @@ impl World {
     }
 
     // The three contact-log viewports, in a fixed order, for the membership sweep to iterate.
-    pub fn contact_log_viewports(&self) -> impl Iterator<Item = (ContactLogType, ViewportKey)> + '_ {
+    pub fn contact_log_viewports(
+        &self,
+    ) -> impl Iterator<Item = (ContactLogType, ViewportKey)> + '_ {
         self.contact_log_viewports.iter().map(|(k, v)| (*k, *v))
     }
 

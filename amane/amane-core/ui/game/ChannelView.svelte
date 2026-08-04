@@ -13,7 +13,6 @@
     orgDisplayName,
     ownPerms,
     phaseAnnouncement,
-    playerLabel,
     roleColorVar,
     roleLabel,
     t,
@@ -40,9 +39,11 @@
   import Message from "./Message.svelte";
   import Announcement from "./Announcement.svelte";
   import Chip from "./Chip.svelte";
+  import Name from "./Name.svelte";
   import ContactLogRow from "./ContactLogRow.svelte";
   import TopPanel from "./TopPanel.svelte";
   import PollCard from "./PollCard.svelte";
+  import PollNoticeCard from "./PollNoticeCard.svelte";
   import NotebookWrite from "./NotebookWrite.svelte";
   import NotebookPass from "./NotebookPass.svelte";
 
@@ -174,29 +175,6 @@
     return name != null ? channelLabel(name) : null;
   }
 
-  function player_name(id: string): string {
-    return playerLabel(id, view.players);
-  }
-
-  function poll_notice_text(subject: PollSubject): string {
-    if ("Generic" in subject) return subject.Generic;
-    if ("CivilianArrest" in subject) {
-      return `Arrest ${playerLabel(slotKeyToString(subject.CivilianArrest), view.players)}`;
-    }
-    const beh = subject.OrgAbility as Record<string, unknown>;
-    const name = Object.keys(beh)[0] ?? "";
-    return name.replace(/([a-z])([A-Z])/g, "$1 $2");
-  }
-
-  // A resolved poll names the option that won, so the label comes from the poll itself. The entry
-  // is never deleted, so it is still there however long ago the vote closed.
-  function poll_outcome_text(poll_id: string, outcome: PollOutcome): string {
-    if (outcome === "Inconclusive" || outcome === "Cancelled") return outcome;
-    const label = view.polls.get(poll_id)?.options[outcome.Resolved]?.label;
-    if (label === undefined) return "resolved";
-    return typeof label === "string" ? label : label.Generic;
-  }
-
   // The name to speak as, or null for the host speaking as nobody — which shows as System and is
   // the one case that needs no name in the channel at all.
   function sender_profile(): ProfileKey | null {
@@ -230,11 +208,10 @@
   }
 
   // success = the name matched a real player; target_saved = the kill didn't land (write
-  // immunity, or an earlier pending death on that target was cancelled by this write).
-  function write_event_text(w: WriteEvent): string {
-    const lines = [
-      `${player_name(w.user_id)} wrote the name "${nameLabel(w.true_name)}".`,
-    ];
+  // immunity, or an earlier pending death on that target was cancelled by this write). The writer's
+  // name renders as a coloured Name in the markup; this carries only the outcome lines below it.
+  function write_outcome_text(w: WriteEvent): string {
+    const lines: string[] = [];
     if (!w.success) {
       lines.push("Outcome: the name matched no one — no effect.");
     } else if (w.target_saved) {
@@ -409,6 +386,17 @@
       scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 100;
     if (near_bottom) scroller.scrollTo({ top: scroller.scrollHeight });
   });
+
+  // A poll-panel jump lands here with the poll to reveal. Declared last so it runs after the two
+  // effects above and wins the final scroll position on a channel switch. Tracks the target rather
+  // than the selection, so a jump to the channel you're already in scrolls too.
+  $effect(() => {
+    const target = ui.jump_poll;
+    if (!target || !scroller) return;
+    const el = scroller.querySelector(`[data-poll-anchor="${target}"]`);
+    el?.scrollIntoView({ block: "center" });
+    ui.jump_poll = null;
+  });
 </script>
 
 <div class="h-full w-full bg-neutral-900 text-neutral-100">
@@ -491,9 +479,9 @@
         {#each events as event, i (event)}
           {#if "Message" in event.data}
             <Message
-              sender={display_string(event.data.Message.sender_display)}
+              senderDisplay={event.data.Message.sender_display}
               content={event.data.Message.content}
-              players={view.players}
+              {view}
               timestamp={event.timestamp}
               grouped={is_grouped_message(events[i - 1], event)}
               last={!events[i + 1] || !is_grouped_message(event, events[i + 1])}
@@ -501,20 +489,17 @@
             />
           {:else if "Write" in event.data}
             {@const w = event.data.Write}
-            <Announcement
-              color={write_event_color(w)}
-              description="Notebook Write"
-              content={write_event_text(w)}
-            />
+            <Announcement color={write_event_color(w)} description="Notebook Write">
+              <Name id={w.user_id} {view} chip /> wrote the name
+              <span class="text-neutral-200">"{nameLabel(w.true_name)}"</span>.
+              <div class="mt-1 whitespace-pre-wrap">{write_outcome_text(w)}</div>
+            </Announcement>
           {:else if "Death" in event.data}
             {@const d = event.data.Death}
             <!-- Beat 1 of the staged reveal: the death and the name behind it. The role and any
                  inheritance follow as their own events (DeathRole / DeathTransfer), timed apart. -->
             <Announcement color="var(--color-event-death)" description="Death">
-              <Chip
-                label={player_name(d.target_id)}
-                colorVar="var(--color-mention-player)"
-              /> has died.
+              <Name id={d.target_id} {view} chip /> has died.
               {#if d.death_message}
                 <div class="mt-1 italic text-neutral-300">{d.death_message}</div>
               {/if}
@@ -528,20 +513,15 @@
             {@const r = event.data.DeathRole}
             <!-- Beat 2: who they turned out to be, in that role's own colour. -->
             <Announcement color={roleColorVar(r.role)} description="Role Revealed">
-              <Chip
-                label={player_name(r.target_id)}
-                colorVar="var(--color-mention-player)"
-              /> was
+              <Name id={r.target_id} {view} chip /> was
               <Chip label={roleLabel(r.role)} colorVar={roleColorVar(r.role)} />.
             </Announcement>
           {:else if "DeathTransfer" in event.data}
             {@const tr = event.data.DeathTransfer}
             <!-- Beat 3: what they left behind — never to whom. -->
             <Announcement color="var(--color-event-death)" description="Inheritance">
-              <Chip
-                label={player_name(tr.target_id)}
-                colorVar="var(--color-mention-player)"
-              /> is gone — but {death_transfer_text(tr)} passed to someone new.
+              <Name id={tr.target_id} {view} chip /> is gone — but {death_transfer_text(tr)} passed
+              to someone new.
             </Announcement>
           {:else if "AnonymousAnnouncement" in event.data}
             <Announcement
@@ -549,27 +529,76 @@
               description="Anonymous Announcement"
               content={event.data.AnonymousAnnouncement.content}
             />
+          {:else if "NewsAnchor" in event.data}
+            {@const na = event.data.NewsAnchor}
+            <Announcement color="var(--color-news-anchor)" description="News Anchor">
+              {#if na.target_id}
+                <Name id={na.target_id} {view} chip /> is now the
+                <Chip label="News Anchor" colorVar="var(--color-news-anchor)" />.
+              {:else}
+                The <Chip label="News Anchor" colorVar="var(--color-news-anchor)" /> post
+                is now vacant.
+              {/if}
+            </Announcement>
+          {:else if "NewsAnchorStatus" in event.data}
+            <Announcement color="var(--color-event-personal)" description="News Anchor">
+              {#if event.data.NewsAnchorStatus.holding}
+                You are now the
+                <Chip label="News Anchor" colorVar="var(--color-news-anchor)" />.
+              {:else}
+                You are no longer the
+                <Chip label="News Anchor" colorVar="var(--color-news-anchor)" />.
+              {/if}
+            </Announcement>
+          {:else if "PressConfMembership" in event.data}
+            <Announcement
+              color="var(--color-event-personal)"
+              description="Press Conference"
+            >
+              {#if event.data.PressConfMembership.in_conf}
+                You joined the
+                <Chip label="Press Conference" colorVar="var(--color-press-conference)" />.
+              {:else}
+                You left the
+                <Chip label="Press Conference" colorVar="var(--color-press-conference)" />.
+              {/if}
+            </Announcement>
+          {:else if "PressConfStatus" in event.data}
+            {@const pc = event.data.PressConfStatus}
+            <Announcement
+              color="var(--color-press-conference)"
+              description="Press Conference"
+            >
+              <Name id={pc.target_id} {view} chip />
+              {pc.has_access ? "joined the" : "left the"}
+              <Chip label="Press Conference" colorVar="var(--color-press-conference)" />.
+            </Announcement>
           {:else if "FailedSilentProsecution" in event.data}
             {@const f = event.data.FailedSilentProsecution}
             <Announcement
               color="var(--color-event-prosecution)"
               description="False Accusation"
-              content={`${player_name(f.accuser_id)} named an innocent person as wanted.\nReal name: ${nameLabel(f.true_name)}\n\n${orgDisplayName(f.org)} has expelled them and barred them from returning.`}
-            />
+            >
+              <Name id={f.accuser_id} {view} chip /> named an innocent person as wanted.
+              <div class="mt-1">
+                Real name: <span class="text-neutral-200">{nameLabel(f.true_name)}</span>
+              </div>
+              <div class="mt-1">
+                {orgDisplayName(f.org)} has expelled them and barred them from returning.
+              </div>
+            </Announcement>
           {:else if "RevealTrueName" in event.data}
             {@const r = event.data.RevealTrueName}
-            <Announcement
-              color="var(--color-event-reveal)"
-              description="Name Reveal"
-              content={`${player_name(r.target_id)}'s true name is ${nameLabel(r.true_name)}.`}
-            />
+            <Announcement color="var(--color-event-reveal)" description="Name Reveal">
+              <Name id={r.target_id} {view} chip />'s true name is
+              <span class="text-neutral-200">{nameLabel(r.true_name)}</span>.
+            </Announcement>
           {:else if "RevealNotebookHolding" in event.data}
             {@const r = event.data.RevealNotebookHolding}
-            <Announcement
-              color="var(--color-event-reveal)"
-              description="Notebook Check"
-              content={`${player_name(r.target_id)} is ${r.holding ? "" : "not "}currently holding a notebook.`}
-            />
+            <Announcement color="var(--color-event-reveal)" description="Notebook Check">
+              <Name id={r.target_id} {view} chip /> is {r.holding ? "" : "not "}currently
+              holding a notebook.
+            </Announcement>
           {:else if "Bugged" in event.data}
             {@const b = event.data.Bugged}
             <Announcement
@@ -603,7 +632,7 @@
             {@const pn = event.data.PollNotice}
             {@const live = pn.outcome ? null : live_poll(pn.poll_id)}
             {#if live}
-              <div class="px-3 py-1">
+              <div class="px-3 py-1" data-poll-anchor={pn.poll_id}>
                 <PollCard
                   id={pn.poll_id}
                   data={live.data}
@@ -613,56 +642,48 @@
                 />
               </div>
             {:else}
-              <Announcement
-                color="var(--color-event-vote)"
-                description={pn.outcome
-                  ? `Vote: ${poll_outcome_text(pn.poll_id, pn.outcome)}`
-                  : "Vote started"}
-                content={pn.opener
-                  ? `${poll_notice_text(pn.subject)}\nStarted by ${view.actor_name(pn.opener)}`
-                  : poll_notice_text(pn.subject)}
+              <PollNoticeCard
+                poll_id={pn.poll_id}
+                subject={pn.subject}
+                outcome={pn.outcome}
+                opener={pn.opener}
               />
             {/if}
           {:else if "PseudocideRevival" in event.data}
             {@const r = event.data.PseudocideRevival}
-            <Announcement
-              color="var(--color-event-revival)"
-              description="Revival"
-              content={`${player_name(r.target_id)} is alive.`}
-            />
+            <Announcement color="var(--color-event-revival)" description="Revival">
+              <Name id={r.target_id} {view} chip /> is alive.
+            </Announcement>
           {:else if "KidnapReveal" in event.data}
             {@const kr = event.data.KidnapReveal}
-            {@const victim = kr.victim ? player_name(kr.victim) : "the victim"}
-            <Announcement
-              color="var(--color-event-alarm)"
-              description="Kidnap Reveal"
-              content={kr.kidnapper
-                ? `Authorities have recovered ${victim}, and ${player_name(kr.kidnapper)} was revealed as the kidnapper.`
-                : `Authorities have recovered ${victim}, but the kidnapper stayed anonymous.`}
-            />
+            <Announcement color="var(--color-event-alarm)" description="Kidnap Reveal">
+              Authorities have recovered {#if kr.victim}<Name
+                  id={kr.victim}
+                  {view}
+                  chip
+                />{:else}the victim{/if}{#if kr.kidnapper}, and <Name
+                  id={kr.kidnapper}
+                  {view}
+                  chip
+                /> was revealed as the kidnapper.{:else}, but the kidnapper stayed anonymous.{/if}
+            </Announcement>
           {:else if "Kidnapping" in event.data}
             {@const k = event.data.Kidnapping}
-            <Announcement
-              color="var(--color-event-alarm)"
-              description="Kidnapping"
-              content={`${player_name(k.target_id)} has been kidnapped.`}
-            />
+            <Announcement color="var(--color-event-alarm)" description="Kidnapping">
+              <Name id={k.target_id} {view} chip /> has been kidnapped.
+            </Announcement>
           {:else if "Incarceration" in event.data}
             {@const inc = event.data.Incarceration}
-            <Announcement
-              color="var(--color-event-custody)"
-              description="Imprisonment"
-              content={inc.duration
-                ? `${player_name(inc.victim_id)} has been imprisoned for ${formatDuration(inc.duration)}.`
-                : `${player_name(inc.victim_id)} has been imprisoned.`}
-            />
+            <Announcement color="var(--color-event-custody)" description="Imprisonment">
+              <Name id={inc.victim_id} {view} chip /> has been imprisoned{#if inc.duration}
+                for {formatDuration(inc.duration)}{/if}.
+            </Announcement>
           {:else if "IncarcerationReleased" in event.data}
             {@const rel = event.data.IncarcerationReleased}
-            <Announcement
-              color="var(--color-event-custody)"
-              description="Release"
-              content={`${rel.victim ? player_name(rel.victim) : "A prisoner"} has been released.`}
-            />
+            <Announcement color="var(--color-event-custody)" description="Release">
+              {#if rel.victim}<Name id={rel.victim} {view} chip />{:else}A prisoner{/if} has
+              been released.
+            </Announcement>
           {:else if "NewIteration" in event.data}
             {@const it = event.data.NewIteration.iteration}
             <Announcement
@@ -703,10 +724,11 @@
                 ? "var(--color-event-death)"
                 : "var(--color-event-nothing)"}
               description="Kira Connection"
-              content={ka.success
-                ? `${player_name(ka.user)} reached for Kira through this line — and Kira answered.`
-                : `${player_name(ka.user)} reached for Kira through this line. Nobody answered.`}
-            />
+            >
+              <Name id={ka.user} {view} chip /> reached for Kira through this line{ka.success
+                ? " — and Kira answered."
+                : ". Nobody answered."}
+            </Announcement>
           {:else if "ContactLogEntry" in event.data}
             {@const log = event.data.ContactLogEntry}
             <ContactLogRow
@@ -774,6 +796,8 @@
                   bind:value={message_content}
                   players={view.players}
                   orgs={view.orgs}
+                  newsAnchor={view.news_anchor}
+                  pressConf={view.press_conf}
                   placeholder={`Message ${channel_name ?? ""}`}
                   onsubmit={send_message}
                 />

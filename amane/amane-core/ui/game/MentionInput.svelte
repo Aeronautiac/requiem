@@ -9,7 +9,7 @@
   import type { Mention } from "../../game/helpers.svelte";
   import {
     chipStyle,
-    mentionColorVar,
+    mentionChipColorVar,
     mentionLabel,
     mentionToken,
     orgDisplayName,
@@ -23,12 +23,26 @@
     value: string;
     players: ReadonlyMap<string, Player>;
     orgs: ReadonlyMap<string, Org>;
+    // Public status so a player candidate's chip is coloured like their name is everywhere else.
+    newsAnchor: string | null;
+    pressConf: ReadonlySet<string>;
     placeholder?: string;
     onsubmit: () => void;
   }
-  let { value = $bindable(), players, orgs, placeholder, onsubmit }: Props = $props();
+  let {
+    value = $bindable(),
+    players,
+    orgs,
+    newsAnchor,
+    pressConf,
+    placeholder,
+    onsubmit,
+  }: Props = $props();
 
   type Candidate = { mention: Mention; label: string };
+
+  const chipColor = (m: Mention) =>
+    mentionChipColorVar(m, { news_anchor: newsAnchor, press_conf: pressConf });
 
   let el = $state<HTMLDivElement>();
   let open = $state(false);
@@ -128,6 +142,8 @@
       seen.add(org.name);
       add({ mention: { kind: "org", org: org.name }, label: orgDisplayName(org.name) });
     }
+    add({ mention: { kind: "news_anchor" }, label: t("news_anchor_label") });
+    add({ mention: { kind: "press_conference" }, label: t("press_conference_label") });
     add({ mention: { kind: "system" }, label: t("display_system") });
 
     // Better match first; on a tie the shorter label (so "L" beats "Lawliet"); then source order.
@@ -144,7 +160,7 @@
     chip.dataset.token = mentionToken(c.mention);
     chip.contentEditable = "false";
     chip.className = "box-decoration-clone rounded px-0.5 py-0.5 font-medium";
-    chip.style.cssText = chipStyle(mentionColorVar(c.mention));
+    chip.style.cssText = chipStyle(chipColor(c.mention));
     chip.textContent = c.label;
 
     const space = document.createTextNode(" ");
@@ -223,7 +239,7 @@
             <span class="truncate text-ink">{c.label}</span>
             <span
               class="ml-auto rounded px-1 text-[0.65rem] uppercase tracking-wide"
-              style={chipStyle(mentionColorVar(c.mention))}>{c.mention.kind}</span
+              style={chipStyle(chipColor(c.mention))}>{c.mention.kind}</span
             >
           </button>
         </li>

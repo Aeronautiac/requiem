@@ -75,6 +75,17 @@ export type WorldEvent = {
     content: string,
   }
 } | {
+  // A press-conference roster change: someone gained or lost the right to speak on the news.
+  PressConfStatus: {
+    target_id: string,
+    has_access: boolean,
+  }
+} | {
+  // Who now holds the news anchor post, or null when it was vacated.
+  NewsAnchor: {
+    target_id: string | null,
+  }
+} | {
   // A silent prosecution named somebody who was not wanted. The accuser is the only person in it —
   // who they accused is never carried, so there is nothing here to resolve against `players`.
   FailedSilentProsecution: {
@@ -170,6 +181,18 @@ export type InfoEvent = {
 } | {
   RoleUpdate: {
     role: Role,
+  }
+} | {
+  // Derived, not delivered: the public NewsAnchor names the anchor to everyone, and the client
+  // raises this for itself when that name is (or stops being) its own key. `holding` is which way.
+  NewsAnchorStatus: {
+    holding: boolean,
+  }
+} | {
+  // Derived like NewsAnchorStatus: the public PressConfStatus names the actor to everyone, and the
+  // client raises this for itself when that actor is its own key. `in_conf` is which way.
+  PressConfMembership: {
+    in_conf: boolean,
   }
 } | {
   TrueNameUpdate: {

@@ -1,6 +1,11 @@
 use indexmap::IndexMap;
 
-use crate::{channel::ProfileBlueprint, chargepool::PoolSpecifier};
+use crate::{
+    channel::ProfileBlueprint,
+    chargepool::PoolSpecifier,
+    config::ability::{AbilityIdentifier, AbilityName},
+    passive::PassiveType,
+};
 
 pub use lawliet_types::channel::{
     BlueprintDisplayKind, ChannelPerm, NewsPolicy, PermUpdatePolicy, PresencePolicy,
@@ -19,6 +24,12 @@ pub struct WorldConfig {
     pub world_channels: IndexMap<WorldChannelName, Option<ProfileBlueprint>>,
     // Organizations spawned once on world initialization (see CreateOrgs).
     pub default_orgs: Vec<OrganizationName>,
+    // The kit that being the news anchor grants. Created ownerless on world init and reassigned to
+    // each anchor (SetNewsAnchor), never remade — so its charges survive a change of anchor.
+    // NewsControl (running the press conference) and NewsAccess (speaking on the news) are the
+    // capabilities that make someone the anchor; the rest are the post's perks.
+    pub news_anchor_abilities: Vec<AbilityIdentifier>,
+    pub news_anchor_passives: Vec<PassiveType>,
 }
 
 impl WorldConfig {
@@ -72,6 +83,15 @@ impl WorldConfig {
                 OrganizationName::KK,
                 OrganizationName::TF,
                 OrganizationName::SPK,
+            ],
+            news_anchor_abilities: vec![AbilityIdentifier {
+                name: AbilityName::CivilianArrest,
+                variant: 0,
+            }],
+            news_anchor_passives: vec![
+                PassiveType::NewsControl,
+                PassiveType::NewsAccess,
+                PassiveType::VoteAmplification { multiplier: 2 },
             ],
         }
     }

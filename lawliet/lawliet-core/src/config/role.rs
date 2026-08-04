@@ -317,26 +317,6 @@ pub fn default_role_config() -> RoleConfigMap {
     );
 
     map.insert(
-        Role::NewsAnchor,
-        RoleConfig {
-            abilities: vec![RoleAbility {
-                identifier: AbilityIdentifier {
-                    name: AbilityName::CivilianArrest,
-                    variant: 0,
-                },
-                transferrable: false,
-            }],
-            passives: vec![RolePassive {
-                passive_type: PassiveType::VoteAmplification { multiplier: 2 },
-                transferrable: false,
-            }],
-            notebooks: vec![],
-            actor_links: vec![],
-            world_channel_profiles: vec![],
-        },
-    );
-
-    map.insert(
         Role::Civilian,
         RoleConfig {
             abilities: vec![],

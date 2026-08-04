@@ -6,7 +6,7 @@
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        UpdateBugVisibilities, UpdatePassiveVisibilities, UpdateWorldViewports,
+        UpdateBugVisibilities, UpdateContactLogViewports, UpdateWorldViewports,
     },
     common::Version,
     engine::Engine,
@@ -46,7 +46,7 @@ impl ActionInterface for RemoveState {
             .handle(eng, ctx, actor, version, mutate)?;
 
         // See AddState: DisablePassiveLinks coming off restores reach to a linked passive's log.
-        Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
+        Action::UpdateContactLogViewports(UpdateContactLogViewports {})
             .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::RemoveState(RemoveStateResponse {}))

@@ -8,5 +8,5 @@ pub struct Passive {
     pub passive_type: PassiveType,
     // A passive owns no viewport. The one passive type that feeds a viewport — ContactLogs — reads
     // one of three WORLD-level log viewports instead (see World::contact_log_viewports). Holding
-    // the passive is what enters an actor into the matching one, via UpdatePassiveVisibilities.
+    // the passive is what enters an actor into the matching one, via UpdateContactLogViewports.
 }

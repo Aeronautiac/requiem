@@ -11,6 +11,7 @@ import type {
   ContactLogType,
   OrganizationName,
   PassiveType,
+  PollSubject,
   ProsecutionPhaseView,
   Role,
   Statuses,
@@ -224,7 +225,10 @@ export function displayKey(d: ActorDisplay): string {
 // PRESENTATION ONLY. Nothing derived from this may be sent back or compared against anything — the
 // stored copy is the name, and this is a rendering of it.
 export function nameLabel(name: string): string {
-  return name.replace(/\S+/g, (word) => word[0].toUpperCase() + word.slice(1));
+  return name.replace(
+    /\S+/g,
+    (word) => word[0].toUpperCase() + word.slice(1).toLowerCase(),
+  );
 }
 
 // Falls back to a generated label rather than a bare key, matching how every other unnamed object
@@ -257,6 +261,54 @@ export function channelLabel(name: string): string {
   return key in STRINGS ? t(key) : name;
 }
 
+// What a poll asks, in one line: an ability's pretty name, "Arrest <player>", or the raw generic
+// text. Shared by the live poll card and the start/close notice so both read the subject the same.
+export function pollSubjectHeading(
+  subject: PollSubject,
+  players: ReadonlyMap<string, Player>,
+): string {
+  if ("Generic" in subject) return subject.Generic;
+  if ("CivilianArrest" in subject) {
+    return `Arrest ${playerLabel(slotKeyToString(subject.CivilianArrest), players)}`;
+  }
+  const name = Object.keys(subject.OrgAbility as Record<string, unknown>)[0] ?? "";
+  return name.replace(/([a-z])([A-Z])/g, "$1 $2");
+}
+
+// The proposed ability's arguments as readable label/value pairs — the target, the flags, whatever
+// the ability carries — so a voter (or a notice) sees exactly what is on the table. Empty for a
+// non-ability subject; absent optional fields are skipped rather than shown blank.
+export function pollSubjectArgs(
+  subject: PollSubject,
+  players: ReadonlyMap<string, Player>,
+): { label: string; value: string }[] {
+  if (!("OrgAbility" in subject)) return [];
+  const beh = subject.OrgAbility as Record<string, unknown>;
+  const name = Object.keys(beh)[0] ?? "";
+  const raw = (beh[name] ?? {}) as Record<string, unknown>;
+  const out: { label: string; value: string }[] = [];
+  for (const [k, v] of Object.entries(raw)) {
+    if (v === null || v === undefined) continue;
+    out.push({ label: prettyArgKey(k), value: formatArgValue(v, players) });
+  }
+  return out;
+}
+
+// "true_name" -> "True name", "target_id" -> "Target" (the _id suffix is noise on screen).
+function prettyArgKey(k: string): string {
+  const s = k.replace(/_id$/, "").replace(/_/g, " ");
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Actor keys are the only object-typed args, so they are what resolves to a player name.
+function formatArgValue(v: unknown, players: ReadonlyMap<string, Player>): string {
+  if (typeof v === "boolean") return v ? "yes" : "no";
+  if (typeof v === "object" && v !== null) {
+    return playerLabel(slotKeyToString(v as never), players);
+  }
+  return String(v);
+}
+
 // What an ability does, sourced from the one place it is written. Empty for an ability with no copy
 // yet, which the callers treat as "no description to show" rather than a blank line.
 export function abilityDescription(name: AbilityName): string {
@@ -287,6 +339,8 @@ export type Mention =
   | { kind: "player"; id: string }
   | { kind: "role"; role: Role }
   | { kind: "org"; org: OrganizationName }
+  | { kind: "news_anchor" }
+  | { kind: "press_conference" }
   | { kind: "system" };
 
 // The accent for an entity, as a `var(...)` reference into the tokens in ui/theme.css. Per-entity
@@ -308,7 +362,54 @@ export function mentionColorVar(mention: Mention): string {
       return roleColorVar(mention.role);
     case "org":
       return orgColorVar(mention.org);
+    case "news_anchor":
+      return "var(--color-news-anchor)";
+    case "press_conference":
+      return "var(--color-press-conference)";
   }
+}
+
+// The colour an actor's NAME renders in, by their public position: System reads System-red, the news
+// anchor and press-conference members take their post's accent, and everyone else reads as an
+// ordinary civilian. Anchor outranks conference outranks base. This is public status only — nothing
+// gated feeds it. Takes the structural subset of a view (like ViewerIdentity) so it stays out of the
+// GameView import cycle; a GameView satisfies it directly.
+export function nameColorVar(
+  key: string,
+  status: { news_anchor: string | null; press_conf: ReadonlySet<string> },
+): string {
+  if (key === "System") return "var(--color-mention-system)";
+  if (status.news_anchor !== null && key === status.news_anchor)
+    return "var(--color-news-anchor)";
+  if (status.press_conf.has(key)) return "var(--color-press-conference)";
+  return "var(--color-role-Civilian)";
+}
+
+// A mention chip's colour. A player mention IS that player's name, so it follows nameColorVar and
+// stays in step with how the name renders everywhere else; every other kind keeps its fixed entity
+// accent. The one place mention colour and name colour are reconciled.
+export function mentionChipColorVar(
+  mention: Mention,
+  status: { news_anchor: string | null; press_conf: ReadonlySet<string> },
+): string {
+  return mention.kind === "player"
+    ? nameColorVar(mention.id, status)
+    : mentionColorVar(mention);
+}
+
+// The colour a resolved ActorDisplay renders in — a message sender, a prosecution party. A Raw
+// player follows nameColorVar so the header matches their name everywhere else; a role or org keeps
+// its entity accent; System is System-red; Mysterious reads as the anonymous accent. Pairs with
+// actorLabel, which resolves the text.
+export function displayColorVar(
+  display: ActorDisplay,
+  status: { news_anchor: string | null; press_conf: ReadonlySet<string> },
+): string {
+  if (display === "System") return "var(--color-mention-system)";
+  if (display === "Mysterious") return "var(--color-event-anonymous)";
+  if ("Raw" in display) return nameColorVar(slotKeyToString(display.Raw), status);
+  if ("Role" in display) return roleColorVar(display.Role);
+  return "var(--color-org)";
 }
 
 // The inline style for a ping chip, given its accent var reference. The background is the same
@@ -324,7 +425,7 @@ export type MessageSegment = { text: string } | { mention: Mention };
 
 // Two alternatives: a kinded token whose value is `[^>]+` (so a player's `idx:version` key keeps
 // its own colon — only the first colon, after the kind, is the separator), or bare `@<system>`.
-const MENTION_RE = /@<(player|role|org):([^>]+)>|@<(system)>/g;
+const MENTION_RE = /@<(player|role|org):([^>]+)>|@<(system|news_anchor|press_conference)>/g;
 
 export function parseMentions(content: string): MessageSegment[] {
   const segments: MessageSegment[] = [];
@@ -332,9 +433,13 @@ export function parseMentions(content: string): MessageSegment[] {
   for (const match of content.matchAll(MENTION_RE)) {
     const start = match.index;
     if (start > last) segments.push({ text: content.slice(last, start) });
-    const [, kind, value, system] = match;
-    const mention: Mention = system
-      ? { kind: "system" }
+    const [, kind, value, bare] = match;
+    const mention: Mention = bare
+      ? bare === "news_anchor"
+        ? { kind: "news_anchor" }
+        : bare === "press_conference"
+          ? { kind: "press_conference" }
+          : { kind: "system" }
       : kind === "player"
         ? { kind: "player", id: value }
         : kind === "role"
@@ -353,6 +458,8 @@ export function mentionToken(mention: Mention): string {
   if (mention.kind === "player") return `@<player:${mention.id}>`;
   if (mention.kind === "role") return `@<role:${mention.role}>`;
   if (mention.kind === "org") return `@<org:${mention.org}>`;
+  if (mention.kind === "news_anchor") return "@<news_anchor>";
+  if (mention.kind === "press_conference") return "@<press_conference>";
   return "@<system>";
 }
 
@@ -361,6 +468,8 @@ export function mentionLabel(mention: Mention, players: ReadonlyMap<string, Play
   if (mention.kind === "player") return playerLabel(mention.id, players);
   if (mention.kind === "org") return orgDisplayName(mention.org);
   if (mention.kind === "role") return roleLabel(mention.role);
+  if (mention.kind === "news_anchor") return t("news_anchor_label");
+  if (mention.kind === "press_conference") return t("press_conference_label");
   return t("display_system");
 }
 
@@ -369,6 +478,8 @@ export function mentionLabel(mention: Mention, players: ReadonlyMap<string, Play
 export interface ViewerIdentity {
   own_key: string;
   own_role: Role | null;
+  news_anchor: string | null;
+  press_conf: ReadonlySet<string>;
   orgs: ReadonlyMap<string, Org>;
 }
 
@@ -382,6 +493,9 @@ export function mentionsViewer(id: ViewerIdentity, content: string): boolean {
     if (m.kind === "system" && id.own_key === "System") return true;
     if (m.kind === "player" && m.id === id.own_key) return true;
     if (m.kind === "role" && m.role === id.own_role) return true;
+    if (m.kind === "news_anchor" && id.news_anchor !== null && id.news_anchor === id.own_key)
+      return true;
+    if (m.kind === "press_conference" && id.press_conf.has(id.own_key)) return true;
     if (m.kind === "org") {
       for (const org of id.orgs.values()) {
         if (org.name === m.org && org.members.has(id.own_key)) return true;

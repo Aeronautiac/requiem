@@ -63,4 +63,6 @@ pub enum PassiveType {
     ContactLogs(ContactLogType),
     OwnedNotebookBlock,
     CustodyBugReceiver,
+    NewsControl,
+    NewsAccess,
 }

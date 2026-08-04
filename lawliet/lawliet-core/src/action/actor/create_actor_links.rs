@@ -6,7 +6,7 @@
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        UpdatePassiveVisibilities,
+        UpdateContactLogViewports,
     },
     actor::{ActorLink, ActorLinkType, ActorType},
     common::ActorKey,
@@ -72,7 +72,7 @@ impl ActionInterface for CreateActorLinks {
         }
 
         // A new Passive link means reach into somebody else's logs.
-        Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
+        Action::UpdateContactLogViewports(UpdateContactLogViewports {})
             .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::CreateActorLinks(

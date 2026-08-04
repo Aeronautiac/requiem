@@ -10,7 +10,7 @@ use crate::{
         IncarcerationKey, IterationCount, KidnappingKey, LogID, NotebookKey, PassiveKey, PollKey,
         PollWeight, ProsecutionKey, Time, ViewportKey,
     },
-    organization::{OrganizationName, OrgAbility},
+    organization::{OrgAbility, OrganizationName},
     passive::{ContactLog, ContactLogType, PassiveType},
     poll::{PollOptionIndex, PollOptionTally, PollOutcome, PollParent, PollSubject},
     prosecution::{ProsecutionPhaseView, ProsecutionSide},
@@ -185,6 +185,18 @@ pub enum Command {
         accuser_id: ActorKey,
         true_name: String,
         org: OrganizationName,
+    },
+
+    PressConfStatus {
+        target_id: ActorKey,
+        has_access: bool,
+    },
+
+    // Who currently holds the news anchor post, or None when it is vacant. Rides the world-events
+    // viewport like PressConfStatus: a public status change, backfilled to a late arrival, silenced
+    // by a blackout the same as the rest of the news.
+    NewsAnchor {
+        target_id: Option<ActorKey>,
     },
 
     ////////////////////////////////////////////////

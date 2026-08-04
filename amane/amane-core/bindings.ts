@@ -26,7 +26,6 @@ export type Role =
   | "Watari"
   | "BeyondBirthday"
   | "PrivateInvestigator"
-  | "NewsAnchor"
   | "Civilian"
   | "RogueCivilian"
   | "Poser"
@@ -210,7 +209,9 @@ export type PassiveType =
   | "VolatileEyes"
   | { ContactLogs: ContactLogType }
   | "OwnedNotebookBlock"
-  | "CustodyBugReceiver";
+  | "CustodyBugReceiver"
+  | "NewsControl"
+  | "NewsAccess";
 
 export type VoterPolicy = "Present";
 
@@ -535,7 +536,7 @@ export type DestroyBug = {
 
 export type UpdateBugVisibilities = Record<string, never>;
 
-export type UpdatePassiveVisibilities = Record<string, never>;
+export type UpdateContactLogViewports = Record<string, never>;
 
 export type CreateChannel = {
   loggable: boolean;
@@ -887,6 +888,16 @@ export type SetBlackout = {
   active: boolean;
 };
 
+export type PressConfAccess = {
+  target_id: ActorKey;
+  has_access: boolean;
+};
+
+// null vacates the post.
+export type SetNewsAnchor = {
+  target_id: ActorKey | null;
+};
+
 export type Action =
   | { ChangeOrgLeader: ChangeOrgLeader }
   | { Kill: Kill }
@@ -986,7 +997,7 @@ export type Action =
   | { InitializeEngine: InitializeEngine }
   | { SetRandomSeed: SetRandomSeed }
   | { UpdateBugVisibilities: UpdateBugVisibilities }
-  | { UpdatePassiveVisibilities: UpdatePassiveVisibilities }
+  | { UpdateContactLogViewports: UpdateContactLogViewports }
   | { ProsecutionVoteRes: ProsecutionVoteRes }
   | { CreateKidnapping: CreateKidnapping }
   | { ReleaseKidnapping: ReleaseKidnapping }
@@ -996,7 +1007,9 @@ export type Action =
   | { CreateIncarceration: CreateIncarceration }
   | { ReleaseIncarceration: ReleaseIncarceration }
   | { CullIncarcerations: CullIncarcerations }
-  | { NextIteration: NextIteration };
+  | { NextIteration: NextIteration }
+  | { PressConfAccess: PressConfAccess }
+  | { SetNewsAnchor: SetNewsAnchor };
 
 export type OrgActorInfo = {
   org_id: ActorKey;
@@ -1093,7 +1106,12 @@ export type ActionError =
   | "MustChooseSuccessor"
   | "NoEyes"
   | "NotAPollOption"
-  | "PollHasNoOptions";
+  | "PollHasNoOptions"
+  | "ConferenceFull"
+  | "AlreadyInConference"
+  | "NotInConference"
+  | "NoNewsControl"
+  | "AlreadyNewsAnchor";
 
 export type ActionResponse =
   | { AddPlayer: { id: ActorKey } }
@@ -1130,6 +1148,11 @@ export type Command =
   | { IncarcerationReleased: { incarceration_id: IncarcerationKey } }
   | { PseudocideRevival: { target_id: ActorKey } }
   | { AnonymousAnnouncement: { content: string } }
+  // A press-conference roster change: someone gained or lost the right to speak on the news beyond
+  // the anchor. Rides world-events like the rest of the news.
+  | { PressConfStatus: { target_id: ActorKey; has_access: boolean } }
+  // Who now holds the news anchor post, or null when it is vacant.
+  | { NewsAnchor: { target_id: ActorKey | null } }
   // The org is a NAME, not a key: this reaches everyone present, and an org's key only resolves for
   // a client that can see that org's channel. Who was accused is deliberately not carried.
   | { FailedSilentProsecution: { accuser_id: ActorKey; true_name: string; org: OrganizationName } }

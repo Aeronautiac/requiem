@@ -2,7 +2,7 @@ pub mod add_passive;
 pub mod create_and_give_passive;
 pub mod destroy_passive;
 pub mod give_passive;
-pub mod update_passive_visibilities;
+pub mod take_passive;
 
 #[cfg(test)]
 mod contact_log_tests {

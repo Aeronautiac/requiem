@@ -6,6 +6,7 @@ pub mod create_and_give_ability;
 pub mod destroy_ability;
 pub mod give_ability;
 pub mod remove_link;
+pub mod take_ability;
 pub mod use_ability;
 
 // test usages, transfers, volatility, presence restrictions, non-ownership, wrong data, world

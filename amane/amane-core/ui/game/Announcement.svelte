@@ -29,7 +29,7 @@
 
     <div class="relative">
       <div
-        class="text-xs font-semibold uppercase tracking-wide"
+        class="text-[0.8rem] font-semibold uppercase tracking-wide"
         style="color: {color}"
       >
         {description}

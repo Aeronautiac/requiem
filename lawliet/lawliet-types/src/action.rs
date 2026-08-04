@@ -107,6 +107,11 @@ pub enum ActionError {
     PerformerRequiresOrg,
     CannotTargetSelf,
     WorldIsBlackedOut,
+    ConferenceFull,
+    AlreadyInConference,
+    NotInConference,
+    NoNewsControl,
+    AlreadyNewsAnchor,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -205,6 +210,15 @@ pub struct GiveAbility {
     pub ability_id: AbilityKey,
     pub actor_id: ActorKey,
     pub volatile: bool,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct TakeAbilityResponse {}
+
+// Take an ability off its owner, leaving it in the world unowned. The inverse of GiveAbility.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct TakeAbility {
+    pub ability_id: AbilityKey,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -334,6 +348,27 @@ pub struct GiveOrgAbility {
     pub org_id: ActorKey,
     pub ability_id: AbilityKey,
     pub settings: OrgAbility,
+}
+
+// news
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct PressConfAccessResponse {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct PressConfAccess {
+    pub target_id: ActorKey,
+    pub has_access: bool,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetNewsAnchorResponse {}
+
+// Name the news anchor, or vacate the post with None. The anchor's kit (its abilities and passives)
+// lives on the world; this hands its ownership to the target rather than remaking it, so charge
+// state carries across a change of anchor. Vacating strips the kit back to ownerless.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct SetNewsAnchor {
+    pub target_id: Option<ActorKey>,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -566,10 +601,12 @@ pub struct UpdateBugVisibilitiesResponse {}
 pub struct UpdateBugVisibilities {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdatePassiveVisibilitiesResponse {}
+pub struct UpdateContactLogViewportsResponse {}
 
+// Recompute who is entered into the three world contact-log viewports, from effective possession of
+// the matching ContactLogs passive. The record is a world singleton; this only gates who reads it.
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-pub struct UpdatePassiveVisibilities {}
+pub struct UpdateContactLogViewports {}
 
 // channel
 
@@ -1104,6 +1141,15 @@ pub struct GivePassive {
     pub volatile: bool,
 }
 
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct TakePassiveResponse {}
+
+// Take a passive off its owner, leaving it in the world unowned. The inverse of GivePassive.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct TakePassive {
+    pub passive_id: PassiveKey,
+}
+
 // ////////////////////////////////////////////////
 // POLL //
 // ////////////////////////////////////////////////
@@ -1325,6 +1371,14 @@ pub struct UpdateActorStatusesResponse {}
 pub struct UpdateActorStatuses {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdatePressConferenceResponse {}
+
+// Drop any press-conference guest who can no longer be there (lost presence), so a state change that
+// makes someone ineligible also takes their spot in the conference — and with it their news Send.
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+pub struct UpdatePressConference {}
+
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct UpdateOrgEffectiveMembersResponse {}
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -1391,9 +1445,11 @@ pub enum Action {
     UseAbility(UseAbility),
     ScheduleRevive(ScheduleRevive),
     GiveAbility(GiveAbility),
+    TakeAbility(TakeAbility),
     AddPassive(AddPassive),
     DestroyPassive(DestroyPassive),
     GivePassive(GivePassive),
+    TakePassive(TakePassive),
     SeverLinks(SeverLinks),
     CreateActorLinks(CreateActorLinks),
     PurgeVolatiles(PurgeVolatiles),
@@ -1469,12 +1525,13 @@ pub enum Action {
     UpdateWorldViewports(UpdateWorldViewports),
     UpdateTimers(UpdateTimers),
     UpdateActorStatuses(UpdateActorStatuses),
+    UpdatePressConference(UpdatePressConference),
     UpdateOrgEffectiveMembers(UpdateOrgEffectiveMembers),
     SetBlackout(SetBlackout),
     InitializeEngine(InitializeEngine),
     SetRandomSeed(SetRandomSeed),
     UpdateBugVisibilities(UpdateBugVisibilities),
-    UpdatePassiveVisibilities(UpdatePassiveVisibilities),
+    UpdateContactLogViewports(UpdateContactLogViewports),
     ProsecutionVoteRes(ProsecutionVoteRes),
     CreateKidnapping(CreateKidnapping),
     ReleaseKidnapping(ReleaseKidnapping),
@@ -1486,6 +1543,8 @@ pub enum Action {
     CullIncarcerations(CullIncarcerations),
     CreatePersonalChannel(CreatePersonalChannel),
     ReturnBorrowedNotebooks(ReturnBorrowedNotebooks),
+    PressConfAccess(PressConfAccess),
+    SetNewsAnchor(SetNewsAnchor),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1510,11 +1569,13 @@ pub enum ActionResponse {
     AddAbility(AddAbilityResponse),
     DestroyAbility(DestroyAbilityResponse),
     GiveAbility(GiveAbilityResponse),
+    TakeAbility(TakeAbilityResponse),
     UseAbility(UseAbilityResponse),
     ScheduleRevive(ScheduleReviveResponse),
     AddPassive(AddPassiveResponse),
     DestroyPassive(DestroyPassiveResponse),
     GivePassive(GivePassiveResponse),
+    TakePassive(TakePassiveResponse),
     SeverLinks(SeverLinksResponse),
     CreateActorLinks(CreateActorLinksResponse),
     PurgeVolatiles(PurgeVolatilesResponse),
@@ -1590,12 +1651,13 @@ pub enum ActionResponse {
     UpdateWorldViewports(UpdateWorldViewportsResponse),
     UpdateTimers(UpdateTimersResponse),
     UpdateActorStatuses(UpdateActorStatusesResponse),
+    UpdatePressConference(UpdatePressConferenceResponse),
     UpdateOrgEffectiveMembers(UpdateOrgEffectiveMembersResponse),
     SetBlackout(SetBlackoutResponse),
     InitializeEngine(InitializeEngineResponse),
     SetRandomSeed(SetRandomSeedResponse),
     UpdateBugVisibilities(UpdateBugVisibilitiesResponse),
-    UpdatePassiveVisibilities(UpdatePassiveVisibilitiesResponse),
+    UpdateContactLogViewports(UpdateContactLogViewportsResponse),
     ProsecutionVoteRes(ProsecutionVoteResResponse),
     CreateKidnapping(CreateKidnappingResponse),
     ReleaseKidnapping(ReleaseKidnappingResponse),
@@ -1606,6 +1668,8 @@ pub enum ActionResponse {
     ReleaseIncarceration(ReleaseIncarcerationResponse),
     CullIncarcerations(CullIncarceratationsResponse),
     ReturnBorrowedNotebooks(ReturnBorrowedNotebooksResponse),
+    PressConfAccess(PressConfAccessResponse),
+    SetNewsAnchor(SetNewsAnchorResponse),
 }
 
 impl ActionActor {

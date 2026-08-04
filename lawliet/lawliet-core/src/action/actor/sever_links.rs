@@ -5,7 +5,7 @@
 
 use crate::action::{
     Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-    UpdatePassiveVisibilities,
+    UpdateContactLogViewports,
 };
 
 pub use crate::action::{SeverLinks, SeverLinksResponse};
@@ -31,7 +31,7 @@ impl ActionInterface for SeverLinks {
         }
 
         // A severed Passive link takes back whatever reach it granted.
-        Action::UpdatePassiveVisibilities(UpdatePassiveVisibilities {})
+        Action::UpdateContactLogViewports(UpdateContactLogViewports {})
             .handle(eng, ctx, actor, version, mutate)?;
 
         Ok(ActionResponse::SeverLinks(SeverLinksResponse {}))

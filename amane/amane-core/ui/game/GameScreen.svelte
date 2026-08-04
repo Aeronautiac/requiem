@@ -13,6 +13,8 @@
   import StatusBadges from "./StatusBadges.svelte";
   import ChannelView from "./ChannelView.svelte";
   import AdminPanel from "../admin/AdminPanel.svelte";
+  import PlayerMenu from "./PlayerMenu.svelte";
+  import { PLAYER_MENU_KEY, PlayerMenuController } from "./player_menu.svelte";
 
   // The caller keys on this, so the component is rebuilt whenever it changes and the contexts
   // below can never outlive the session they came from.
@@ -30,6 +32,7 @@
   setContext(SESSION_KEY, self);
   setContext(GAME_STATE_KEY, game);
   setContext(UI_STATE_KEY, ui);
+  setContext(PLAYER_MENU_KEY, new PlayerMenuController());
 
   // Rail widths, in px. Drag the divider between a rail and the message column, or focus it and use
   // the arrow keys. Bounds keep either rail from swallowing the conversation or collapsing to nothing.
@@ -119,4 +122,6 @@
       <StatusBadges />
     </div>
   </div>
+
+  <PlayerMenu />
 {/if}

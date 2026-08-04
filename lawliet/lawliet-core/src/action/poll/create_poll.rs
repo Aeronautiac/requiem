@@ -34,7 +34,6 @@ impl ActionInterface for CreatePoll {
             return Err(ActionError::PollHasNoOptions);
         }
 
-        // Validate
         for opt in self.options.iter_mut() {
             if let Some(payload) = &mut opt.payload {
                 payload.validate(eng, ctx, &ActionActor::System, version)?;

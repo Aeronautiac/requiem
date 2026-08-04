@@ -1,18 +1,22 @@
 <script lang="ts">
-  // Pure presentation; the parent resolves the sender to a display string. Content still carries
-  // raw mention tokens, which MentionText resolves against `players` — the one thing a mention
-  // needs a view for.
+  // The sender resolves against the view — label via actorLabel, colour via displayColorVar, so the
+  // header matches how that name renders everywhere else. Content still carries raw mention tokens,
+  // which MentionText resolves against the same view.
   //
   // `grouped` only drops the sender header for a continuation of an uninterrupted run from the
   // same sender. Every row stays its own hover target and carries its own time.
   import { formatTime } from "../../lib/utils";
-  import type { Player } from "../../game/types";
+  import { actorLabel, displayColorVar } from "../../game/helpers.svelte";
+  import type { GameView } from "../../game/view.svelte";
+  import type { ActorDisplay } from "../../bindings";
+  import { slotKeyToString } from "../../bindings";
   import MentionText from "./MentionText.svelte";
+  import Name from "./Name.svelte";
 
   interface Props {
-    sender: string;
+    senderDisplay: ActorDisplay;
     content: string;
-    players: ReadonlyMap<string, Player>;
+    view: GameView;
     timestamp: number;
     grouped?: boolean;
     // Whether this message names the viewer. Tints the whole row and keeps the tint on hover,
@@ -24,9 +28,9 @@
     last?: boolean;
   }
   let {
-    sender,
+    senderDisplay,
     content,
-    players,
+    view,
     timestamp,
     grouped = false,
     mentioned = false,
@@ -34,6 +38,16 @@
   }: Props = $props();
 
   const time = $derived(formatTime(timestamp));
+  const senderLabel = $derived(actorLabel(senderDisplay, view.players));
+  const senderColor = $derived(displayColorVar(senderDisplay, view));
+  // A player sender routes through Name so its header is clickable (opens the profile menu) and
+  // coloured like that name everywhere else; roles / orgs / System / Mysterious have no player to
+  // act on, so they stay plain coloured text.
+  const senderPlayer = $derived(
+    typeof senderDisplay !== "string" && "Raw" in senderDisplay
+      ? slotKeyToString(senderDisplay.Raw)
+      : null,
+  );
 </script>
 
 <div
@@ -46,11 +60,15 @@
 >
   {#if !grouped}
     <div class="flex items-baseline gap-2">
-      <span class="font-medium text-neutral-100">{sender}</span>
+      {#if senderPlayer}
+        <Name id={senderPlayer} {view} />
+      {:else}
+        <span class="font-medium" style="color: {senderColor}">{senderLabel}</span>
+      {/if}
       <span class="text-xs text-neutral-500">{time}</span>
     </div>
   {/if}
   <div class="whitespace-pre-wrap break-words text-sm text-neutral-300">
-    <MentionText {content} {players} />
+    <MentionText {content} {view} />
   </div>
 </div>

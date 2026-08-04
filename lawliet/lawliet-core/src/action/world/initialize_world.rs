@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
-        AddChargePool, CreateChannel, CreateOrgs,
+        AddAbility, AddChargePool, AddPassive, CreateChannel, CreateOrgs,
     },
     channel::ChannelKind,
     common::ViewportKey,
@@ -102,6 +102,42 @@ impl ActionInterface for InitializeWorld {
                     false,
                     None,
                 );
+            }
+        }
+
+        // The news anchor's kit: created ownerless here, its ownership handed to whoever a host names
+        // as anchor (SetNewsAnchor). Non-transferrable so a killer never inherits it, non-volatile so
+        // nothing purges it — it waits on the last anchor until it is handed on. Held on the world so
+        // it can be reassigned rather than remade, which is what keeps its charges across a change of
+        // anchor.
+        let anchor_abilities = eng.config.world_config.news_anchor_abilities.clone();
+        for identifier in anchor_abilities {
+            let response = Action::AddAbility(AddAbility {
+                ability_name: identifier.name,
+                variant: identifier.variant,
+                transferrable: false,
+            })
+            .handle(eng, ctx, actor, version, mutate)?;
+            if mutate {
+                let ActionResponse::AddAbility(data) = response else {
+                    unreachable!()
+                };
+                eng.world.news.anchor_abilities.insert(data.id);
+            }
+        }
+
+        let anchor_passives = eng.config.world_config.news_anchor_passives.clone();
+        for passive_type in anchor_passives {
+            let response = Action::AddPassive(AddPassive {
+                passive_type,
+                transferrable: false,
+            })
+            .handle(eng, ctx, actor, version, mutate)?;
+            if mutate {
+                let ActionResponse::AddPassive(data) = response else {
+                    unreachable!()
+                };
+                eng.world.news.anchor_passives.insert(data.id);
             }
         }
 

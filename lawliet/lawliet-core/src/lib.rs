@@ -165,6 +165,7 @@ mod helpers;
 mod incarceration;
 mod kidnapping;
 mod lounge;
+mod news;
 mod notebook;
 mod ownership;
 mod passive;
@@ -202,8 +203,7 @@ pub use common::{
 // decouples game time from real world time, but this might be how it should have been from the
 // start. the game can have conceptual time starting from 0, conceptual weekdays, etc... i doubt
 // this would be hard to change. it requires no engine work.
-// - you cannot edit the game's config as an admin. key revocation, the "end my turn" item and the
-// fake-notebook client work are all done now; they are left off this list for that reason.
+// - you cannot edit the game's config as an admin.
 // - you cannot see the list of running games on the platform layer of the client. not important
 // yet, but eventually needs to get done.
 // - the server has no persistence layer yet. everything is held in RAM, which is fine for testing,
@@ -213,7 +213,6 @@ pub use common::{
 // After this, deployment. We have a hetzner cx23 waiting as well as a cloudflare domain.
 
 // TODO:
-// - Press conferences
 // - Rulesets & live config editing
 // - Add destroy actions for the different kinds of objects (actors will be the final destroyable objects. they may get very messy.)
 
@@ -228,18 +227,15 @@ mod tests {
         test_helpers::*,
     };
 
-    // Regression: PurgeVolatiles formerly removed volatile resources from world maps but not from
-    // the actor's own ID sets. On a second role change, PurgeVolatiles would iterate stale IDs and
-    // panic. Verified by cycling through a role with volatile resources twice.
     #[test]
     fn repeated_role_change_purges_stale_ids() {
         let mut eng = Engine::new();
         init_engine(&mut eng);
 
-        let p1 = add_player(&mut eng, 0, Role::NewsAnchor, "p1"); // gains ability + passive
+        let p1 = add_player(&mut eng, 0, Role::Watari, "p1"); // gains abilities + passives
 
-        give_role(&mut eng, 0, p1, Role::Civilian); // purges NewsAnchor volatiles
-        give_role(&mut eng, 0, p1, Role::NewsAnchor); // would panic before the fix
+        give_role(&mut eng, 0, p1, Role::Civilian); // purges Watari volatiles
+        give_role(&mut eng, 0, p1, Role::Watari); // would panic before the fix
 
         let actor = get_actor(&eng, p1).unwrap();
 
