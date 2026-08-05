@@ -587,5 +587,15 @@ pub fn default_ability_config() -> AbilityConfigMap {
         },
     );
 
+    // No pools: it is used once and then destroys itself. Does not require presence — a player can
+    // make the deal without being present.
+    map.insert(
+        identifier(AbilityName::ShinigamiEyeDeal, 0),
+        AbilityConfig {
+            require_presence: false,
+            default_links: vec![],
+        },
+    );
+
     map
 }

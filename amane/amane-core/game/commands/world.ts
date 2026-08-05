@@ -12,6 +12,7 @@
 import { slotKeyToString } from "../../bindings";
 import { nameLabel, orgDisplayName, playerLabel, t } from "../helpers.svelte";
 import { formatDuration } from "../../lib/utils";
+import type { GameEvent } from "../types";
 import type { CmdCtx, Handlers } from "./index";
 
 // A death is dealt out as three reveals, this far apart: the death itself, then who they were, then
@@ -24,13 +25,22 @@ export const worldHandlers: Handlers = {
     const target_id = slotKeyToString(p.target_id);
     const ts = ctx.timestamp;
 
-    // The transfer reveal is skipped entirely when nothing changed hands — an empty third beat would
-    // just deflate the sequence.
+    // The org and transfer reveals are each skipped when they have nothing to say — an empty beat
+    // would just deflate the sequence. Beats are numbered as they are appended, so a skipped one
+    // takes no slot and the ones after it move up rather than leaving a silent gap.
+    const orgs = p.orgs.map(([id, view]) => ({
+      id: slotKeyToString(id),
+      leader: view.leader,
+      og: view.og,
+    }));
     const has_transfer = p.notebook_transferred || p.ability_transferred;
 
-    ctx.view.stage_world_events([
+    let beat = 0;
+    const at = () => ts + beat++ * DEATH_STAGGER_MS;
+
+    const beats: GameEvent[] = [
       {
-        timestamp: ts,
+        timestamp: at(),
         data: {
           Death: {
             target_id,
@@ -42,25 +52,25 @@ export const worldHandlers: Handlers = {
           },
         },
       },
-      {
-        timestamp: ts + DEATH_STAGGER_MS,
-        data: { DeathRole: { target_id, role: p.role } },
-      },
-      ...(has_transfer
-        ? [
-            {
-              timestamp: ts + 2 * DEATH_STAGGER_MS,
-              data: {
-                DeathTransfer: {
-                  target_id,
-                  notebook_transferred: p.notebook_transferred,
-                  ability_transferred: p.ability_transferred,
-                },
-              },
-            },
-          ]
-        : []),
-    ]);
+      { timestamp: at(), data: { DeathRole: { target_id, role: p.role } } },
+    ];
+    if (orgs.length > 0) {
+      beats.push({ timestamp: at(), data: { DeathOrgs: { target_id, orgs } } });
+    }
+    if (has_transfer) {
+      beats.push({
+        timestamp: at(),
+        data: {
+          DeathTransfer: {
+            target_id,
+            notebook_transferred: p.notebook_transferred,
+            ability_transferred: p.ability_transferred,
+          },
+        },
+      });
+    }
+
+    ctx.view.stage_world_events(beats);
 
     ctx.notify({
       title: t("toast_death_title"),
@@ -126,6 +136,17 @@ export const worldHandlers: Handlers = {
       data: { AnonymousAnnouncement: { content: p.content } },
     });
     ctx.notify({ title: t("toast_announcement_title"), body: p.content });
+  },
+
+  EyeDealTaken(ctx: CmdCtx, p) {
+    ctx.view.events.push({
+      timestamp: ctx.timestamp,
+      data: { EyeDealTaken: { user: p.user } },
+    });
+    ctx.notify({
+      title: t("toast_eye_deal_title"),
+      body: t("toast_eye_deal_body", { who: ctx.view.resolve_display(p.user) }),
+    });
   },
 
   FailedSilentProsecution(ctx: CmdCtx, p) {

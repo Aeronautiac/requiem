@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { execErrorText } from "../../../game/helpers.svelte";
+  import { execErrorText, orgDisplayName } from "../../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../../game/state.svelte";
   import { SESSION_KEY, type SessionState } from "../../../session.svelte.ts";
   import { UI_STATE_KEY } from "../../../ui_state.svelte.ts";
   import type { GameState } from "../../../game/state.svelte";
   import type { UiState } from "../../../ui_state.svelte.ts";
-  import type { Role } from "../../../bindings";
+  import type { ActorKey, OrgMemberView, Role } from "../../../bindings";
   import { slotKeyFromString } from "../../../bindings";
   import { ROLES } from "../../../constants";
   import { Flash } from "../../../flash.svelte.ts";
@@ -21,13 +21,24 @@
   const session = getContext<SessionState>(SESSION_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
 
+  const view = $derived(game.view_of(ui.viewer));
+
   let target = $state("");
   let true_name = $state("");
   let death_message = $state("");
   let role = $state<Role>(ROLES[0]);
   let notebook_transferred = $state(false);
   let ability_transferred = $state(false);
+  // Fabricated affiliations to show on the fake death. Every org rides the data viewport, so any of
+  // them can be named; each entry carries whatever leader/OG standing the faker wants seen. Keyed by
+  // org actor key; absence means that org is not part of the lie.
+  let org_reveal = $state<Record<string, { leader: boolean; og: boolean }>>({});
   const flash = new Flash();
+
+  function toggle_org(key: string) {
+    if (org_reveal[key]) delete org_reveal[key];
+    else org_reveal[key] = { leader: false, og: false };
+  }
 
   async function fake_death() {
     if (!target) {
@@ -43,8 +54,13 @@
         Pseudocide: {
           target_id: slotKeyFromString(target),
           true_name,
-          death_message,
+          // Blank means "use the default death message" — send None, not an empty string.
+          death_message: death_message.trim() ? death_message : null,
           role,
+          orgs: Object.entries(org_reveal).map(
+            ([key, v]) =>
+              [slotKeyFromString(key), { leader: v.leader, og: v.og }] as [ActorKey, OrgMemberView],
+          ),
           notebook_transferred,
           ability_transferred,
         },
@@ -91,6 +107,34 @@
       {/each}
     </select>
   </label>
+
+  <div class="flex flex-col gap-1 text-xs text-neutral-500">
+    Affiliations revealed
+    <div class="flex flex-col gap-1 rounded-md bg-neutral-800 p-2">
+      {#each [...view.orgs] as [key, org] (key)}
+        <div class="flex items-center gap-2">
+          <label class="flex flex-1 items-center gap-2 text-sm text-neutral-300">
+            <input
+              type="checkbox"
+              checked={!!org_reveal[key]}
+              onchange={() => toggle_org(key)}
+            />
+            {orgDisplayName(org.name)}
+          </label>
+          {#if org_reveal[key]}
+            <label class="flex items-center gap-1 text-xs text-neutral-400">
+              <input type="checkbox" bind:checked={org_reveal[key].leader} /> leader
+            </label>
+            <label class="flex items-center gap-1 text-xs text-neutral-400">
+              <input type="checkbox" bind:checked={org_reveal[key].og} /> og
+            </label>
+          {/if}
+        </div>
+      {:else}
+        <span class="text-neutral-500">No organizations to name.</span>
+      {/each}
+    </div>
+  </div>
 
   <label class="flex items-center gap-2 text-sm text-neutral-300">
     <input type="checkbox" bind:checked={notebook_transferred} />

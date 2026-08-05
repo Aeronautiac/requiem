@@ -5,7 +5,7 @@
 * Changing a player's role destroys any of their volatile resources
 */
 
-use lawliet_types::command::CommandRecipient;
+use lawliet_types::command::{Command, CommandRecipient};
 
 use crate::{
     action::{
@@ -15,7 +15,6 @@ use crate::{
     },
     actor::ActorDisplay,
     channel::BlueprintDisplayKind,
-    command::Command,
     helpers::{get_player, get_player_mut, get_role_config, get_world_channel_id},
 };
 

@@ -8,7 +8,7 @@
 */
 
 use indexmap::{IndexSet, indexset};
-use lawliet_types::lounge::AnonymousLoungeRoleDisplay;
+use lawliet_types::{command::Command, lounge::AnonymousLoungeRoleDisplay};
 use smallvec::{SmallVec, smallvec};
 
 use lawliet_types::channel::{ContactPolicy, PermUpdatePolicy};
@@ -17,7 +17,6 @@ use crate::{
     action::{Action, ActionInterface, ActionResponse, CreateAndGiveProfile, CreateChannel},
     actor::ActorDisplay,
     channel::ChannelKind,
-    command::Command,
     common::{ActorKey, LoungeKey},
     helpers::{cmd_channel, cmd_contact_log, get_player, get_player_mut},
     lounge::{Lounge, LoungeVariant},

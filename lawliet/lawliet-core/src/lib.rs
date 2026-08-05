@@ -156,7 +156,6 @@ mod actor;
 mod bug;
 mod channel;
 mod chargepool;
-mod command;
 mod common;
 mod config;
 pub mod engine;
@@ -198,6 +197,7 @@ pub use common::{
 // it here.
 
 // CURRENT PROJECT ISSUES:
+// - autopsy and tap in are not implemented on the server and client
 // - there is no way to skip time on the server. the server needs some kind of offset value. you
 // should be able to send in a "time skip" value as an admin and skip ahead by that amount. this
 // decouples game time from real world time, but this might be how it should have been from the
@@ -208,9 +208,6 @@ pub use common::{
 // yet, but eventually needs to get done.
 // - the server has no persistence layer yet. everything is held in RAM, which is fine for testing,
 // but needs to get done for actual long-running games.
-//
-// The good news is that basically all of the hard parts are done. This final phase is just polish.
-// After this, deployment. We have a hetzner cx23 waiting as well as a cloudflare domain.
 
 // TODO:
 // - Rulesets & live config editing

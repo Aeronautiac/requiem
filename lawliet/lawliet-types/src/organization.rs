@@ -4,6 +4,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{common::MemberCount, role::Role};
 
+// for client display on reveal
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Hash, Eq, Ord, Serialize, Deserialize)]
+pub struct OrgMemberView {
+    pub leader: bool,
+    pub og: bool,
+}
+
 #[derive(Hash, PartialEq, Eq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum OrganizationName {
     NULL,

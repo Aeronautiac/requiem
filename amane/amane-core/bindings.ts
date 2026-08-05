@@ -46,6 +46,7 @@ export type AbilityName =
   | "TapIn"
   | "Blackout"
   | "ShinigamiSacrifice"
+  | "ShinigamiEyeDeal"
   | "BackgroundCheck"
   | "CivilianArrest"
   | "UnlawfulArrest"
@@ -161,6 +162,9 @@ export type ProfileBlueprint = {
 };
 
 export type OrganizationName = "NULL" | "KK" | "TF" | "SPK";
+
+// One member's standing in an org, as revealed on death and as fabricated by a pseudocide.
+export type OrgMemberView = { leader: boolean; og: boolean };
 
 export type OrgAbilityPolicies = number;
 export const OrgAbilityPolicyFlag = {
@@ -305,7 +309,7 @@ export type WorldChannelName = "News" | "General" | "Prison" | "LAndWatari";
 
 export type AbilityBehaviour =
   | { Contact: { target_id: ActorKey } }
-  | { Pseudocide: { target_id: ActorKey; true_name: string; death_message: string; role: Role; notebook_transferred: boolean; ability_transferred: boolean } }
+  | { Pseudocide: { target_id: ActorKey; true_name: string; death_message: string | null; role: Role; orgs: [ActorKey, OrgMemberView][]; notebook_transferred: boolean; ability_transferred: boolean } }
   | { Gun: { target_id: ActorKey } }
   | { AnonymousAnnouncement: { content: string } }
   | { AnonymousContact: { target: ActorKey } }
@@ -327,6 +331,7 @@ export type AbilityBehaviour =
   | { UnlawfulArrest: { target: ActorKey } }
   | { UnderTheRadar: Record<string, never> }
   | { ShinigamiSacrifice: { sacrifice: ActorKey; name_target: ActorKey } }
+  | { ShinigamiEyeDeal: Record<string, never> }
   | { KiraConnection: { lounge: LoungeKey } }
   | { TrueNameReroll: { target: ActorKey; true_name: string } }
   | { TapIn: { contact_id: number } }
@@ -1066,6 +1071,7 @@ export type ActionError =
   | "AlreadyVoted"
   | "PlayerIsBlacklisted"
   | "OrgDoesntHaveLeadership"
+  | "NoDuplicateOrgs"
   | "ActorAlreadyInOrg"
   | "UserNotPresent"
   | "PlayerNotInOrg"
@@ -1141,7 +1147,7 @@ export type Command =
   | { EnterViewport: { viewport: ViewportKey; actor: ActorKey } }
   | { ExitViewport: { viewport: ViewportKey; actor: ActorKey } }
   | { MapViewport: { viewport: ViewportKey; kind: ViewportKind } }
-  | { Death: { target_id: ActorKey, true_name: string; death_message: string; role: Role; notebook_transferred: boolean; ability_transferred: boolean } }
+  | { Death: { target_id: ActorKey, true_name: string; death_message: string; role: Role; orgs: [ActorKey, OrgMemberView][]; notebook_transferred: boolean; ability_transferred: boolean } }
   | { Kidnapping: { kidnapping_id: KidnappingKey; target_id: ActorKey; duration: number | null } }
   | { KidnapReveal: { kidnapping_id: KidnappingKey; kidnapper: ActorKey | null } }
   | { Incarceration: { incarceration_id: IncarcerationKey; victim_id: ActorKey; duration: number | null } }
@@ -1171,6 +1177,7 @@ export type Command =
   | { Bugged: { context: BugContext } }
   | { NewIteration: { iteration: number } }
   | { Blackout: { active: boolean } }
+  | { EyeDealTaken: { user: ActorDisplay } }
   | { GcOwnerStatus: { owner: boolean; gc_id: GroupchatKey } }
   | { OgStatus: { target_id: ActorKey; org_id: ActorKey; og: boolean } }
   // DIRECTED: every name the room can currently see, and what each may do. The whole set, every
@@ -1197,7 +1204,7 @@ export type Command =
   | { NotebookFakeStatus: { notebook_id: NotebookKey; fake: boolean } }
   | { OrgEffectiveMembers: { org_id: ActorKey; members: ActorKey[] } }
   | { AddContactLog: { kind: ContactLogType; log: ContactLog } }
-  | { UpdateAbilityView: { ability_name: AbilityName; success_usages_remaining: number; failure_usages_remaining: number; iterations_to_reset: number; ability_id: AbilityKey; owner_id: ActorKey } }
+  | { UpdateAbilityView: { ability_name: AbilityName; success_usages_remaining: number; failure_usages_remaining: number; iterations_to_reset: number; base_reset: number; unlimited: boolean; ability_id: AbilityKey; owner_id: ActorKey } }
   | { RemoveAbility: { ability_id: AbilityKey } }
   | { OrgAbilityRequirements: { ability_id: AbilityKey; requirements: OrgAbility } }
   | { UpdatePassiveView: { passive_type: PassiveType; passive_id: PassiveKey; owner_id: ActorKey } }
@@ -1216,7 +1223,14 @@ export type Command =
   | { UpdatePollView: { poll_id: PollKey; eligible: boolean; own_vote: PollOptionIndex | null } }
   | { UpdateProsecution: { prosecution_id: ProsecutionKey; prosecutor_display: ActorDisplay; defendant_display: ActorDisplay; phase: ProsecutionPhaseView; trial_channel: ChannelKey | null; lawyer_display: ActorDisplay | null } }
   | { InProsecution: { prosecution_id: ProsecutionKey; side: ProsecutionSide } }
-  | { CloseProsecution: { prosecution_id: ProsecutionKey; verdict: boolean | null } };
+  | { CloseProsecution: { prosecution_id: ProsecutionKey; verdict: boolean | null } }
+  // admin directed
+  | { OrgLeader: { leader: ActorKey | null; org_id: ActorKey } }
+  // player directed
+  | { LeaderStatus: { org_id: ActorKey; leader: boolean } }
+  // player directed: the recipient's own eye count, emitted when an ability changes it
+  | { EyeCount: { count: number } };
+
 
 // What a channel belongs to. Every channel in the game is an ordinary engine channel; this is the
 // thing that owns it, and it carries whatever ties the two together.

@@ -122,12 +122,17 @@ export function new_player(display_name: string | null): Player {
 }
 
 export function new_org(name: OrganizationName): Org {
-  return {
+  // $state, like new_player: `leader` is a plain scalar, so without a reactive proxy around the
+  // object a change to it would update the value but never re-render. The Set/Map members are
+  // reactive on their own; the scalar is what needs this.
+  const org: Org = $state({
     name,
+    leader: null,
     members: new SvelteSet<string>(),
     effective: new SvelteSet<string>(),
     abilities: new SvelteMap<string, AbilityView>(),
-  };
+  });
+  return org;
 }
 
 // Create or refresh one entry in an ability list. Shared because the same UpdateAbilityView lands
@@ -136,12 +141,14 @@ export function new_org(name: OrganizationName): Org {
 // no name for it.
 export function upsert_ability(
   abilities: Map<string, AbilityView>,
-  { ability_id, ability_name, success_usages_remaining, failure_usages_remaining, iterations_to_reset }: {
+  { ability_id, ability_name, success_usages_remaining, failure_usages_remaining, iterations_to_reset, base_reset, unlimited }: {
     ability_id: AbilityKey;
     ability_name: AbilityName;
     success_usages_remaining: number;
     failure_usages_remaining: number;
     iterations_to_reset: number;
+    base_reset: number;
+    unlimited: boolean;
   },
 ) {
   const id = slotKeyToString(ability_id);
@@ -150,6 +157,8 @@ export function upsert_ability(
     existing.success_usages_remaining = success_usages_remaining;
     existing.failure_usages_remaining = failure_usages_remaining;
     existing.iterations_to_reset = iterations_to_reset;
+    existing.base_reset = base_reset;
+    existing.unlimited = unlimited;
     return;
   }
   const view: AbilityView = $state({
@@ -157,6 +166,8 @@ export function upsert_ability(
     success_usages_remaining,
     failure_usages_remaining,
     iterations_to_reset,
+    base_reset,
+    unlimited,
   });
   abilities.set(id, view);
 }

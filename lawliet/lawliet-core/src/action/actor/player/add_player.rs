@@ -3,6 +3,8 @@
 * Add a new player to the world
 */
 
+use lawliet_types::command::Command;
+
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
@@ -10,7 +12,6 @@ use crate::{
         UpdateWorldViewports,
     },
     actor::ActorKind,
-    command::Command,
     common::{ActorKey, Version},
     engine::Engine,
     helpers::{cmd_world_data, get_actor_mut, get_charge_pool_mut},

@@ -18,7 +18,7 @@ use crate::{
     },
     channel::ChannelKind,
     common::ActorKey,
-    helpers::{cmd_channel, get_actor_mut, get_charge_pool_mut},
+    helpers::{cmd_channel, cmd_world_data, get_actor_mut, get_charge_pool_mut},
 };
 
 use crate::action::ActionActor;
@@ -74,18 +74,15 @@ impl ActionInterface for CreateOrg {
             ActorKey::default()
         };
 
-        // The org first, then the channel that names it: both ride the org channel's viewport, and
-        // the link only means something once the org it points at exists.
-        cmd_channel(
+        // TODO:
+        // check if this change broke anything on the client
+        cmd_world_data(
             eng,
             ctx,
             Command::MapActor {
                 actor_id: id,
                 kind: ActorKind::Org(self.name),
             },
-            channel_id,
-            false,
-            None,
         );
 
         cmd_channel(

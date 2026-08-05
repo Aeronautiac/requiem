@@ -3,11 +3,10 @@
 * Archive (disable) a bug.
 */
 
-use lawliet_types::command::CommandRecipient;
+use lawliet_types::command::{Command, CommandRecipient};
 
 use crate::{
     action::{ActionInterface, ActionResponse},
-    command::Command,
     helpers::get_bug_mut,
 };
 

@@ -15,7 +15,11 @@
 * floor — the one place a message drives something other than itself.
 */
 
-use lawliet_types::{actor::Modifier, channel::ChannelPerm, command::CommandRecipient};
+use lawliet_types::{
+    actor::Modifier,
+    channel::ChannelPerm,
+    command::{Command, CommandRecipient},
+};
 use smallvec::SmallVec;
 
 use crate::{
@@ -24,7 +28,6 @@ use crate::{
         prosecution::grace_ended_by,
     },
     actor::ActorDisplay,
-    command::Command,
     common::BugKey,
     helpers::{
         cmd_channel, cmd_channel_roster, get_actor, get_channel, get_channel_mut, player_id,

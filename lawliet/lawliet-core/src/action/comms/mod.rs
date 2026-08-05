@@ -5,7 +5,10 @@ pub mod lounge;
 
 #[cfg(test)]
 mod comms_tests {
-    use lawliet_types::{channel::FixedPolicy, command::CommandRecipient};
+    use lawliet_types::{
+        channel::FixedPolicy,
+        command::{Command, CommandRecipient},
+    };
 
     use crate::{
         action::{
@@ -25,7 +28,6 @@ mod comms_tests {
         actor::{ActorDisplay, state::State},
         bug::BugSource,
         channel::{ChannelKind, ChannelPerm, ChannelPermSet, PermUpdatePolicy},
-        command::Command,
         common::{AbilityKey, ActorKey, BugKey, ChannelKey, ViewportKey},
         config::{ability::AbilityName, role::Role},
         engine::Engine,

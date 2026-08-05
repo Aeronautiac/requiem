@@ -60,9 +60,19 @@ impl AbilityInterface for NotebookReveal {
                 matches!(p, PassiveType::VolatileEyes)
             })
             .is_some();
-            if volatile_eyes && mutate {
-                let user = get_player_mut(eng, user_id)?;
-                user.eyes = user.eyes.saturating_sub(1);
+            if volatile_eyes {
+                if mutate {
+                    let user = get_player_mut(eng, user_id)?;
+                    user.eyes = user.eyes.saturating_sub(1);
+                }
+                // push_cmd no-ops on the dry pass, so the count read here is the post-spend value
+                // on the mutate pass and harmless on the dry one.
+                let count = get_player(eng, user_id)?.eyes;
+                ctx.push_cmd(
+                    Command::EyeCount { count },
+                    CommandRecipient::Actor(user_id),
+                    eng.time,
+                );
             }
             Ok(super::AbilityStatus::Failure)
         }

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{ActorKey, ID, LoungeKey},
+    organization::OrgMemberView,
     role::Role,
 };
 
@@ -18,6 +19,7 @@ pub enum AbilityName {
     TapIn,
     Blackout,
     ShinigamiSacrifice,
+    ShinigamiEyeDeal,
     BackgroundCheck,
     CivilianArrest,
     UnlawfulArrest,
@@ -40,7 +42,7 @@ pub enum AbilityName {
     SilentProsecute,
 }
 
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub enum AbilityBehaviour {
     Contact(Contact),
     Pseudocide(Pseudocide),
@@ -68,6 +70,7 @@ pub enum AbilityBehaviour {
     UnlawfulArrest(UnlawfulArrest),
     UnderTheRadar(UnderTheRadar),
     ShinigamiSacrifice(ShinigamiSacrifice),
+    ShinigamiEyeDeal(ShinigamiEyeDeal),
     KiraConnection(KiraConnection),
     TrueNameReroll(TrueNameReroll),
     TapIn(TapIn),
@@ -77,6 +80,11 @@ pub enum AbilityBehaviour {
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
 pub struct Blackout {}
+
+// Take the shinigami eye deal: consumes itself and grants the user the TrueNameReveal ability. The
+// world is told the user took the deal. No target, no config beyond that.
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+pub struct ShinigamiEyeDeal {}
 
 // Org ability. Accuse a player of being wanted, with no trial, no vote, and no announcement that
 // anybody was accused at all.
@@ -266,12 +274,15 @@ pub struct Gun {
     pub target_id: ActorKey,
 }
 
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct Pseudocide {
     pub target_id: ActorKey,
     pub true_name: String,
-    pub death_message: String,
+    pub death_message: Option<String>,
     pub role: Role,
+    // Array of pairs, not a map: see the note on Command::Death — an ActorKey-keyed map cannot
+    // serialize to JSON.
+    pub orgs: Vec<(ActorKey, OrgMemberView)>,
     pub notebook_transferred: bool,
     pub ability_transferred: bool,
 }

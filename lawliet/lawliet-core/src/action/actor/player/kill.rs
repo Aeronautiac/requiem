@@ -3,6 +3,7 @@
 * Kill a player and handle side effects
 */
 
+use lawliet_types::command::Command;
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
@@ -12,12 +13,11 @@ use crate::{
         SeverLinks, TakeNotebook,
     },
     actor::{ActorLinkType, ActorType, state::State},
-    command::Command,
     common::Version,
     engine::Engine,
     helpers::{
         cmd_world_event, get_ability, get_actor, get_actor_mut, get_notebook, get_passive,
-        require_alive,
+        member_views, require_alive,
     },
 };
 
@@ -170,6 +170,7 @@ impl ActionInterface for Kill {
                     } else {
                         eng.config.defaults.death_message.clone()
                     },
+                    orgs: member_views(eng, self.target_id),
                     role,
                     notebook_transferred,
                     ability_transferred,

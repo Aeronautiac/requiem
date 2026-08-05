@@ -6,7 +6,7 @@
 
 use lawliet_types::{
     channel::{AlivePolicy, PermUpdatePolicy},
-    command::CommandRecipient,
+    command::{Command, CommandRecipient},
 };
 
 use crate::{
@@ -15,7 +15,6 @@ use crate::{
         CreateAndGiveProfile, RemoveFromChannel,
     },
     actor::ActorDisplay,
-    command::Command,
     helpers::{get_actor_mut, get_notebook},
 };
 

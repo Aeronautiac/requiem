@@ -4,6 +4,8 @@
 * drop any bugs referencing this ability, then remove from the world.
 */
 
+use lawliet_types::command::Command;
+
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
@@ -11,7 +13,7 @@ use crate::{
     },
     bug::BugSource,
     common::{BugKey, ChargePoolKey},
-    helpers::{get_ability, get_actor, get_actor_mut},
+    helpers::{get_ability, get_actor, get_actor_mut, owner_view_recipient},
 };
 
 // TODO:
@@ -67,6 +69,15 @@ impl ActionInterface for DestroyAbility {
                 get_actor_mut(eng, owner_id)
                     .expect("ability owner does not exist: engine invariant violated")
                     .remove_ability(self.ability_id);
+                // Hide it from the former owner's client, exactly as TakeAbility would — otherwise a
+                // destroyed ability lingers on screen.
+                ctx.push_cmd(
+                    Command::RemoveAbility {
+                        ability_id: self.ability_id,
+                    },
+                    owner_view_recipient(eng, owner_id),
+                    eng.time,
+                );
             }
             eng.world.remove_ability(self.ability_id);
         }

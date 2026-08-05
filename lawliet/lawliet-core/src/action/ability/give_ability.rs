@@ -6,13 +6,14 @@
 // Handle organization transfers. Orgs have a map of ability ids to ability metadata.
 // Shouild probably be done in higher level actions
 
+use lawliet_types::command::Command;
+
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
         ActionResult, AddLink, ClearVolatileLinks, UpdateBugVisibilities,
     },
     chargepool::{ChargeConditions, PoolLink},
-    command::Command,
     config::ability::{AbilityIdentifier, ConfigPoolLinkDetails},
     helpers::{get_ability, get_ability_mut, get_actor, get_actor_mut, owner_view_recipient},
 };
@@ -114,7 +115,7 @@ impl ActionInterface for GiveAbility {
 
         if mutate {
             let ability = get_ability(eng, self.ability_id)?;
-            let (success_usages_remaining, failure_usages_remaining, iterations_to_reset) =
+            let (success_usages_remaining, failure_usages_remaining, iterations_to_reset, base_reset) =
                 ability.get_ability_view_counts(eng);
             ctx.push_cmd(
                 Command::UpdateAbilityView {
@@ -122,6 +123,8 @@ impl ActionInterface for GiveAbility {
                     success_usages_remaining,
                     failure_usages_remaining,
                     iterations_to_reset,
+                    base_reset,
+                    unlimited: ability.is_unlimited(),
                     ability_id: self.ability_id,
                     owner_id: self.actor_id,
                 },

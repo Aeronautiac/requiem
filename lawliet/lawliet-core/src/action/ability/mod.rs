@@ -18,6 +18,7 @@ pub mod use_ability;
 
 #[cfg(test)]
 mod ability_tests {
+
     use crate::{
         ability::{AbilityBehaviour, gun::Gun, pseudocide::Pseudocide},
         action::{
@@ -174,10 +175,11 @@ mod ability_tests {
                 AbilityBehaviour::Pseudocide(Pseudocide {
                     target_id: p1,
                     true_name: "john porkington".into(),
-                    death_message: "hlep".into(),
+                    death_message: Some("hlep".into()),
                     role: Role::Civilian,
                     notebook_transferred: false,
                     ability_transferred: false,
+                    orgs: Vec::new(),
                 })
             )
             .is_err()

@@ -8,9 +8,9 @@
 * - remove kidnapping record (before RemoveState so UpdateKidnapChannels sees it gone)
 * - RemoveState(victim, State::Kidnapped)
 * - DestroyChannel(channel)
-*
-* TODO: commands (reveal kidnapper identity if public kidnapping)
 */
+
+use lawliet_types::command::Command;
 
 use crate::{
     action::{
@@ -18,7 +18,6 @@ use crate::{
         ActionResult, DestroyChannel, RemoveState,
     },
     actor::{ActorDisplay, state::State},
-    command::Command,
     common::Version,
     engine::Engine,
     helpers::{actor_owns_ability, cmd_world_event, get_kidnapping},

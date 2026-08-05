@@ -32,6 +32,7 @@ pub mod outsource;
 pub mod prosecute;
 pub mod pseudocide;
 pub mod public_kidnap;
+pub mod shinigami_eye_deal;
 pub mod shinigami_sacrifice;
 pub mod silent_prosecute;
 pub mod tap_in;
@@ -83,6 +84,7 @@ impl AbilityInterface for AbilityBehaviour {
             AbilityBehaviour::UnlawfulArrest(a) => a.ability_name(),
             AbilityBehaviour::UnderTheRadar(a) => a.ability_name(),
             AbilityBehaviour::ShinigamiSacrifice(a) => a.ability_name(),
+            AbilityBehaviour::ShinigamiEyeDeal(a) => a.ability_name(),
             AbilityBehaviour::KiraConnection(a) => a.ability_name(),
             AbilityBehaviour::TrueNameReroll(a) => a.ability_name(),
             AbilityBehaviour::TapIn(a) => a.ability_name(),
@@ -159,6 +161,9 @@ impl AbilityInterface for AbilityBehaviour {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
             AbilityBehaviour::ShinigamiSacrifice(a) => {
+                a.handle(eng, ctx, actor, ability, version, mutate)
+            }
+            AbilityBehaviour::ShinigamiEyeDeal(a) => {
                 a.handle(eng, ctx, actor, ability, version, mutate)
             }
             AbilityBehaviour::KiraConnection(a) => {
@@ -279,16 +284,30 @@ impl Ability {
         lowest_limit.or(highest_permissive)
     }
 
+    // No charge pools means no restriction at all: the ability can be used without limit. The
+    // caller sends this as the `unlimited` flag so the client shows it as such instead of "0 uses".
+    pub fn is_unlimited(&self) -> bool {
+        self.pool_links.is_empty()
+    }
+
     // Usage counts split by outcome. With conditional charge subtraction, the number of
     // successful uses left can differ from the number of failed uses left (e.g. an
     // OnSuccess-only Invite pool limits only successes, while a both-outcomes attempts
-    // pool limits both). Returns (success_usages, failure_usages, iterations_to_reset);
-    // reset is the soonest reset across all pools, independent of the usage constraint.
+    // pool limits both). Returns (success_usages, failure_usages, iterations_to_reset, base_reset):
+    // `iterations_to_reset` is the soonest LIVE countdown across all pools (0 until a use arms one),
+    // `base_reset` is the soonest recharge PERIOD, so the cadence can be shown before any use. All
+    // are meaningless when the ability is_unlimited (no pools to iterate) and default to 0.
     pub fn get_ability_view_counts(
         &self,
         eng: &Engine,
-    ) -> (ChargeCount, ChargeCount, crate::common::IterationCount) {
+    ) -> (
+        ChargeCount,
+        ChargeCount,
+        crate::common::IterationCount,
+        crate::common::IterationCount,
+    ) {
         let mut min_reset: Option<crate::common::IterationCount> = None;
+        let mut min_base_reset: Option<crate::common::IterationCount> = None;
         for link_container in self.pool_links.iter() {
             let pool = eng
                 .world
@@ -297,11 +316,19 @@ impl Ability {
             if min_reset.map_or(true, |r| pool.iterations_to_reset < r) {
                 min_reset = Some(pool.iterations_to_reset);
             }
+            if min_base_reset.map_or(true, |r| pool.base_reset_time < r) {
+                min_base_reset = Some(pool.base_reset_time);
+            }
         }
 
         let success = self.outcome_usages(eng, ChargeCondition::OnSuccess);
         let failure = self.outcome_usages(eng, ChargeCondition::OnFailure);
-        (success, failure, min_reset.unwrap_or(0))
+        (
+            success,
+            failure,
+            min_reset.unwrap_or(0),
+            min_base_reset.unwrap_or(0),
+        )
     }
 
     // How many times the ability can be used with a given outcome, based on which pools

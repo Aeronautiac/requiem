@@ -3,10 +3,11 @@
 * Create a group chat
 */
 
+use lawliet_types::command::Command;
+
 use crate::{
     action::{Action, ActionInterface, ActionResponse, CreateChannel},
     channel::ChannelKind,
-    command::Command,
     common::GroupchatKey,
     groupchat::Groupchat,
     helpers::cmd_channel,

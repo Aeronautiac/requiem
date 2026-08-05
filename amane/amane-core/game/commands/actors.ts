@@ -132,6 +132,16 @@ export const actorHandlers: Handlers = {
     });
   },
 
+  // Directed to the player whose eyes changed. Personal, like the reveals above: it lands in their
+  // notifications and raises a toast, so they notice an eye was spent without hunting for a counter.
+  EyeCount(ctx: CmdCtx, p) {
+    ctx.view.push_notif(ctx.timestamp, { EyeCount: { count: p.count } });
+    ctx.notify({
+      title: t("toast_eyes_title"),
+      body: t("toast_eyes_body", { count: p.count }),
+    });
+  },
+
   // Who planted it is deliberately not carried; `context` says only why.
   Bugged(ctx: CmdCtx, p) {
     ctx.view.push_notif(ctx.timestamp, { Bugged: { context: p.context } });

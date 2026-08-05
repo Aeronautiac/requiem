@@ -5,12 +5,13 @@
 * ready to be handed to someone else.
 */
 
+use lawliet_types::command::Command;
+
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
         ActionResult, UpdateContactLogViewports,
     },
-    command::Command,
     helpers::{get_actor_mut, get_passive, get_passive_mut, owner_view_recipient},
 };
 
@@ -33,7 +34,9 @@ impl ActionInterface for TakePassive {
         };
 
         if mutate {
-            get_passive_mut(eng, self.passive_id)?.ownership_struct.owner = None;
+            get_passive_mut(eng, self.passive_id)?
+                .ownership_struct
+                .owner = None;
             get_actor_mut(eng, old_owner)
                 .expect("passive owner missing: engine invariant violated")
                 .remove_passive(self.passive_id);

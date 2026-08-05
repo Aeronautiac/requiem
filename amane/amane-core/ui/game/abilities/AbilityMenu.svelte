@@ -41,6 +41,8 @@
       successUsages: number;
       failureUsages: number;
       resets: number;
+      baseReset: number;
+      unlimited: boolean;
       requirements?: OrgAbility;
     }[] = [];
     for (const [id, av] of source ?? []) {
@@ -51,6 +53,8 @@
         successUsages: av.success_usages_remaining,
         failureUsages: av.failure_usages_remaining,
         resets: av.iterations_to_reset,
+        baseReset: av.base_reset,
+        unlimited: av.unlimited,
         requirements: av.requirements,
       });
     }
@@ -118,6 +122,8 @@
           successUsages={ab.successUsages}
           failureUsages={ab.failureUsages}
           resets={ab.resets}
+          baseReset={ab.baseReset}
+          unlimited={ab.unlimited}
           hasUi={ABILITY_UIS[ab.name] != null}
           requirements={ab.requirements}
           onUse={() => (selectedId = ab.id)}

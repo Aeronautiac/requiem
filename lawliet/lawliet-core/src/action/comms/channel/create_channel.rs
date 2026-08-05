@@ -3,12 +3,11 @@
 * Create a channel
 */
 
-use lawliet_types::command::CommandRecipient;
+use lawliet_types::command::{Command, CommandRecipient};
 
 use crate::{
     action::{ActionInterface, ActionResponse},
     channel::Channel,
-    command::Command,
     common::{ChannelKey, ViewportKey},
     helpers::open_viewport,
     viewport::ViewportKind,

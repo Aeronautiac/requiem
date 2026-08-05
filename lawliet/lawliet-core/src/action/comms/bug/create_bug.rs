@@ -3,12 +3,11 @@
 * Create a bug that relays messages from a target player to a bug log
 */
 
-use lawliet_types::command::CommandRecipient;
+use lawliet_types::command::{Command, CommandRecipient};
 
 use crate::{
     action::{Action, ActionInterface, ActionResponse, UpdateBugVisibilities},
     bug::{Bug, BugSource},
-    command::Command,
     common::BugKey,
     helpers::{get_ability, get_player_mut, open_viewport},
     viewport::ViewportKind,

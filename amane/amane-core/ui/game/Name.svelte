@@ -37,6 +37,6 @@
 
 {#if clickable}<button
     type="button"
-    class="cursor-pointer align-baseline hover:opacity-80"
+    class="cursor-pointer text-left align-baseline hover:opacity-80"
     onclick={() => controller?.open(id)}>{@render body()}</button
   >{:else}{@render body()}{/if}

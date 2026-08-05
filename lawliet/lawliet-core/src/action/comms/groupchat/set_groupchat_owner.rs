@@ -3,12 +3,11 @@
 * Set the owner of a group chat
 */
 
-use lawliet_types::command::CommandRecipient;
+use lawliet_types::command::{Command, CommandRecipient};
 
 use crate::{
     action::{ActionError, ActionInterface, ActionResponse},
     actor::modifier::Modifier,
-    command::Command,
     helpers::{actor_id, get_actor, get_gc_mut, get_player},
 };
 

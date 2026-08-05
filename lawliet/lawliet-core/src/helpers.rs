@@ -3,7 +3,12 @@
 #![allow(dead_code)]
 
 use indexmap::IndexSet;
-use lawliet_types::{action::ActionContext, command::CommandRecipient, world::WorldPhase};
+use lawliet_types::{
+    action::ActionContext,
+    command::{Command, CommandRecipient},
+    organization::OrgMemberView,
+    world::WorldPhase,
+};
 use smallvec::SmallVec;
 
 use crate::{
@@ -11,13 +16,13 @@ use crate::{
     ability::Ability,
     action::{ActionActor, ActionError},
     actor::{
-        Actor, ActorLinkType, ActorType, Organization, Player, modifier::Modifier,
+        Actor, ActorLinkType, ActorType, Organization, Player,
+        modifier::Modifier,
         state::{State, Status, Statuses},
     },
     bug::{Bug, BugSource},
     channel::{Channel, ProfileOwners},
     chargepool::ChargePool,
-    command::Command,
     common::{
         AbilityKey, ActorKey, BugKey, ChannelKey, ChargePoolKey, GroupchatKey, IncarcerationKey,
         KidnappingKey, LoungeKey, NotebookKey, PassiveKey, PollKey, PollWeight, ProsecutionKey,
@@ -760,31 +765,36 @@ pub fn cmd_actor_status(eng: &mut Engine, ctx: &mut ActionContext, actor_id: Act
     // A presence-removing state hidden by this blackout is withheld and folds into `Missing`; one
     // the world already knew (`known`) is shown through the blackout instead of being retracted.
     let mut missing = false;
-    let mut project = |flag: Status, state: State, known: bool| {
-        if !actor.states.contains(state) {
-            return;
-        }
-        if blackout && removes_presence(state) && !known {
-            missing = true;
-        } else {
-            status |= flag;
-        }
-    };
+    {
+        let mut project = |flag: Status, state: State, known: bool| {
+            if !actor.states.contains(state) {
+                return;
+            }
+            if blackout && removes_presence(state) && !known {
+                missing = true;
+            } else {
+                status |= flag;
+            }
+        };
 
-    project(Status::Dead, State::Dead, last.contains(Status::Dead));
-    project(
-        Status::Incarcerated,
-        State::Incarcerated,
-        last.contains(Status::Incarcerated),
-    );
-    project(
-        Status::Kidnapped,
-        State::Kidnapped,
-        last.contains(Status::Kidnapped),
-    );
-    project(Status::Custody, State::Custody, last.contains(Status::Custody));
-    project(Status::Ipp, State::Ipp, last.contains(Status::Ipp));
-    drop(project);
+        project(Status::Dead, State::Dead, last.contains(Status::Dead));
+        project(
+            Status::Incarcerated,
+            State::Incarcerated,
+            last.contains(Status::Incarcerated),
+        );
+        project(
+            Status::Kidnapped,
+            State::Kidnapped,
+            last.contains(Status::Kidnapped),
+        );
+        project(
+            Status::Custody,
+            State::Custody,
+            last.contains(Status::Custody),
+        );
+        project(Status::Ipp, State::Ipp, last.contains(Status::Ipp));
+    }
 
     if missing {
         status |= Status::Missing;
@@ -798,10 +808,10 @@ pub fn cmd_actor_status(eng: &mut Engine, ctx: &mut ActionContext, actor_id: Act
         );
     }
 
-    if ctx.mutate {
-        if let Ok(actor) = get_actor_mut(eng, actor_id) {
-            actor.last_status = status;
-        }
+    if ctx.mutate
+        && let Ok(actor) = get_actor_mut(eng, actor_id)
+    {
+        actor.last_status = status;
     }
 }
 
@@ -839,10 +849,10 @@ pub fn cmd_org_effective_members(eng: &mut Engine, ctx: &mut ActionContext, org_
         None,
     );
 
-    if ctx.mutate {
-        if let Ok(org) = get_org_mut(eng, org_id) {
-            org.last_effective = present;
-        }
+    if ctx.mutate
+        && let Ok(org) = get_org_mut(eng, org_id)
+    {
+        org.last_effective = present;
     }
 }
 
@@ -1052,4 +1062,29 @@ pub fn cmd_world_data(eng: &mut Engine, ctx: &mut ActionContext, cmd: Command) {
         CommandRecipient::Viewport(eng.world.data_viewport),
         eng.time,
     );
+}
+
+pub fn member_views(eng: &Engine, p_id: ActorKey) -> Vec<(ActorKey, OrgMemberView)> {
+    let orgs: SmallVec<[ActorKey; 8]> = eng
+        .world
+        .actors
+        .iter()
+        .filter(|(id, actor)| {
+            matches!(actor.actor_type, ActorType::Org(_))
+                && get_org(eng, *id)
+                    .expect("existence already validated")
+                    .has_member(p_id)
+        })
+        .map(|(id, _actor)| id)
+        .collect();
+
+    orgs.into_iter()
+        .map(|id| {
+            let org = get_org(eng, id).expect("already validated");
+            (
+                id,
+                org.member_view(p_id).expect("membership already validated"),
+            )
+        })
+        .collect()
 }

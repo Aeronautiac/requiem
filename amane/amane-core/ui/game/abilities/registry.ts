@@ -28,6 +28,7 @@ import KidnapAbility from "./KidnapAbility.svelte";
 import UnlawfulArrestAbility from "./UnlawfulArrestAbility.svelte";
 import UnderTheRadarAbility from "./UnderTheRadarAbility.svelte";
 import ShinigamiSacrificeAbility from "./ShinigamiSacrificeAbility.svelte";
+import ShinigamiEyeDealAbility from "./ShinigamiEyeDealAbility.svelte";
 import KiraConnectionAbility from "./KiraConnectionAbility.svelte";
 import TrueNameRerollAbility from "./TrueNameRerollAbility.svelte";
 import TapInAbility from "./TapInAbility.svelte";
@@ -77,6 +78,7 @@ export const ABILITY_UIS: Partial<
   UnlawfulArrest: UnlawfulArrestAbility,
   UnderTheRadar: UnderTheRadarAbility,
   ShinigamiSacrifice: ShinigamiSacrificeAbility,
+  ShinigamiEyeDeal: ShinigamiEyeDealAbility,
   KiraConnection: KiraConnectionAbility,
   TrueNameReroll: TrueNameRerollAbility,
   TapIn: TapInAbility,

@@ -5,12 +5,13 @@
 * the former owner. The ability itself survives, ready to be handed to someone else.
 */
 
+use lawliet_types::command::Command;
+
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
         ActionResult, ClearVolatileLinks, UpdateBugVisibilities,
     },
-    command::Command,
     helpers::{get_ability, get_ability_mut, get_actor_mut, owner_view_recipient},
 };
 
@@ -39,7 +40,9 @@ impl ActionInterface for TakeAbility {
         .handle(eng, ctx, actor, version, mutate)?;
 
         if mutate {
-            get_ability_mut(eng, self.ability_id)?.ownership_struct.owner = None;
+            get_ability_mut(eng, self.ability_id)?
+                .ownership_struct
+                .owner = None;
             get_actor_mut(eng, old_owner)
                 .expect("ability owner missing: engine invariant violated")
                 .remove_ability(self.ability_id);

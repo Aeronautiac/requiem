@@ -75,6 +75,11 @@ export type WorldEvent = {
     content: string,
   }
 } | {
+  // Someone made the shinigami eye deal, revealed only as a display (currently their role).
+  EyeDealTaken: {
+    user: ActorDisplay,
+  }
+} | {
   // A press-conference roster change: someone gained or lost the right to speak on the news.
   PressConfStatus: {
     target_id: string,
@@ -208,6 +213,19 @@ export type InfoEvent = {
     contact_id: number,
     outcome: TapInOutcome,
   }
+} | {
+  // Directed: you gained or lost leadership of one org. `org_id` names which, resolved at render
+  // time — a member can lead more than one org, so the bare flag would be ambiguous.
+  LeaderStatus: {
+    org_id: string,
+    leader: boolean,
+  }
+} | {
+  // Directed: your own eye count after an ability changed it (e.g. a failed notebook reveal spending
+  // a volatile eye). Only sent on a change.
+  EyeCount: {
+    count: number,
+  }
 }
 
 // A poll started (outcome null) or ended, rendered inline in the poll's scoped channel. Distinct
@@ -254,9 +272,10 @@ export type GameEvent = {
   | ContactLogEvent
   | KiraConnectionEvent
   | ChannelTappedEvent
-  // Client-only. A Death command is staged into three timed reveals (see stage_world_events); these
-  // are the second and third. The engine never sends them — they are derived from the one Death.
+  // Client-only. A Death command is staged into a run of timed reveals (see stage_world_events);
+  // these are the later beats. The engine never sends them — they are derived from the one Death.
   | { DeathRole: { target_id: string, role: Role } }
+  | { DeathOrgs: { target_id: string, orgs: { id: string, leader: boolean, og: boolean }[] } }
   | { DeathTransfer: { target_id: string, notebook_transferred: boolean, ability_transferred: boolean } },
 }
 
@@ -301,6 +320,12 @@ export interface AbilityView {
   success_usages_remaining: number;
   failure_usages_remaining: number;
   iterations_to_reset: number;
+  // The recharge period (config), so the cadence shows before any use; iterations_to_reset is the
+  // live countdown, 0 until a use arms it.
+  base_reset: number;
+  // No charge pools at all — a pool IS the restriction, so its absence means unlimited use. When
+  // set, the counts and reset fields above are meaningless and the UI ignores them.
+  unlimited: boolean;
   // The static gates on an ORG ability — arrives on a separate OrgAbilityRequirements command after
   // the view itself. Undefined for a personal ability, which has no such gates.
   requirements?: OrgAbility;
@@ -350,6 +375,7 @@ export interface PlayerInfo {
 // can see that channel, and all members see the same list.
 export interface Org {
   name: OrganizationName;
+  leader: string | null; // actor key or nothing
   members: Set<string>; // dead members included
   // The present subset of `members` — those who count toward the org's ability member
   // requirements. A member who has lost presence (kidnapped, jailed, dead) stays in `members` but

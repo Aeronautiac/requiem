@@ -10,7 +10,7 @@ use crate::{
         IncarcerationKey, IterationCount, KidnappingKey, LogID, NotebookKey, PassiveKey, PollKey,
         PollWeight, ProsecutionKey, Time, ViewportKey,
     },
-    organization::{OrgAbility, OrganizationName},
+    organization::{OrgAbility, OrgMemberView, OrganizationName},
     passive::{ContactLog, ContactLogType, PassiveType},
     poll::{PollOptionIndex, PollOptionTally, PollOutcome, PollParent, PollSubject},
     prosecution::{ProsecutionPhaseView, ProsecutionSide},
@@ -130,6 +130,9 @@ pub enum Command {
         role: Role,
         notebook_transferred: bool,
         ability_transferred: bool,
+        // Array of pairs, not a map: ActorKey is a struct, and serde_json can only key a JSON
+        // object with strings, so an ActorKey-keyed map cannot round-trip. Same shape as `profiles`.
+        orgs: Vec<(ActorKey, OrgMemberView)>,
     },
 
     // display/announce kidnapping. can be handled similar to death. The victim is public from the
@@ -169,6 +172,12 @@ pub enum Command {
 
     AnonymousAnnouncement {
         content: String,
+    },
+
+    // world event: someone made the shinigami eye deal, revealed only as a display — currently their
+    // role, never the player themselves.
+    EyeDealTaken {
+        user: ActorDisplay,
     },
 
     // A silent prosecution named somebody who was not wanted, and the accuser is burned for it:
@@ -388,6 +397,18 @@ pub enum Command {
         og: bool,
     },
 
+    // directed to the system
+    OrgLeader {
+        leader: Option<ActorKey>,
+        org_id: ActorKey,
+    },
+
+    // directed to a player who it is relevant to
+    LeaderStatus {
+        org_id: ActorKey,
+        leader: bool,
+    },
+
     // DIRECTED: every name the room can currently see, and what each may do. The whole set, every
     // time, sent to each viewer when it changes and to anyone the moment they gain sight of the
     // channel.
@@ -523,11 +544,19 @@ pub enum Command {
     // update the view of an ability to reflect its current state. usages are split by
     // outcome because conditional charge subtraction means successful and failed uses can
     // have different remaining counts (see Ability::get_ability_view_counts).
+    //
+    // `unlimited` is set when the ability has no charge pools at all — a pool IS the restriction,
+    // so its absence means unlimited use. When it's set the counts and reset fields are meaningless
+    // and the client ignores them. `base_reset` is the recharge PERIOD (config), shown up front so
+    // the cadence is known before use; `iterations_to_reset` is the live countdown, 0 until a use
+    // arms it.
     UpdateAbilityView {
         ability_name: AbilityName,
         success_usages_remaining: ChargeCount,
         failure_usages_remaining: ChargeCount,
         iterations_to_reset: IterationCount,
+        base_reset: IterationCount,
+        unlimited: bool,
         ability_id: AbilityKey,
         owner_id: ActorKey,
     },
@@ -597,6 +626,13 @@ pub enum Command {
     RevealNotebookHolding {
         target_id: ActorKey,
         holding: bool,
+    },
+
+    // DIRECTED (to the actor itself): the recipient's own eye count, emitted when an ability
+    // changes it (currently only a failed NotebookReveal spending a volatile eye). Absent otherwise,
+    // so a player learns their eyes only when they had reason to.
+    EyeCount {
+        count: u8,
     },
 
     ////////////////////////////////////////////////

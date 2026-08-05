@@ -4,11 +4,11 @@ use crate::{
 };
 use indexmap::{IndexMap, IndexSet};
 
-use lawliet_types::common::ChannelKey;
 pub use lawliet_types::organization::{
     LeadershipTransferPolicies, LeadershipTransferPolicy, OrgAbility, OrgAbilityPolicies,
     OrgAbilityPolicy,
 };
+use lawliet_types::{common::ChannelKey, organization::OrgMemberView};
 
 // Org behaviours:
 // - Organizations have a set of actives and passives.
@@ -74,6 +74,29 @@ impl Organization {
             channel_id,
             last_effective: IndexSet::new(),
         }
+    }
+
+    // member view for an actor
+    pub fn member_view(&self, id: ActorKey) -> Option<OrgMemberView> {
+        if !self.has_member(id) {
+            return None;
+        }
+
+        let leader = if let Some(leadership) = &self.leadership_struct {
+            leadership.leader == Some(id)
+        } else {
+            false
+        };
+
+        let og = if let Some(member) = self.members.get(&id)
+            && member.og
+        {
+            true
+        } else {
+            false
+        };
+
+        Some(OrgMemberView { leader, og })
     }
 
     pub fn has_member(&self, id: ActorKey) -> bool {

@@ -4,13 +4,14 @@
 * IPP blocks this
 */
 
+use lawliet_types::command::Command;
+
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface, ActionResponse,
         ActionResult, Kill, ScheduleKill,
     },
     actor::modifier::Modifier,
-    command::Command,
     common::Version,
     engine::Engine,
     helpers::{

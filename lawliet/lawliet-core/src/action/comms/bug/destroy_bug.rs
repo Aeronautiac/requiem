@@ -4,11 +4,10 @@
 */
 
 use indexmap::IndexSet;
-use lawliet_types::command::CommandRecipient;
+use lawliet_types::command::{Command, CommandRecipient};
 
 use crate::{
     action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
-    command::Command,
     helpers::{get_bug, get_player_mut, sync_viewport},
 };
 

@@ -5,13 +5,12 @@
 * world channels) that reference this channel before calling this action.
 */
 
-use lawliet_types::command::CommandRecipient;
+use lawliet_types::command::{Command, CommandRecipient};
 
 use indexmap::IndexSet;
 
 use crate::{
     action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
-    command::Command,
     helpers::{get_channel, sync_viewport},
 };
 

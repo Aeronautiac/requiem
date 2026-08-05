@@ -3,9 +3,10 @@
 * Give an ability to an org including the org ability metadata
 */
 
+use lawliet_types::command::Command;
+
 use crate::{
     action::{Action, ActionInterface, ActionResponse, GiveAbility},
-    command::Command,
     helpers::{get_org, get_org_mut, owner_view_recipient},
 };
 

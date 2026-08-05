@@ -3,12 +3,13 @@
 * Fully destroy a passive: remove from the owning actor's cache, then remove from the world.
 */
 
+use lawliet_types::command::Command;
+
 use crate::{
     action::{
         Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
         UpdateContactLogViewports,
     },
-    command::Command,
     helpers::{get_actor, get_actor_mut, get_passive, owner_view_recipient},
 };
 

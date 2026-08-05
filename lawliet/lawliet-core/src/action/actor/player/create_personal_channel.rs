@@ -5,12 +5,12 @@ use lawliet_types::{
     },
     actor::ActorDisplay,
     channel::{ChannelPerm, FixedPolicy, PermUpdatePolicy},
+    command::Command,
 };
 
 use crate::{
     action::ActionInterface,
     channel::ChannelKind,
-    command::Command,
     helpers::{actor_id, cmd_channel, get_player, get_player_mut},
 };
 

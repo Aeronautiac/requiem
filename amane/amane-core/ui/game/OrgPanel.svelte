@@ -77,6 +77,13 @@
     return id === ui.viewer && view.og_orgs.has(org_key);
   }
 
+  // `org.leader` is the leader as far as this view is entitled to know: the whole answer on the
+  // admin's System copy, and only "yourself, or unknown" on a member's, since leadership is not
+  // announced to the wider org. Either way the question is the same one field.
+  function is_leader(id: string): boolean {
+    return !!org && org.leader === id;
+  }
+
   // Admin-only: players not already in the org.
   const candidates = $derived(
     [...view.players.entries()].filter(([id]) => !org?.members.has(id)),
@@ -135,6 +142,22 @@
         },
       },
       "OG status updated.",
+    );
+  }
+
+  // Clearing (new_leader null) when the member is already leader; promoting them otherwise. The
+  // engine rejects this on an org with no leadership at all — UX, not security — so the flash carries
+  // the reason rather than this hiding the control.
+  function toggle_leader(player_id: string) {
+    if (!org_key) return;
+    send(
+      {
+        ChangeOrgLeader: {
+          org_id: slotKeyFromString(org_key),
+          new_leader: is_leader(player_id) ? null : slotKeyFromString(player_id),
+        },
+      },
+      "Leader updated.",
     );
   }
 
@@ -204,6 +227,15 @@
                     not counted
                   </span>
                 {/if}
+                {#if is_leader(m.id)}
+                  <span
+                    class="shrink-0 border px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide"
+                    style="color:{accent};border-color:{accent}"
+                    title="The org's leader. Only they and the host are told who this is."
+                  >
+                    Leader
+                  </span>
+                {/if}
                 {#if is_og(m.id)}
                   <span
                     class="shrink-0 border px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide"
@@ -214,6 +246,13 @@
                   </span>
                 {/if}
                 {#if ui.viewer === "Admin"}
+                  <button
+                    class="shrink-0 border border-edge px-2 py-0.5 text-[0.65rem] uppercase tracking-wide text-neutral-400 hover:border-neutral-500 hover:text-ink"
+                    onclick={() => toggle_leader(m.id)}
+                    title="Toggle leader"
+                  >
+                    leader
+                  </button>
                   <button
                     class="shrink-0 border border-edge px-2 py-0.5 text-[0.65rem] uppercase tracking-wide text-neutral-400 hover:border-neutral-500 hover:text-ink"
                     onclick={() => toggle_og(m.id)}

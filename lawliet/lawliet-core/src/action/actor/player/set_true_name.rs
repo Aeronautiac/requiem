@@ -3,11 +3,13 @@
 * Set (or change) a player's true name, then notify the player (and admin) of it.
 */
 
-use lawliet_types::{action::ActionError, command::CommandRecipient};
+use lawliet_types::{
+    action::ActionError,
+    command::{Command, CommandRecipient},
+};
 
 use crate::{
     action::{ActionContext, ActionInterface, ActionResponse, ActionResult},
-    command::Command,
     common::Version,
     engine::Engine,
     helpers::get_player,

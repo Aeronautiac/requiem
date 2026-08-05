@@ -6,10 +6,12 @@
     PERM_SEND,
     actorLabel,
     channelLabel,
+    displayColorVar,
     displayKey,
     isReadOnlyKind,
     mentionsViewer,
     nameLabel,
+    orgColorVar,
     orgDisplayName,
     ownPerms,
     phaseAnnouncement,
@@ -188,6 +190,13 @@
 
   function display_string(display: ActorDisplay): string {
     return actorLabel(display, view.players);
+  }
+
+  function display_color(display: ActorDisplay): string {
+    return displayColorVar(display, {
+      news_anchor: view.news_anchor,
+      press_conf: view.press_conf,
+    });
   }
 
   // Discord-style chunking: only the sender header is dropped, and any non-message event in
@@ -516,6 +525,21 @@
               <Name id={r.target_id} {view} chip /> was
               <Chip label={roleLabel(r.role)} colorVar={roleColorVar(r.role)} />.
             </Announcement>
+          {:else if "DeathOrgs" in event.data}
+            {@const o = event.data.DeathOrgs}
+            <!-- Beat: the affiliations they turn out to have had. On a real death these are true; on
+                 a pseudocide they are whatever the faker chose to show. Leadership and OG standing,
+                 normally private, are laid bare here. -->
+            <Announcement color="var(--color-event-reveal)" description="Affiliations">
+              <Name id={o.target_id} {view} chip /> stood with
+              {#each o.orgs as org, i (org.id)}
+                {@const name = view.orgs.get(org.id)?.name}
+                <Chip
+                  label={name ? orgDisplayName(name) : t("display_org_unknown")}
+                  colorVar={name ? orgColorVar(name) : "var(--color-event-reveal)"}
+                />{#if org.leader}<span class="text-neutral-400"> (leader)</span>{:else if org.og}<span class="text-neutral-400"> (OG)</span>{/if}{#if i < o.orgs.length - 1}, {/if}
+              {/each}.
+            </Announcement>
           {:else if "DeathTransfer" in event.data}
             {@const tr = event.data.DeathTransfer}
             <!-- Beat 3: what they left behind — never to whom. -->
@@ -529,6 +553,12 @@
               description="Anonymous Announcement"
               content={event.data.AnonymousAnnouncement.content}
             />
+          {:else if "EyeDealTaken" in event.data}
+            {@const u = event.data.EyeDealTaken.user}
+            <Announcement color="var(--color-event-reveal)" description="The Eye Deal">
+              <Chip label={display_string(u)} colorVar={display_color(u)} /> has taken the shinigami eye
+              deal.
+            </Announcement>
           {:else if "NewsAnchor" in event.data}
             {@const na = event.data.NewsAnchor}
             <Announcement color="var(--color-news-anchor)" description="News Anchor">
@@ -562,6 +592,16 @@
                 You left the
                 <Chip label="Press Conference" colorVar="var(--color-press-conference)" />.
               {/if}
+            </Announcement>
+          {:else if "LeaderStatus" in event.data}
+            {@const ls = event.data.LeaderStatus}
+            {@const org_name = view.orgs.get(ls.org_id)?.name}
+            <Announcement color="var(--color-event-personal)" description="Leadership">
+              {#if ls.leader}You are now the leader of{:else}You are no longer the leader of{/if}
+              <Chip
+                label={org_name ? orgDisplayName(org_name) : t("display_org_unknown")}
+                colorVar={org_name ? orgColorVar(org_name) : "var(--color-event-personal)"}
+              />.
             </Announcement>
           {:else if "PressConfStatus" in event.data}
             {@const pc = event.data.PressConfStatus}
@@ -598,6 +638,11 @@
             <Announcement color="var(--color-event-reveal)" description="Notebook Check">
               <Name id={r.target_id} {view} chip /> is {r.holding ? "" : "not "}currently
               holding a notebook.
+            </Announcement>
+          {:else if "EyeCount" in event.data}
+            {@const c = event.data.EyeCount.count}
+            <Announcement color="var(--color-event-personal)" description="Shinigami Eyes">
+              You have <span class="text-neutral-200">{c}</span> eye{c === 1 ? "" : "s"} remaining.
             </Announcement>
           {:else if "Bugged" in event.data}
             {@const b = event.data.Bugged}

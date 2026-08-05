@@ -101,6 +101,13 @@ pub fn default_role_config() -> RoleConfigMap {
                     },
                     transferrable: false,
                 },
+                RoleAbility {
+                    identifier: AbilityIdentifier {
+                        name: AbilityName::ShinigamiEyeDeal,
+                        variant: 0,
+                    },
+                    transferrable: false,
+                },
             ],
             passives: vec![],
             notebooks: vec![RoleNotebook { fake: false }],

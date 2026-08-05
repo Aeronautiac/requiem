@@ -1,8 +1,9 @@
 use crate::{
-    ability::AbilityInterface, action::ActionContext, command::Command, common::AbilityKey,
+    ability::AbilityInterface, action::ActionContext, common::AbilityKey,
     config::ability::AbilityName, helpers::cmd_world_event,
 };
 pub use lawliet_types::ability::AnonymousAnnouncement;
+use lawliet_types::command::Command;
 
 impl AbilityInterface for AnonymousAnnouncement {
     fn ability_name(&self) -> crate::config::ability::AbilityName {

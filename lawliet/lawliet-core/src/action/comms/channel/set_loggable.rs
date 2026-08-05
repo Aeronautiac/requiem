@@ -3,11 +3,10 @@
 * Set the loggable status of a channel
 */
 
-use lawliet_types::{action::ActionError, channel::ChannelPerm};
+use lawliet_types::{action::ActionError, channel::ChannelPerm, command::Command};
 
 use crate::{
     action::{ActionInterface, ActionResponse},
-    command::Command,
     helpers::{cmd_channel, get_channel_mut, player_id},
 };
 
