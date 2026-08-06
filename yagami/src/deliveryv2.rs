@@ -47,7 +47,7 @@ use crate::delivery::History;
 // data flow:
 // we deliver to KEYS in general, and CONNECTIONS in specific cases
 // splitting these pathways would be stupid, so what can be done is:
-// one general delivery path, working on every connection.
+// one general delivery path, acting on every connection.
 // a piece of general data meant for one key + a piece of connection data meant for one specific
 // connection.
 // delivery goes through every connection, and delivers the general data regardless of if that
@@ -68,7 +68,10 @@ use crate::delivery::History;
 // we need to log every output, not just commands. a log dump is not a native output, yet it has the
 // same kinds of delivery semantics.
 //
-// history is
+// history is a log of accepted server inputs, a log of server outputs, and a viewport/log primitive cache
+
+// The key thing to know about delivery is that data which was sent to one connection cannot be conceptually
+// unsent, with one exception (time rewind).
 
 pub struct ViewportData {
     pub delivered_to: usize, // how much has this connection seen of this viewport?

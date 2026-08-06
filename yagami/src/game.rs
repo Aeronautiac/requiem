@@ -107,43 +107,6 @@ use crate::{
     wire::{ActionOutcome, ExecOutcome, GameControl, Profile, ResponsePair, ServerInput},
 };
 
-// carries the source ticket so the game task can route replies and enforce permissions.
-pub struct InputEnvelope {
-    pub ticket: Ticket,
-    pub input: ServerInput,
-}
-
-// the action the engine is currently working on.
-pub struct InFlight {
-    // who is waiting on it. `None` for actions the server issues on its own behalf -- engine
-    // initialization, null ticks -- which have no originating connection to reply to. their commands
-    // are still logged and fanned out like any other; only the reply has nowhere to go.
-    ticket: Option<Ticket>,
-    // whether to append this to the action log on success, and so replay it into a rebuilt child.
-    // false for null ticks: a tick carries no intent of its own, it only asks the engine to catch up
-    // to the clock, so a rebuilt child reaches the same state from the real actions alone. logging
-    // them would grow the log without bound for a game where nothing happens.
-    logged: bool,
-    request: ActionRequest,
-}
-
-// everything the game task hears about. one channel, not two, so ordering is free: a connection's
-// Attach is queued before any input it goes on to send, so it is always replayed before it can act.
-pub enum GameEvent {
-    // a websocket finished upgrading and wants its catch-up replay.
-    Attach { ticket: Ticket },
-    // this connection's key was widened and is owed the history it could not see before. carries
-    // the PREVIOUS privilege set because the delivery is the difference between the two, and the
-    // ledger already holds the new one by the time this is handled.
-    //
-    // narrowing has no event: it needs no log, so it is applied in place under the control's own
-    // lock (see control::apply_privilege_change).
-    Widen { ticket: Ticket, before: Privileges },
-    Input(InputEnvelope),
-}
-
-// serialize something of ours for the wire. a failure is a bug in this process, not a runtime
-// condition, so abort loudly rather than paper over a half-written protocol.
 pub fn to_line<T: Serialize>(value: &T) -> String {
     match serde_json::to_string(value) {
         Ok(json) => json + "\n",
@@ -154,6 +117,43 @@ pub fn to_line<T: Serialize>(value: &T) -> String {
     }
 }
 
+// carries the source ticket so the game task can route replies and enforce permissions.
+pub struct InputEnvelope {
+    pub ticket: Ticket,
+    pub input: ServerInput,
+}
+
+pub enum GameEvent {
+    Attach { ticket: Ticket },
+    Widen { ticket: Ticket, before: Privileges },
+    Input(InputEnvelope),
+}
+
+// the harness ticks, not the shell
+// on every tick, it ticks forward all shells
+
+// history becomes a harness level concern.
+// a harness can potentially manage multiple game shells. imagine parallel timelines.
+
+// remember, a game shell can take in
+
+struct GameHarness {
+    // identity / routing
+    game_id: GameId,
+    server_state: WrappedServerState,
+    cancel: CancellationToken,
+    // coordinator handle(s)
+    // tokio task(s)
+}
+
+// the action the engine is currently working on.
+pub struct InFlight {
+    ticket: Option<Ticket>,
+    logged: bool,
+    request: ActionRequest,
+}
+
+// this becomes part of the game shell
 struct Coordinator {
     // identity / routing
     game_id: GameId,
