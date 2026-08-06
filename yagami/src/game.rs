@@ -7,6 +7,74 @@
 // One channel in, not two, so ordering is free -- a connection's Attach is queued ahead of
 // anything it goes on to send, and is therefore always replayed before it can act.
 
+// things like profiles and keys are inherently tied to the live state of a game.
+// say for instance you were to create a key with access to an actor created later into a game,
+// and then you were to rewind time, then create a new, different actor which happened to share that same
+// actor id because it took up that free slot at a different point in time.
+// this is essentially a temporal ABA problem.
+// you cannot reconcile in this case, because you cannot confirm on the server level whether or not
+// that is the same actor that you previously gave that key access to, nor can you throw out the data,
+// because that'd require a wipe of every key's actor scope, potentially requiring the admin to
+// manually modify every existing key.
+//
+// websocket server inputs directly modify a live game, just as engine inputs directly modify the
+// engine.
+//
+// the proposed solution is to treat a "game" as a direct extension of the engine, and to replay not only
+// engine inputs, but also server inputs on the websocket layer.
+//
+// then, the database storage format, networking, and server boot handling all remain exceptionally
+// simple.
+//
+// the key invalidation scenario is resolved.
+// with the new model:
+// a rewind to some point in time removes any key from existence which was created for some state
+// that no longer exists.
+//
+// there is more than one layer to a game.
+// there is a harness (the raw server messiness manager), a shell (the server's extension of the engine,
+// the game's data), and a core (the engine process itself)
+//
+// a rewind is not part of the shell layer. it is part of the harness layer.
+// a key creation is part of the shell layer.
+// a profile creation is part of the shell layer.
+// an action request is part of the engine layer.
+//
+// furthermore, i've realized that a harness doesn't even need to run while nobody is connected to it,
+// and given this new model, we can instantly reconstruct the server's state for that game as well
+// when someone connects. all we need to do is store a cache of game keys for every game in the
+// database, so connections can be handled via REST. this saves a large chunk of memory and compute.
+//
+// given an input, a game shell produces an output.
+
+// redesign idea:
+// The harness manages the shell, and acts as a bridge between the shell, the database, and the network.
+// It takes input from connections, matches on the type of input, and either routes it to the shell,
+// or performs some higher level action ABOVE the shell, i.e., discarding the old shell and
+// resaturating for time manipulation.
+//
+// It also acts as the first permissions gate. By reading the key state (outputted as responses to
+// key related inputs), it determines if the connection is allowed to do something that typically
+// requires administrator privileges. The shell only manages its internal state. It does not care
+// about permissions enforcement outside of what the engine says. Note that this kind of thing being
+// an input with a response trivially solves the issue of clients not being able to see current key
+// state, because keys become a meta-engine level construct, and the key state is delivered just
+// like everything else. The shell doesn't care about a database. That is the job of the harness.
+// All the shell does is focus entirely on managing itself.
+//
+// After sending something to the shell, it awaits a response, and if the response was not
+// a crash or engine rejection, it saves the valid input to the database. It then delivers the
+// shell's output to every connection that is entitled to the information it returned.
+//
+// The shell manages the engine process. It is a server level engine wrapper.
+// It does not tick on its own. It is similar to the engine in the sense that it takes one input, and
+// always sends out exactly one output.
+//
+// The reason we aren't creating our own runtime here as the game shell that simply wraps around an
+// engine process is because we already have a generic engine runtime, and the stuff in the shell is
+// specific to only this server. Either would work. It's just nicer to keep all the server data in
+// one program. A shell's handle here is not a process. It is a tokio task.
+
 use std::{collections::HashMap, env::current_exe, process::Stdio, time::Duration};
 
 use lawliet_types::{

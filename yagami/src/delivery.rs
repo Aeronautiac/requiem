@@ -195,6 +195,13 @@ impl<'a> Reach<'a> {
     }
 }
 
+// a viewport cursor is held by a connection
+// a viewport cursor holds a map of viewport ids to indices (watermarks) denoting how much has been
+// delivered for any given viewport
+// it also holds a set of viewports that this connection has access to, and which actors give it
+// access to that viewport
+// also holds a set of known actors, which denote which actors this connection has
+
 // How much of each viewport one connection has been handed, and the walk that hands it more.
 //
 // The delivered set for a viewport is always a PREFIX of that viewport's commands, because gaining

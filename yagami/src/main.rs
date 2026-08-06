@@ -15,6 +15,7 @@ mod constants;
 mod auth;
 mod control;
 mod delivery;
+mod deliveryv2; // a rewrite of the ai slop, heavily simplified for personal usage
 mod game;
 mod http;
 mod names;
