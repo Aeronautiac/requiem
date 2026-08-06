@@ -33,8 +33,8 @@ use crate::{
     auth::{Key, KeyData, Privileges, Ticket, from_flags},
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
     wire::{
-        ActionOutcome, Batch, ExecOutcome, OutputData, PrivilegeSet, Profile, ProfileUpdate,
-        ResponsePair, ServerInput, ServerOutput,
+        ActionOutcome, Batch, ExecOutcome, LogCommand, OutputData, PrivilegeSet, Profile,
+        ProfileUpdate, ResponsePair, ServerInput, ServerOutput,
     },
 };
 
@@ -67,9 +67,11 @@ impl History {
         let at = self.log.len();
         for (offset, payload) in commands.iter().enumerate() {
             match &payload.recipient {
-                CommandRecipient::Viewport(viewport) => {
-                    self.viewports.entry(*viewport).or_default().push(at + offset)
-                }
+                CommandRecipient::Viewport(viewport) => self
+                    .viewports
+                    .entry(*viewport)
+                    .or_default()
+                    .push(at + offset),
                 CommandRecipient::Log(log) => {
                     self.records.entry(*log).or_default().push(at + offset)
                 }
@@ -110,7 +112,11 @@ impl History {
         from: usize,
         until: usize,
     ) -> impl Iterator<Item = &CommandPayload> {
-        let positions = self.viewports.get(&viewport).map(Vec::as_slice).unwrap_or(&[]);
+        let positions = self
+            .viewports
+            .get(&viewport)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
         let start = positions.partition_point(|&pos| pos < from);
 
         positions[start..]
@@ -118,6 +124,35 @@ impl History {
             .copied()
             .take_while(move |&pos| pos < until)
             .map(move |pos| &self.log[pos])
+    }
+
+    pub fn filtered_log<F>(&self, log_id: LogID, filter: F) -> Option<Vec<LogCommand>>
+    where
+        F: Fn(&CommandPayload) -> bool,
+    {
+        let log = self.records.get(&log_id)?;
+
+        let indices: Vec<usize> = log
+            .iter()
+            .filter(|i| {
+                let cmd = self.log.get(**i);
+                cmd.is_some() && filter(cmd.unwrap())
+            })
+            .cloned()
+            .collect();
+
+        let out: Vec<LogCommand> = indices
+            .iter()
+            .map(|i| {
+                let cmd = &self.log[*i];
+                LogCommand {
+                    time: cmd.timestamp,
+                    data: cmd.cmd.clone(),
+                }
+            })
+            .collect();
+
+        Some(out)
     }
 }
 

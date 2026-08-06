@@ -26,6 +26,7 @@ use crate::{
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ActionError {
+    EngineNotInitialized,
     NoDuplicateOrgs,
     EngineAlreadyInitialized,
     ActorNotFound,

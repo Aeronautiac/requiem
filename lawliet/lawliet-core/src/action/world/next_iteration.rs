@@ -1,6 +1,6 @@
 use lawliet_types::{
     action::{
-        Action, ActionActor, ActionRequest, ActionResponse, ArchiveBug, NextIteration,
+        Action, ActionActor, ActionError, ActionRequest, ActionResponse, ArchiveBug, NextIteration,
         ReturnBorrowedNotebooks,
     },
     actor::State,
@@ -22,6 +22,10 @@ impl ActionInterface for NextIteration {
         mutate: bool,
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;
+
+        if actor.is_admin() && !eng.initialized {
+            return Err(ActionError::EngineNotInitialized);
+        }
 
         if mutate {
             for (_, notebook) in eng.world.notebooks.iter_mut() {

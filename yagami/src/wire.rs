@@ -6,8 +6,8 @@
 
 use lawliet_types::{
     action::{ActionError, ActionRequest, ActionResponse},
-    command::CommandPayload,
-    common::ActorKey,
+    command::{Command, CommandPayload, CommandRecipient},
+    common::{ActorKey, ChannelKey, ID, Time},
 };
 use serde::{Deserialize, Serialize};
 
@@ -138,6 +138,27 @@ pub struct PrivilegeSet {
     pub capabilities: Vec<Capability>,
 }
 
+// For abilities like autopsy and tap in which request the server to output filtered data that
+// cannot be stored on the engine
+#[derive(Serialize)]
+pub struct LogCommand {
+    pub time: Time,
+    pub data: Command,
+}
+
+#[derive(Serialize)]
+pub enum LogType {
+    Autopsy(ActorKey),
+    TapIn(ID),
+}
+
+#[derive(Serialize)]
+pub struct LogDump {
+    pub recipients: Vec<CommandRecipient>,
+    pub data: Vec<LogCommand>,
+    pub log_type: LogType,
+}
+
 // Boxing the big variant would trade a heap allocation on the COMMON path (every batch) to shrink a
 // value that is serialized and dropped immediately. The size only ever costs us one outbox slot per
 // queued output, which is bounded by OUTBOX_BUF_SIZE.
@@ -147,6 +168,7 @@ pub enum OutputData {
     Batch(Batch),
     Profiles(ProfileUpdate),
     Privileges(PrivilegeSet),
+    LogDump(LogDump),
 }
 
 #[derive(Serialize)]

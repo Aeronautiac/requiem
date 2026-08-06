@@ -181,6 +181,39 @@ pub use common::{
     LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey, Time,
 };
 
+// autopsy and tap in implementation:
+// a new server output. a log dump category. it has a list of recipients, either actor or system. it
+// contains a vector of lightweight command wrappers containing only their time and raw command data.
+// it also contains the kind of log. the reason the recipients are a list is because these payloads
+// could become massive, and they're the same for everyone who receives them, so its not necessary
+// to duplicate them on the wire.
+//
+// time control implementation:
+// - a GoToTime server input which works both for rewind and for skipping ahead
+// - Go back in time -> start from zero, apply logged events until an event >= the current time is
+// reached, and if the gap is more than zero, append a null tick
+// - Go forward in time -> append null tick
+//
+// sandboxed time implementation:
+// - the game always starts at 0. time is counted in terms of raw time units, for instance:
+// 11h:02m:11s
+// - the reason we aren't using something like Day 1, 1pm here is because game iterations are of
+// variable duration depending on what the host decides, so displaying something like that wouldn't
+// be accurate. the duration of a day can change mid game, and if someone took a screenshot of
+// something with an old day duration, and then day duration changed, that screenshot would become
+// misleading. raw time units like hours will never change inside of the sandbox.
+// - clients may also render the real world time when they hover over the timestamp. this helps
+// people communicate across timezones and makes it so they dont have to manually do weird
+// calculations to figure out the exact time of something.
+//
+// dynamic config implementation:
+// - an editor should be contained within the client, and you should be able to export/import json
+// configs using this editor. if a config file is outdated, it is reconciled, and invalid values are
+// ignored. you are also told that the config was outdated, and which values were missed/which were
+// invalid.
+// - sending over a config is a single action.
+// - there is a command that sends the config to every client when it changes.
+
 // I've now realized that what I've been calling a viewport is the shape of literally everything
 // regarding commands.
 // When an actors connects, they are backfilled on their entire history. An actor directed command
