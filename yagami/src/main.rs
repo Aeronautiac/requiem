@@ -22,6 +22,7 @@ mod http;
 mod names;
 mod state;
 mod wire;
+mod wirev2;
 
 use std::{
     sync::{Arc, Mutex},

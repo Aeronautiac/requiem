@@ -7,7 +7,7 @@
 use lawliet_types::{
     action::{ActionError, ActionRequest, ActionResponse},
     command::{Command, CommandPayload, CommandRecipient},
-    common::{ActorKey, ChannelKey, ID, Time},
+    common::{ActorKey, ID, Time},
 };
 use serde::{Deserialize, Serialize};
 
