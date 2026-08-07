@@ -1,10 +1,10 @@
-use std::{collections::HashMap, env::current_exe, process::Stdio, time::Duration};
+use std::{collections::HashMap, env::current_exe, io::ErrorKind, process::Stdio, time::Duration};
 
 use lawliet_types::{
     ability::AbilityBehaviour,
     action::{Action, ActionActor, ActionError, ActionRequest, InitializeEngine, Null},
     actor::ActorKind,
-    command::{Command, TapInOutcome},
+    command::{Command, CommandPayload, TapInOutcome},
     common::{ActorKey, Seed, Time},
     engine::ExecutionResult,
 };
@@ -125,14 +125,6 @@ struct Coordinator {
     to_discard: usize,
     deadline: Option<Instant>,
     tick: Interval,
-}
-
-// what a select arm hands back to the loop: `Continue` skips the watchdog re-arm at the bottom
-// (used by arms that `continue`d in the original, and by the discard arm which restarts the window
-// itself), `Proceed` runs it.
-enum Flow {
-    Continue,
-    Proceed,
 }
 
 impl Coordinator {
@@ -266,8 +258,7 @@ impl Coordinator {
                 .await
                 .is_err()
             {
-                self.stdin = None;
-                let _ = self.kill_in.try_send(());
+                self.discard_engine();
                 // the rest of the boot handler initializates the engine on first boot, and jumps
                 // forward to the last previous engine time otherwise. it all relies on stdin being
                 // available, so it is safe to return here.
@@ -296,8 +287,7 @@ impl Coordinator {
                 .await
                 .is_err()
             {
-                self.stdin = None;
-                let _ = self.kill_in.try_send(());
+                self.discard_engine();
                 return;
             } else {
                 self.to_discard += 1;
@@ -323,8 +313,7 @@ impl Coordinator {
                 .await
                 .is_err()
             {
-                self.stdin = None;
-                let _ = self.kill_in.try_send(());
+                self.discard_engine();
             } else {
                 self.in_flight = Some(InFlight {
                     ticket: None,
@@ -348,18 +337,18 @@ impl Coordinator {
     // a connection attaching, or an input from one. gated on the engine being reachable with nothing
     // in flight, so the channel itself is the queue -- and because it is ONE channel, a connection's
     // Attach is always handled before anything it goes on to send.
-    async fn handle_input(&mut self, event: GameEvent) -> Flow {
+    async fn handle_input(&mut self, event: GameEvent) {
         let state = &self.server_state;
         let game_id = self.game_id;
 
         let InputEnvelope { ticket, input } = match event {
             GameEvent::Attach { ticket } => {
                 deliver_catchup(state, game_id, &self.history, &ticket);
-                return Flow::Continue;
+                return;
             }
             GameEvent::Widen { ticket, before } => {
                 deliver_widening(state, game_id, &self.history, &ticket, &before);
-                return Flow::Continue;
+                return;
             }
             GameEvent::Input(envelope) => envelope,
         };
@@ -369,7 +358,6 @@ impl Coordinator {
             // fiction, and the engine has no concept of them.
             ServerInput::Control(control) => {
                 self.handle_control_input(ticket, control);
-                Flow::Continue
             }
             ServerInput::Action(request) => self.handle_action(ticket, request).await,
         }
@@ -397,13 +385,13 @@ impl Coordinator {
     }
 
     // auth, naming, and dispatch of one action into the engine.
-    async fn handle_action(&mut self, ticket: Ticket, mut request: ActionRequest) -> Flow {
+    async fn handle_action(&mut self, ticket: Ticket, mut request: ActionRequest) {
         // auth: a connection may only act as an actor its key's privilege set permits. checked here
         // rather than at the socket because the privilege set is resolved fresh every time, so a
         // narrowed key takes effect on its live sockets at once.
         if !self.authorize(&ticket, &request) {
             self.deny(ticket, request);
-            return Flow::Continue;
+            return;
         }
 
         self.assign_name(&mut request);
@@ -468,7 +456,7 @@ impl Coordinator {
 
     // hand the action to the engine, or -- if the pipe died on the write -- reply with a crash and
     // arm the supervisor to replace the child.
-    async fn dispatch(&mut self, ticket: Ticket, request: ActionRequest) -> Flow {
+    async fn dispatch(&mut self, ticket: Ticket, request: ActionRequest) {
         let state = &self.server_state;
         let game_id = self.game_id;
 
@@ -508,81 +496,28 @@ impl Coordinator {
                 request,
             });
         }
+    }
 
-        Flow::Proceed
+    // the current engine cannot be trusted, or is in some way broken. it must be discarded.
+    fn discard_engine(&mut self) {
+        self.stdin = None;
+        self.stdout = None;
+        let _ = self.kill_in.try_send(());
     }
 
     fn autopsy() {}
 
     fn tap_in() {}
 
-    // we've received a response from the engine.
-    async fn handle_response(&mut self, line: Result<Option<String>, std::io::Error>) -> Flow {
+    fn handle_output(
+        &mut self,
+        ticket: Option<Ticket>,
+        request: ActionRequest,
+        output: ActionOutcome,
+        commands: Vec<CommandPayload>,
+    ) {
         let state = &self.server_state;
         let game_id = self.game_id;
-
-        let Ok(Some(text)) = line else {
-            self.stdout = None;
-            return Flow::Continue;
-        };
-
-        // the runtime is the other half of this protocol. an undeserializable line
-        // means the two binaries disagree about the wire format -- a deploy mistake, not a runtime
-        // condition, and not something to limp along with.
-        let result: ExecutionResult = match serde_json::from_str(&text) {
-            Ok(result) => result,
-            Err(e) => {
-                eprintln!("engine output failed to deserialize: {e} -- aborting");
-                std::process::abort()
-            }
-        };
-
-        if self.to_discard > 0 {
-            self.to_discard -= 1; // resaturation echo; its commands are already in `log`
-            // the watchdog measures SILENCE, not how long the whole replay takes -- a long enough log
-            // would otherwise trip it and get a perfectly healthy child killed, then do it again on
-            // every rebuild. an echo is proof of progress, so the window restarts (and closes once
-            // nothing more is owed).
-            self.deadline =
-                (self.to_discard > 0).then(|| Instant::now() + Duration::from_secs(ENGINE_TIMEOUT));
-            return Flow::Continue;
-        }
-
-        let Some(InFlight {
-            ticket,
-            logged,
-            request,
-        }) = self.in_flight.take()
-        else {
-            // the engine spoke with nothing owed. there is no good response available: aborting
-            // punishes every other game on the box for one child's weirdness, and rebooting would
-            // just reproduce whatever caused it.
-            // TODO: log this loudly (which engine, what it said) and carry on.
-            return Flow::Continue;
-        };
-
-        // The engine ran the job queue up to this stamp, whether or not the action itself was
-        // accepted, so this is what a rebuild has to reach. Recorded for BOTH arms below -- a
-        // rejected action and a null tick each advance the engine and neither goes into `accepted`.
-        self.clock = self.clock.max(request.timestamp);
-
-        let (output, commands) = match result {
-            Ok((response, context)) => {
-                // a null tick is not logged: it carries no intent of its own, only a clock, and
-                // `clock` above is how that clock survives a rebuild. its COMMANDS are logged and
-                // fanned out like anything else -- what the catchup actually did is real state, and a
-                // client reconnecting must still see it.
-                if logged {
-                    self.accepted.push(request.clone());
-                }
-                (ActionOutcome::Ok(response), context.commands)
-            }
-            // a rejected action changed nothing of its own, so it is not replayed. it can still carry
-            // catchup commands: the job queue runs on the way in and its effects are real regardless
-            // of what the requested action did. those jobs are not lost on a rebuild either -- `clock`
-            // covers them.
-            Err((error, context)) => (ActionOutcome::Err(error), context.commands),
-        };
 
         // Read before the commands are handed to the log, which takes them by value.
         // TrueNameUpdate is emitted on every SetTrueName, including a player's first, so this mirror
@@ -693,8 +628,105 @@ impl Coordinator {
             (ticket, pair)
         });
         broadcast(state, game_id, &self.history, at, reply);
+    }
 
-        Flow::Proceed
+    // THIS HAS BEEN VERFIED BY ME, VERIFY THE OTHERS NEXT
+    // there is a fairly clean split between game logic extension + delivery, and the messy stuff like
+    // fault and process management.
+    // it may be wise to create a new delivery/game task more focused on the higher level logic,
+    // while this coordinator manages the hard parts.
+    // it'd be a handoff to the delivery, and an arm awaiting a response. you would not be able to
+    // send input during delivery. this is to prevent unbounded memory growth.
+    // the issue im trying to solve here is the one where server level game logic needs watchdog
+    // awareness, because delivery too may take a while especially for long running games.
+    // we've received a response from the engine.
+    async fn handle_response(&mut self, line: Result<Option<String>, std::io::Error>) {
+        let text: String;
+        match line {
+            Ok(Some(txt)) => {
+                text = txt;
+            }
+            // the engine has closed its pipe (EOF), and is still active. the best thing to do here
+            // is to discard and restart it.
+            Ok(None) => {
+                self.discard_engine();
+                return;
+            }
+            Err(e) => match e.kind() {
+                ErrorKind::BrokenPipe => {
+                    self.discard_engine();
+                    return;
+                }
+                // the operation was interrupted, but the engine is not necessarily broken.
+                // we can continue later.
+                ErrorKind::Interrupted => {
+                    return;
+                }
+                // the pipe was set to non-blocking mode, and no data was available. in practice,
+                // this should not happen.
+                ErrorKind::WouldBlock => {
+                    return;
+                }
+                // in most other cases, it makes sense to create a new engine. even if they can
+                // technically be recovered from, at worst, a restart will be redundant.
+                _ => {
+                    self.discard_engine();
+                    return;
+                }
+            },
+        }
+
+        // an undeserializable line means the two binaries disagree about the wire format.
+        // this is a deploy mistake, not a runtime failure.
+        let result: ExecutionResult = match serde_json::from_str(&text) {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!("engine output failed to deserialize: {e} -- aborting");
+                std::process::abort()
+            }
+        };
+
+        // this was a response from a resaturation input.
+        if self.to_discard > 0 {
+            self.to_discard -= 1;
+            // the watchdog measures SILENCE, not how long a computation takes.
+            // without this, a long log would trip it and get a healthy child killed, this
+            // is an endless crash loop.
+            self.deadline =
+                (self.to_discard > 0).then(|| Instant::now() + Duration::from_secs(ENGINE_TIMEOUT));
+            return;
+        }
+
+        let Some(InFlight {
+            ticket,
+            logged,
+            request,
+        }) = self.in_flight.take()
+        else {
+            // the engine said something when there was nothing to respond to. this is not
+            // recoverable, because we can't know what caused it. restarting it would just make it
+            // happen again. aborting would ruin every other game on the server.
+            // TODO: log this loudly (which engine, what it said) and carry on.
+            return;
+        };
+
+        // jumping to some point in time internally pops jobs off of the engine's scheduler, if any, so
+        // on reboot, we need to jump to the last reached time beyond just replaying the logged actions.
+        self.clock = self.clock.max(request.timestamp);
+
+        let (output, commands) = match result {
+            Ok((response, context)) => {
+                // not all actions are logged (for instance, null ticks).
+                if logged {
+                    self.accepted.push(request.clone());
+                }
+                (ActionOutcome::Ok(response), context.commands)
+            }
+            // a rejected action may still carry a batch of commands
+            Err((error, context)) => (ActionOutcome::Err(error), context.commands),
+        };
+
+        self.handle_output(ticket, request, output, commands);
     }
 
     // THIS HAS BEEN VERIFIED BY ME. VERIFY THE OTHERS NEXT.
@@ -708,7 +740,7 @@ impl Coordinator {
     // execute() runs the job queue for everything up to its timestamp before the action, and
     // ActionExt::execute runs Update (polls, prosecutions, deferred-command flush) after every action regardless.
     // an empty action collects all of it. sending Update explicitly would just run that sweep twice.
-    async fn tick(&mut self) -> Flow {
+    async fn tick(&mut self) {
         let request = ActionRequest {
             actor: ActionActor::System,
             timestamp: now(),
@@ -741,8 +773,6 @@ impl Coordinator {
                 request,
             });
         }
-
-        Flow::Proceed
     }
 
     // THIS FUNCTION HAS BEEN VERIFIED BY ME. CONTINUE VERIFYING THE OTHER ARMS.
@@ -777,11 +807,10 @@ impl Coordinator {
     // outer task still holds one to clean up with after aborting.
     async fn run(&mut self) {
         loop {
-            let flow = tokio::select! {
+            tokio::select! {
                 // engine boot signal
                 Some(fds) = self.fd_out.recv() => {
                     self.handle_boot(fds).await;
-                    Flow::Proceed
                 }
 
                 // we can only process one input at a time. we must know which input is in flight so
@@ -804,8 +833,9 @@ impl Coordinator {
                     self.handle_response(line).await
                 }
 
-                // drive time forward if there is an active engine and we are not processing an input.
-                _ = self.tick.tick(), if self.stdin.is_some() && self.in_flight.is_none() => {
+                // drive time forward if there is an active engine, we are not processing an input,
+                // and we are not rehydrating.
+                _ = self.tick.tick(), if self.stdin.is_some() && self.in_flight.is_none() && self.to_discard == 0 => {
                     self.tick().await
                 }
 
@@ -815,7 +845,6 @@ impl Coordinator {
                 // externally.
                 _ = async { sleep_until(self.deadline.unwrap()).await }, if self.deadline.is_some() => {
                     self.on_hang();
-                    Flow::Proceed
                 }
 
                 // every branch disabled: no pipe, and no supervisor left to hand us a new one. select!
@@ -824,20 +853,9 @@ impl Coordinator {
                 else => break,
             };
 
-            if matches!(flow, Flow::Continue) {
-                continue;
-            }
-
-            // keep the watchdog honest: armed exactly while the engine owes us something -- a reply to
-            // an in-flight action, or an outstanding replay echo. arms that `continue` skip this and
-            // are responsible for their own bookkeeping (the echo branch restarts the window itself,
-            // since receiving a line is progress).
-            //
-            // an already-running deadline is left alone.
-            // re-deriving it on every wakeup would push it forward whether or not the engine did anything,
-            // and would indefinitely extend the watchdog timer, making it useless.
-            // (`sleep_until` takes an absolute instant. rebuilding the future each pass is free of that hazard.
-            // `sleep(duration)` would restart the clock.)
+            // the watchdog is armed when there is no watchdog timer, and we are owed something.
+            // either the engine has an input in flight, or we are in a rehydration period.
+            // an existing watchdog is left alone. re-arming it would indefinitely extend the watchdog timer, making it useless.
             self.deadline = match (
                 self.in_flight.is_some() || self.to_discard > 0,
                 self.deadline,
