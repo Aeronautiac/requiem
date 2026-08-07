@@ -206,27 +206,10 @@ impl Coordinator {
         }
     }
 
-    // THIS HAS BEEN VERIFIED BY ME, DO THE OTHER ONES NEXT
-    // this runs when the game task receives a new set of file descriptors. this is the supervisor's
-    // boot signal.
-    // a boot is either a crash, an explicit reboot (time travel, which will be added soon), or the initial boot.
+    // crash or initial boot -- resaturate the new child with everything it accepted before.
     async fn handle_boot(&mut self, fds: (ChildStdin, ChildStdout)) {
         let state = &self.server_state;
         let game_id = self.game_id;
-
-        // must be reset on reboot, because it is possible for us to jump to a different branch
-        // DURING the rehydration period, and this is intentional, because without the reader
-        // running concurrently, it would be possible for us to fill the pipe and deadlock with
-        // large logs as pipe transport is handled by a fixed size buffer in the kernel.
-        //
-        // one potential failure case if this were not reset to 0:
-        // we fail at some point during rehydration, and we restart with a to_discard value larger
-        // than 0, a stale value from a previous rehydration cycle.
-        // rehydration increments it, and we succeed in full rehydration.
-        // the value is permanently offset by the stale value, and the first few real player inputs
-        // following the rehydration have their responses discarded because the value does not
-        // directly map to the actual rehydration input count.
-        self.to_discard = 0;
 
         // drain to the newest pair. a crash-loop can queue several, and every pair but the last
         // belongs to a child that is already dead -- dropping them closes those pipes, which is
@@ -244,16 +227,18 @@ impl Coordinator {
             ticket, request, ..
         }) = self.in_flight.take()
         {
-            // TODO:
-            // delivery rework
             deliver_crash(state, game_id, ticket, request);
         }
 
         self.stdin = Some(new_in);
         self.stdout = Some(BufReader::new(new_out).lines());
 
-        // initial rehydration
-        // when time travel is added, send only while the input's time is <= target time
+        // rehydration must be atomic.
+        // if a write fails, it means we either have a broken pipe, or stdin has been closed by the
+        // runtime, which never happens. the child process must have died.
+        // the value of written must be discarded in the case of a failure, else we may
+        // experience discard stacking bugs where things which were not meant to be discarded are discarded.
+        let mut written = 0;
         for request in &self.accepted {
             let line = to_line(request);
             if self
@@ -261,27 +246,24 @@ impl Coordinator {
                 .as_mut()
                 .unwrap()
                 .write_all(line.as_bytes())
-                // it is possible for us to jump to a different branch
-                // here, because stdin has already been set by this point.
                 .await
                 .is_err()
             {
                 self.stdin = None;
-                let _ = self.kill_in.try_send(());
-                // the rest of the boot handler initializates the engine on first boot, and jumps
-                // forward to the last previous engine time otherwise. it all relies on stdin being
-                // available, so it is safe to return here.
+                // the rest of the boot handler manages initialization on true boot, and time
+                // catchup otherwise. it all relies on stdin being available.
                 return;
             }
-            // must mutate the value directly here rather than accumulating and then setting it all
-            // at once, because if we move to another task during a rehydration, and we have not
-            // updated this value yet, but we receive a response, the commands may not be discarded
-            // even though they should have been.
-            self.to_discard += 1;
+            written += 1;
         }
 
-        // jump to previous engine time, or when time travel is added, the remaining distance to the
-        // target time
+        // Bring the fresh child up to the clock the old one had reached. Without this every job
+        // executed since the last ACCEPTED action is still queued here, and the next tick would emit
+        // its commands a second time. See `clock`.
+        //
+        // Collapsing however many ticks into one is safe: execute() pops jobs individually in
+        // timestamp order either way, so the same jobs run in the same order -- only their batching
+        // into contexts differs, and every one of these contexts is discarded below.
         if self.clock > 0 && self.stdin.is_some() {
             let line = to_line(&ActionRequest {
                 actor: ActionActor::System,
@@ -297,18 +279,24 @@ impl Coordinator {
                 .is_err()
             {
                 self.stdin = None;
-                let _ = self.kill_in.try_send(());
-                return;
             } else {
-                self.to_discard += 1;
+                written += 1;
             }
         }
 
-        // issued only when nothing has been accepted yet, which is always the first boot. once it
+        self.to_discard = written;
+
+        // a game is initialized by the server, not by whoever connects first: an uninitialized
+        // engine rejects everything, so leaving it to an admin's first action would mean every game
+        // has a broken window before someone opens it.
+        //
+        // issued only when nothing has been accepted yet, which is exactly the first boot. once it
         // succeeds it lives in `accepted` like any other action, so every subsequent rebuild replays
-        // it with its original seed, keeping the engine's RNG stream identical across a crash.
+        // it -- with its original seed, keeping the engine's RNG stream identical across a crash.
         if self.accepted.is_empty() && self.stdin.is_some() {
             let request = ActionRequest {
+                // the server's own voice. no key can ask for this (System is unreachable from a
+                // connection) and no connection is waiting on it.
                 actor: ActionActor::System,
                 timestamp: now(),
                 payload: Action::InitializeEngine(InitializeEngine { seed: self.seed }),
@@ -324,7 +312,6 @@ impl Coordinator {
                 .is_err()
             {
                 self.stdin = None;
-                let _ = self.kill_in.try_send(());
             } else {
                 self.in_flight = Some(InFlight {
                     ticket: None,
@@ -334,13 +321,6 @@ impl Coordinator {
             }
         }
     }
-
-    // our options:
-    // - loop through every connection, and attach the ones which have not yet been attached
-    // - have connections send an explicit attach signal on creation
-    // an explicit attach signal is more efficient.
-    // an initialization batch is sent on attach, or in any case requiring client resynchronization
-    // under new conditions.
 
     // a connection attaching, or an input from one. gated on the engine being reachable with nothing
     // in flight, so the channel itself is the queue -- and because it is ONE channel, a connection's
@@ -516,7 +496,7 @@ impl Coordinator {
 
     fn tap_in() {}
 
-    // we've received a response from the engine.
+    // a response from the child.
     async fn handle_response(&mut self, line: Result<Option<String>, std::io::Error>) -> Flow {
         let state = &self.server_state;
         let game_id = self.game_id;
@@ -697,27 +677,39 @@ impl Coordinator {
         Flow::Proceed
     }
 
-    // THIS HAS BEEN VERIFIED BY ME. VERIFY THE OTHERS NEXT.
-    //
     // drive time forward. the engine only advances when an action arrives, so without this nothing
     // time-based ever happens: a scheduled kill, a poll timeout, a prosecution phase or a release
     // would all sit in the job queue until some player happened to act. this is what makes them land
     // on the clock instead.
     //
-    // a Null action does nothing itself. it exists only as an update and time advancement mechanism.
-    // execute() runs the job queue for everything up to its timestamp before the action, and
-    // ActionExt::execute runs Update (polls, prosecutions, deferred-command flush) after every action regardless.
+    // a Null action is the right instrument precisely because it does nothing itself. execute() runs
+    // the job queue for everything up to its timestamp before the action, and ActionExt::execute
+    // runs Update (polls, prosecutions, deferred-command flush) after every action regardless -- so
     // an empty action collects all of it. sending Update explicitly would just run that sweep twice.
     async fn tick(&mut self) -> Flow {
+        let state = &self.server_state;
+        let game_id = self.game_id;
+
+        // nobody is watching, so there is nothing to deliver. skipping keeps an idle game from waking
+        // its engine every few seconds forever; the jobs are not lost, they run on the catchup of
+        // whichever action or tick comes next.
+        let watched = {
+            let server_state = lock_state(state);
+            server_state
+                .games
+                .get(&game_id)
+                .is_some_and(|game| game.connections.values().any(|conn| !conn.dropped))
+        };
+        if !watched {
+            return Flow::Continue;
+        }
+
         let request = ActionRequest {
             actor: ActionActor::System,
             timestamp: now(),
             payload: Action::Null(Null {}),
         };
 
-        // this arm may only run when stdin exists, so the unwrap is safe.
-        // the next await point is on the write.
-        // there is no period before the unwrap where stdin can become None.
         let line = to_line(&request);
         if self
             .stdin
@@ -727,14 +719,9 @@ impl Coordinator {
             .await
             .is_err()
         {
-            // either the engine has closed its pipe, or it has crashed.
             self.stdin = None;
-            // we trigger an explicit kill on the supervisor's end just in case the engine closed
-            // its pipe for some reason. in the case of a crash, this is discarded.
             let _ = self.kill_in.try_send(());
         } else {
-            // TODO:
-            // expand inflight to ALL server inputs rather than just action requests
             self.in_flight = Some(InFlight {
                 ticket: None,
                 logged: false,
@@ -745,22 +732,18 @@ impl Coordinator {
         Flow::Proceed
     }
 
-    // THIS FUNCTION HAS BEEN VERIFIED BY ME. CONTINUE VERIFYING THE OTHER ARMS.
-    //
-    // treat hangs as crashes. a hang is just a silent crash, and without being handled, it could
-    // actually be more dangerous than a real crash.
+    // the engine owes us a line and has not produced one. treat it exactly as a crash -- the only
+    // difference is that a hang never announces itself, so we have to notice.
     fn on_hang(&mut self) {
         let state = &self.server_state;
         let game_id = self.game_id;
 
-        // if we didnt handle this here, the watchdog may fire again before the boot handler is called,
-        // causing an endless crash cycle.
+        // reply here rather than leaving it to the fd arm: clearing in_flight now is what stops the
+        // watchdog re-arming and firing a second kill before the child is gone.
         if let Some(InFlight {
             ticket, request, ..
         }) = self.in_flight.take()
         {
-            // TODO:
-            // delivery rework
             deliver_crash(state, game_id, ticket, request);
         }
 
@@ -770,6 +753,7 @@ impl Coordinator {
         self.stdout = None;
         self.to_discard = 0;
 
+        // full means a kill is already pending, which says everything this one would.
         let _ = self.kill_in.try_send(());
     }
 
@@ -778,41 +762,31 @@ impl Coordinator {
     async fn run(&mut self) {
         loop {
             let flow = tokio::select! {
-                // engine boot signal
+                // crash or initial boot -- resaturate the new child with everything it accepted before
                 Some(fds) = self.fd_out.recv() => {
                     self.handle_boot(fds).await;
                     Flow::Proceed
                 }
 
-                // we can only process one input at a time. we must know which input is in flight so
-                // we can guarantee a response while the server is active.
-                // we cannot take input if there is no engine available. most input is sent directly to the engine.
-                // even there are some inputs which dont technically rely on an active engine, it's
-                // safer and cleaner to just wait.
-                // we cannot take input during a reboot period, because if we did, we could have
-                // player input interleaved with rehydration inputs, which would offset the discard mechanism,
-                // and would invalidate the engine's state as a player input would be inserted into
-                // the existing timeline rather than be appended.
-                Some(event) = self.events.recv(), if self.stdin.is_some() && self.in_flight.is_none() && self.to_discard == 0 => {
+                // a connection attaching, or an input from one. gated on the engine being reachable
+                // with nothing in flight, so the channel itself is the queue -- and because it is ONE
+                // channel, a connection's Attach is always handled before anything it goes on to send.
+                Some(event) = self.events.recv(), if self.stdin.is_some() && self.in_flight.is_none() => {
                     self.handle_input(event).await
                 }
 
-                // we've received a response from the engine process.
-                // it is not possible for stdout to be None within this async block, because the
-                // block only runs if stdout is confirmed to be Some(_).
+                // response from child
                 line = async { self.stdout.as_mut().unwrap().next_line().await }, if self.stdout.is_some() => {
                     self.handle_response(line).await
                 }
 
-                // drive time forward if there is an active engine and we are not processing an input.
+                // drive time forward.
                 _ = self.tick.tick(), if self.stdin.is_some() && self.in_flight.is_none() => {
                     self.tick().await
                 }
 
-                // watchdog timer.
-                // the engine owes us an output and has not produced one. treat it exactly as a crash.
-                // the only difference is that a hang never announces itself, so it must be caught
-                // externally.
+                // the engine owes us a line and has not produced one. treat it exactly as a crash --
+                // the only difference is that a hang never announces itself, so we have to notice.
                 _ = async { sleep_until(self.deadline.unwrap()).await }, if self.deadline.is_some() => {
                     self.on_hang();
                     Flow::Proceed
@@ -833,11 +807,10 @@ impl Coordinator {
             // are responsible for their own bookkeeping (the echo branch restarts the window itself,
             // since receiving a line is progress).
             //
-            // an already-running deadline is left alone.
-            // re-deriving it on every wakeup would push it forward whether or not the engine did anything,
-            // and would indefinitely extend the watchdog timer, making it useless.
-            // (`sleep_until` takes an absolute instant. rebuilding the future each pass is free of that hazard.
-            // `sleep(duration)` would restart the clock.)
+            // an already-running deadline is deliberately left alone. re-deriving it on every wakeup
+            // would push it forward whether or not the engine did anything, which is the classic way a
+            // watchdog quietly stops being one. (`sleep_until` takes an absolute instant, so rebuilding
+            // the future each pass is free of that hazard -- `sleep(duration)` would restart the clock.)
             self.deadline = match (
                 self.in_flight.is_some() || self.to_discard > 0,
                 self.deadline,

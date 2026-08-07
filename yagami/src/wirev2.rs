@@ -25,7 +25,7 @@ pub enum ActionOutcome {
     Ok(ActionResponse),
     Err(ActionError),
     Denied,
-    Crashed,
+    EnginePanic,
 }
 
 #[derive(Serialize)]
@@ -111,14 +111,16 @@ pub enum OutputData {
 #[derive(Serialize)]
 pub struct ServerOutput {
     pub time: Time,
-    pub view_gate: ViewGate,
+    // if at least one gate passes, a client may receive this output
+    pub view_gates: Vec<ViewGate>,
     pub data: OutputData,
 }
 
 // a batch can either be live, or it can be an initial batch which tells a client to initialize their
 // state, or reset their current state and construct a new state with the initialize batch.
 // widening?
-// widening becomes a rescan under the actor's new permissions.
+// widening becomes a rescan under the actor's new permissions, and a re-initialization.
+// this is slightly inefficient, but a widening barely occurs, and it's correct.
 // a narrowing too, however it should be noted that you cannot truly get rid of that data given a
 // client that doesnt comply to the protocol. as soon as a client is given permissions, you
 // should assume that they have everything. all a narrowing does is prevent them from acting or
@@ -132,6 +134,7 @@ pub enum BatchKind {
     Initialize,
 }
 
+// clients receive filtered batches rather than many disconnected events
 #[derive(Serialize)]
 pub struct Batch {
     // the response pair is sent only to the connection which triggered the batch
