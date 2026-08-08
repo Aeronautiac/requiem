@@ -27,7 +27,7 @@ use crate::{
     constants::{ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
     generate_seed,
     state::{GameId, WrappedServerState, lock_state},
-    wire::{GameControl, ServerInput},
+    wirev2::{AdminControl, ServerInput},
 };
 
 pub fn to_line<T: Serialize>(value: &T) -> String {
@@ -52,8 +52,7 @@ pub enum InputError {
 
 // carries the source ticket so the game task can route replies and enforce permissions.
 pub struct InputEnvelope {
-    // the server can inject an input too
-    pub ticket: Option<Ticket>,
+    pub ticket: Ticket,
     pub input: ServerInput,
 }
 
@@ -119,6 +118,14 @@ impl GameClock {
         self.base = self.base.max(reached + 1);
         self.start = Instant::now();
         self.now()
+    }
+
+    // move the base to `at` and restart the elapsed counter, so the sandbox clock sits exactly at
+    // `at`. this allows motion in either direction -- which boot's forward-only clamp refuses --
+    // and is what resetting `start` here makes correct for a forward jump that never boots.
+    fn set_base(&mut self, at: Time) {
+        self.base = at;
+        self.start = Instant::now();
     }
 }
 
@@ -224,6 +231,22 @@ impl Game {
             Err(e) => {
                 eprintln!("engine output failed to deserialize: {e} -- aborting");
                 std::process::abort()
+            }
+        }
+    }
+
+    // dispatch a request and fold in the bookkeeping common to every successful exchange: the engine
+    // has now reached at least `request.timestamp`. on failure, reboot. returns whether the exchange
+    // succeeded, so callers can do their own follow-up (accepted log, delivery).
+    async fn execute(&mut self, request: &ActionRequest) -> bool {
+        match self.dispatch(request).await {
+            Ok(_result) => {
+                self.last_reached = self.last_reached.max(request.timestamp);
+                true
+            }
+            Err(_) => {
+                self.boot().await;
+                false
             }
         }
     }
@@ -342,66 +365,120 @@ impl Game {
         }
     }
 
-    fn authorize(&self, ticket: Option<&Ticket>, input: &ServerInput) -> bool {
-        match input {
-            ServerInput::Action(request) => {
-                // a server-injected input has no connection to check against; it is trusted.
-                let Some(ticket) = ticket else {
-                    return true;
-                };
-                lock_state(&self.server_state)
-                    .games
-                    .get(&self.game_id)
-                    .and_then(|game| game.privileges(ticket))
-                    .is_some_and(|privileges| privileges.can_act_as(&request.actor))
-            }
-            ServerInput::Control(_) => {
-                // authority over controls is verified during execution.
-                true
-            }
-        }
+    // the connection behind `ticket` may act as `request.actor` under its current privilege set.
+    // this is the whole of a connection's authority: a key may act as any actor its scope names
+    // (plus Admin as Administer) and nothing else. checked fresh each time, so a narrowed key takes
+    // effect on its live sockets at once.
+    fn authorize_action(&self, ticket: &Ticket, request: &ActionRequest) -> bool {
+        lock_state(&self.server_state)
+            .games
+            .get(&self.game_id)
+            .and_then(|game| game.privileges(ticket))
+            .is_some_and(|privileges| privileges.can_act_as(&request.actor))
+    }
+
+    // controls operate ON the game, not in the fiction, so the only authority they need is that the
+    // connection holds Administer.
+    fn authorize_control(&self, ticket: &Ticket) -> bool {
+        lock_state(&self.server_state)
+            .games
+            .get(&self.game_id)
+            .and_then(|game| game.privileges(ticket))
+            .is_some_and(|privileges| privileges.administers())
     }
 
     async fn handle_server_input(&mut self, envelope: InputEnvelope) {
         let InputEnvelope { ticket, input } = envelope;
 
-        if !self.authorize(ticket.as_ref(), &input) {
-            // TODO:
-            // deliver a denial to `ticket`.
-            return;
-        }
-
-        // TODO:
-        // route the input by `ticket` for delivery.
-
         match input {
-            ServerInput::Control(_control) => {
-                // TODO:
-                // execute the game control (stub).
-                // TODO:
-                // payload delivery.
+            ServerInput::Control(control) => {
+                if !self.authorize_control(&ticket) {
+                    // TODO:
+                    // deliver ControlOutcome::Denied to `ticket`.
+                    return;
+                }
+                match control {
+                    AdminControl::GoToTime { time } => self.go_to_time(time).await,
+                    // TODO:
+                    // the key-management controls (create/revoke keys, capabilities, actor scope,
+                    // profile). they live in control.rs.
+                    _ => {}
+                }
             }
             ServerInput::Action(request) => {
-                match self.dispatch(&request).await {
-                    Ok(_result) => {
-                        self.last_reached = self.last_reached.max(request.timestamp);
-                        // TODO:
-                        // pre-processing of the response (log, extend history, mirror state).
-                        // TODO:
-                        // payload delivery.
-                    }
-                    Err(_) => {
-                        // TODO:
-                        // respond to `ticket` with an engine failure / crash outcome.
-                        self.boot().await;
-                    }
+                if !self.authorize_action(&ticket, &request) {
+                    // TODO:
+                    // deliver ActionOutcome::Denied to `ticket`.
+                    return;
                 }
+                if !self.execute(&request).await {
+                    // TODO:
+                    // respond to `ticket` with an engine failure / crash outcome.
+                    return;
+                }
+                // this input ran and was accepted, so it is part of the engine's state and
+                // must be replayed on the next boot.
+                self.accepted.push(request);
+                // TODO:
+                // pre-processing of the response (log, extend history, mirror state).
+                // TODO:
+                // payload delivery.
             }
         }
     }
 
-    // ===== TICK ===== //
+    // GoToTime: move the game to a past (or future) instant.
+    //
+    // Going FORWARD costs nothing structural: the engine is already at the current time and will
+    // reach `target` naturally on its next tick, so all we do is advance the sandbox clock to it.
+    //
+    // Going BACKWARD is a rebuild: we truncate the accepted log to everything up to the target, set
+    // the clock there, and boot the engine fresh from that base -- so it replays only the state that
+    // existed up to the target time.
+    async fn go_to_time(&mut self, target: Time) {
+        // forward jump: no rebuild needed -- the engine is already at the current time. we still
+        // drive it forward to `target` with a null tick so time-based state actually settles there,
+        // rather than waiting for the next scheduled tick.
+        if target >= self.clock.now() {
+            self.clock.set_base(target);
+            self.last_reached = target;
+            let request = ActionRequest {
+                actor: ActionActor::System,
+                timestamp: self.clock.now(),
+                payload: Action::Null(Null {}),
+            };
+            if !self.execute(&request).await {
+                return;
+            }
+            // TODO:
+            // pre-processing.
+            // TODO:
+            // payload delivery.
+            return;
+        }
 
+        // anything accepted after the target never happened, so it is dropped from what a boot
+        // replays. the engine no longer knows, or is responsible for, the invalidated future.
+        self.accepted.retain(|request| request.timestamp <= target);
+        self.last_reached = target;
+        // allow the base to go BACKWARD; boot's reboot would clamp it forward and refuse.
+        self.clock.set_base(target);
+        self.boot().await;
+
+        // TODO:
+        // trigger a resync (reinitialize) on every connection -- wirev2::BatchKind::Initialize.
+
+        // TODO:
+        // server-side state minted after `target` -- keys, profiles, etc. -- must also be
+        // discarded. they were built on a timeline that no longer exists, so keeping them would
+        // leave opinions standing on a foundation that was rolled back.
+
+        // TODO:
+        // the time after `target` is only truly invalidated once a new input arrives at the new
+        // base. that will need a timeline pointer to know which later branch is live.
+    }
+
+    // ===== TICK ===== //
     // drive time forward. the engine only advances when an action arrives, so without this nothing
     // time-based ever happens. a Null does nothing itself and only exists to carry the clock.
     async fn tick(&mut self) {
@@ -410,16 +487,13 @@ impl Game {
             timestamp: self.clock.now(),
             payload: Action::Null(Null {}),
         };
-        match self.dispatch(&request).await {
-            Ok(_result) => {
-                self.last_reached = self.last_reached.max(request.timestamp);
-                // TODO:
-                // pre-processing.
-                // TODO:
-                // payload delivery.
-            }
-            Err(_) => self.boot().await,
+        if !self.execute(&request).await {
+            return;
         }
+        // TODO:
+        // pre-processing.
+        // TODO:
+        // payload delivery.
     }
 
     // ===== LOOP ===== //
