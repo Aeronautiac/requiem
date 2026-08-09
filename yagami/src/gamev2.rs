@@ -27,6 +27,7 @@ use crate::{
     constants::{ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
     control::handle_control,
     generate_seed,
+    http::req,
     state::{GameId, WrappedServerState, lock_state},
     wire::{ControlOutcome as WireControlOutcome, GameControl},
     wirev2::{AdminControl, ControlOutcome, ServerInput},
@@ -140,7 +141,9 @@ struct Game {
 
     // state
     seed: Seed,
-    last_reached: Time,           // highest timestamp the engine has executed
+    last_reached: Time, // the latest timestamp executed by the engine, not necessarily
+    // the highest ever executed. this distinction is important because time travel may change what
+    // "the end of the timeline" is.
     clock: GameClock,             // sandboxed source of action timestamps
     accepted: Vec<ActionRequest>, // accepted engine inputs, replayed on boot
 
@@ -237,13 +240,15 @@ impl Game {
         }
     }
 
-    // dispatch a request and fold in the bookkeeping common to every successful exchange: the engine
-    // has now reached at least `request.timestamp`. on failure, reboot. returns whether the exchange
-    // succeeded, so callers can do their own follow-up (accepted log, delivery).
+    // dispatch a request and fold in the bookkeeping common to every successful exchange.
+    // on failure, reboot.
+    // returns whether the exchange succeeded, so callers can do their own follow-up
+    // (accepted log, delivery).
+    // also logs the current last executed time on success.
     async fn execute(&mut self, request: &ActionRequest) -> bool {
         match self.dispatch(request).await {
             Ok(_result) => {
-                self.last_reached = self.last_reached.max(request.timestamp);
+                self.last_reached = request.timestamp;
                 true
             }
             Err(_) => {
@@ -281,8 +286,6 @@ impl Game {
         // exponential backoff between retries, and eventual total game failure once retries exceed
         // some bound, rather than retrying forever.
         loop {
-            // begin a fresh, sandboxed time that continues past the old engine's last-executed
-            // timestamp. see GameClock::reboot for why the base must change on every boot.
             let (stdin, stdout, child) = self.spawn_engine();
             self.child = Some(child);
             self.stdin = Some(stdin);
@@ -447,7 +450,11 @@ impl Game {
                     }
                 }
             }
-            ServerInput::Action(request) => {
+            ServerInput::Action(mut request) => {
+                // override the client's reported value. only the game task truly knows the game's
+                // virtual clock, and a client cannot be trusted.
+                request.timestamp = self.clock.now();
+
                 if !self.authorize_action(&ticket, &request) {
                     // TODO:
                     // deliver ActionOutcome::Denied to `ticket`.
@@ -505,12 +512,13 @@ impl Game {
     // It should also be noted that back to some point in time does not go to BEFORE that time. Everything that
     // happened AT that time remains.
     async fn go_to_time(&mut self, target: Time) {
+        let now = self.clock.now();
         self.clock.go_to(target);
 
         // forward jump: no rebuild needed -- the engine is already at the current time. we still
         // drive it forward to `target` with a null tick so time-based state actually settles there,
         // rather than waiting for the next scheduled tick.
-        if target >= self.clock.now() {
+        if target >= now {
             self.last_reached = target;
             let request = ActionRequest {
                 actor: ActionActor::System,

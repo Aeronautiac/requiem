@@ -102,12 +102,19 @@
 * are associated with that state in config.
 *
 * --- channels, lounges, groupchats, bugs ---
-* Channel is the primitive: a members map with Send/View permission bitflags per actor and a
-* loggable flag for ability queries (e.g. autopsy). no message storage — yagami handles that.
-* Lounge wraps a channel for two-actor contact; Fake lounges expose the true creator's identity to
-* a tapper without the creator's knowledge. Groupchat wraps a channel with an optional owner;
-* owner leaving sets owner to None. Bug is a wiretap on a target actor, sourced from an ability or
-* a custody event; expired bugs are retained in memory for persistent history access.
+* Channel is the primitive: a viewport, a log id, a loggable flag for ability queries (e.g. autopsy),
+* a set of profiles, and a set of members. no message storage — yagami handles that.
+* a profile carries a display, a visibility phase (it may spawn revealed or invisible, where a send
+* reveals an invisible one), a permission set, an
+* optional permission-update policy, a who-has-sent list, and an ownership model (Single or
+* Multiple). membership is expressed as which profiles a member may speak as; a channel with a base
+* profile hands a copy of it to every player. permission policies (Fixed, Contact, News, Presence,
+* Alive, Trial) are re-evaluated against the world after each action and compose by intersection, so
+* a single mechanism replaces every one-off permission-gating update. Lounge wraps a channel for
+* two-actor contact; Fake lounges expose the true creator's identity to a tapper without the
+* creator's knowledge. Groupchat wraps a channel with an optional owner; owner leaving sets owner to
+* None. Bug is a wiretap on a target actor, sourced from an ability or a custody event; expired bugs
+* are retained in memory for persistent history access.
 *
 * --- commands ---
 * CommandPayload carries a timestamp, a recipient, and a Command variant. every command is

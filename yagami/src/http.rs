@@ -34,7 +34,6 @@ use crate::{
         HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, OUTBOX_BUF_SIZE, TICKET_LIMIT, TICKET_TIMEOUT,
     },
     game::{GameEvent, InputEnvelope, game},
-    now,
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
     wire::{ServerInput, ServerOutput},
 };
@@ -275,20 +274,10 @@ pub async fn game_connection(
 
             match msg {
                 Message::Text(t) => {
-                    let Ok(mut input) = serde_json::from_str::<ServerInput>(t.as_str()) else {
+                    let Ok(input) = serde_json::from_str::<ServerInput>(t.as_str()) else {
                         break; // undeserializable payload -> protocol violation
                     };
 
-                    // game time is the SERVER's, so whatever the client put here is overwritten
-                    // rather than trusted or even treated as a hint -- a client that lies, or whose
-                    // clock is simply wrong, cannot move the engine's clock or backdate an action.
-                    //
-                    // stamped on arrival, here, and not in the coordinator: an action that queues
-                    // behind another would otherwise be recorded at the time it got SERVICED, which
-                    // is the queue's delay rather than the player's.
-                    if let ServerInput::Action(request) = &mut input {
-                        request.timestamp = now();
-                    }
                     if inbox
                         .send(GameEvent::Input(InputEnvelope {
                             ticket: ticket.clone(),

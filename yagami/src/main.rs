@@ -24,17 +24,14 @@ mod state;
 mod wire;
 mod wirev2;
 
-use std::{
-    sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::sync::{Arc, Mutex};
 
 use axum::{
     Router,
     http::{Method, header},
     routing::{any, post},
 };
-use lawliet_types::common::{Seed, Time};
+use lawliet_types::common::Seed;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 
@@ -49,13 +46,6 @@ pub fn generate_seed() -> Seed {
     let mut bytes = [0u8; size_of::<Seed>()];
     getrandom::fill(&mut bytes).expect("OS CSPRNG unavailable");
     Seed::from_le_bytes(bytes)
-}
-
-pub fn now() -> Time {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock is before the unix epoch")
-        .as_millis()
 }
 
 #[tokio::main]
