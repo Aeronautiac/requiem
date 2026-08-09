@@ -25,10 +25,23 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     auth::Ticket,
     constants::{ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
+    control::handle_control,
     generate_seed,
     state::{GameId, WrappedServerState, lock_state},
-    wirev2::{AdminControl, ServerInput},
+    wire::{ControlOutcome as WireControlOutcome, GameControl},
+    wirev2::{AdminControl, ControlOutcome, ServerInput},
 };
+
+// delivery pipeline:
+// engine reply:
+// iterate over every command, match the command, and do something if it has a designated handler
+// turn the command into a server command, and add it to the batch
+// do this for every command
+// hand it off the delivery pipeline to finish it off (for things like viewports)
+// let delivery handle the networking
+//
+// game command/control:
+// no initial transformation step. just create the batch and hand off to delivery.
 
 pub fn to_line<T: Serialize>(value: &T) -> String {
     match serde_json::to_string(value) {
@@ -86,46 +99,35 @@ fn is_retryable(error: &std::io::Error) -> bool {
     matches!(error.kind(), ErrorKind::Interrupted | ErrorKind::WouldBlock)
 }
 
-// A sandboxed clock. It never reads the wall clock: a timestamp is a boot base offset plus how long
-// this boot has been running on a monotonic Instant. The engine's job queue runs by action
-// timestamp, so the stream must always move forward.
-//
-// The base is advanced on every boot to just past the last time the engine reached. That is the
-// whole point of changing it per boot: if it were left fixed while `start` reset, the first ticks of
-// the fresh child would rewind toward the old base -- likely below the last-executed time -- and the
-// engine would re-run jobs already done. A new base per boot is what keeps offsets correct.
+// The hard part about time sandboxing is handling time travel.
+// We can visualize a real start time, and an "anchor".
+// The anchor is the start position of virtual time, which is offset some distance from the real start time.
+// On time travel, we ask: "how much do I need to shift the anchor such that virtual time becomes
+// the target time?"
+// This is answered by getting the distance between the current virtual time, and the target time.
+// offset = target - now()
+// We shift the anchor by this distance. This works with any sequence of time travel events.
 struct GameClock {
-    base: Time,
     start: Instant,
+    anchor: i128,
 }
 
 impl GameClock {
     fn new() -> Self {
         Self {
-            base: 0,
             start: Instant::now(),
+            anchor: 0,
         }
     }
 
-    // the current sandboxed time: this boot's base plus elapsed since it began.
     fn now(&self) -> Time {
-        self.base + self.start.elapsed().as_millis() as Time
+        // it isnt possible for the anchor to cause overflow. the target time can only ever be >= 0.
+        (self.start.elapsed().as_millis() as i128 + self.anchor) as Time
     }
 
-    // begin a fresh boot continuing from `reached`, the last time the previous engine executed up to.
-    // bumping the base ensures strictly forward timestamps; leaving it fixed would let them rewind.
-    fn reboot(&mut self, reached: Time) -> Time {
-        self.base = self.base.max(reached + 1);
-        self.start = Instant::now();
-        self.now()
-    }
-
-    // move the base to `at` and restart the elapsed counter, so the sandbox clock sits exactly at
-    // `at`. this allows motion in either direction -- which boot's forward-only clamp refuses --
-    // and is what resetting `start` here makes correct for a forward jump that never boots.
-    fn set_base(&mut self, at: Time) {
-        self.base = at;
-        self.start = Instant::now();
+    fn go_to(&mut self, target: Time) {
+        let offset = target - self.now();
+        self.anchor += offset as i128;
     }
 }
 
@@ -281,8 +283,6 @@ impl Game {
         loop {
             // begin a fresh, sandboxed time that continues past the old engine's last-executed
             // timestamp. see GameClock::reboot for why the base must change on every boot.
-            self.clock.reboot(self.last_reached);
-
             let (stdin, stdout, child) = self.spawn_engine();
             self.child = Some(child);
             self.stdin = Some(stdin);
@@ -291,7 +291,7 @@ impl Game {
             let mut ok = true;
 
             // replay every accepted input. success responses are discarded.
-            let mut accepted = std::mem::take(&mut self.accepted);
+            let accepted = std::mem::take(&mut self.accepted);
             for request in &accepted {
                 if self.dispatch(request).await.is_err() {
                     ok = false;
@@ -338,12 +338,19 @@ impl Game {
         }
     }
 
-    // ===== INITIALIZATION ===== //
+    // ===== INITIALIZATION AND TEARDOWN ===== //
 
     // gather whatever the game needs before the engine boots. a stub for now.
     async fn initialize(&mut self) {
         // TODO:
         // read the game's persistent state (config, players, keys) from the database.
+    }
+
+    // cleanup after finishing
+    async fn teardown(&mut self) {
+        let mut state = lock_state(&self.server_state);
+        self.cancel.cancel();
+        state.games.remove(&self.game_id);
     }
 
     // ===== INPUT HANDLING ===== //
@@ -399,10 +406,45 @@ impl Game {
                 }
                 match control {
                     AdminControl::GoToTime { time } => self.go_to_time(time).await,
-                    // TODO:
-                    // the key-management controls (create/revoke keys, capabilities, actor scope,
-                    // profile). they live in control.rs.
-                    _ => {}
+                    AdminControl::CreateKey {
+                        actors,
+                        capabilities,
+                    } => {
+                        let outcome = self.handle_key_control(
+                            &ticket,
+                            &GameControl::CreateKey {
+                                actors,
+                                capabilities,
+                            },
+                        );
+                        self.deliver_control_feedback(&ticket, outcome);
+                    }
+                    AdminControl::RevokeKey { key } => {
+                        let outcome =
+                            self.handle_key_control(&ticket, &GameControl::RevokeKey { key });
+                        self.deliver_control_feedback(&ticket, outcome);
+                    }
+                    AdminControl::SetCapabilities { key, capabilities } => {
+                        let outcome = self.handle_key_control(
+                            &ticket,
+                            &GameControl::SetCapabilities { key, capabilities },
+                        );
+                        self.deliver_control_feedback(&ticket, outcome);
+                    }
+                    AdminControl::SetActorScope { key, actors } => {
+                        let outcome = self.handle_key_control(
+                            &ticket,
+                            &GameControl::SetActorScope { key, actors },
+                        );
+                        self.deliver_control_feedback(&ticket, outcome);
+                    }
+                    AdminControl::SetProfile { actor, profile } => {
+                        let outcome = self.handle_key_control(
+                            &ticket,
+                            &GameControl::SetProfile { actor, profile },
+                        );
+                        self.deliver_control_feedback(&ticket, outcome);
+                    }
                 }
             }
             ServerInput::Action(request) => {
@@ -427,6 +469,30 @@ impl Game {
         }
     }
 
+    // run one key-management control through the shared control.rs logic and adapt its outcome to
+    // the v2 wire form. authorization (caller holds Administer) is re-checked inside handle_control.
+    fn handle_key_control(&self, ticket: &Ticket, control: &GameControl) -> ControlOutcome {
+        let outcome = handle_control(
+            &self.server_state,
+            self.game_id,
+            ticket,
+            control,
+            &self.cancel,
+        );
+        match outcome {
+            WireControlOutcome::Ok(response) => ControlOutcome::Ok(response),
+            WireControlOutcome::Err(error) => ControlOutcome::Err(error),
+            WireControlOutcome::Denied => ControlOutcome::Denied,
+        }
+    }
+
+    // reply to a control. the feedback is immediate -- it never touches the engine -- so it rides
+    // out as its own payload rather than a response to a dispatch.
+    fn deliver_control_feedback(&self, _ticket: &Ticket, _outcome: ControlOutcome) {
+        // TODO:
+        // send `_outcome` to `_ticket` as immediate feedback payload.
+    }
+
     // GoToTime: move the game to a past (or future) instant.
     //
     // Going FORWARD costs nothing structural: the engine is already at the current time and will
@@ -435,12 +501,16 @@ impl Game {
     // Going BACKWARD is a rebuild: we truncate the accepted log to everything up to the target, set
     // the clock there, and boot the engine fresh from that base -- so it replays only the state that
     // existed up to the target time.
+    //
+    // It should also be noted that back to some point in time does not go to BEFORE that time. Everything that
+    // happened AT that time remains.
     async fn go_to_time(&mut self, target: Time) {
+        self.clock.go_to(target);
+
         // forward jump: no rebuild needed -- the engine is already at the current time. we still
         // drive it forward to `target` with a null tick so time-based state actually settles there,
         // rather than waiting for the next scheduled tick.
         if target >= self.clock.now() {
-            self.clock.set_base(target);
             self.last_reached = target;
             let request = ActionRequest {
                 actor: ActionActor::System,
@@ -461,8 +531,6 @@ impl Game {
         // replays. the engine no longer knows, or is responsible for, the invalidated future.
         self.accepted.retain(|request| request.timestamp <= target);
         self.last_reached = target;
-        // allow the base to go BACKWARD; boot's reboot would clamp it forward and refuse.
-        self.clock.set_base(target);
         self.boot().await;
 
         // TODO:
@@ -517,7 +585,7 @@ impl Game {
         }
 
         // dropping `self` drops the child, and kill_on_drop reaps the engine.
-        lock_state(&self.server_state).games.remove(&self.game_id);
+        self.teardown().await;
     }
 }
 

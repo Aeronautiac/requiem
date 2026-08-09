@@ -23,7 +23,7 @@ new_key_type! {
 
 pub type ID = usize;
 pub type Version = u8;
-pub type Time = u128; // intended to be used as unix time in milliseconds
+pub type Time = u64; // virtual units
 pub type JobID = usize;
 pub type Variant = u8;
 pub type LinkWeight = u16;
@@ -35,4 +35,3 @@ pub type VoteAmplifier = u16;
 pub type AttemptCount = u16;
 pub type Seed = u32;
 pub type LogID = u16;
-
