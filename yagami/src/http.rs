@@ -33,9 +33,10 @@ use crate::{
     constants::{
         HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, OUTBOX_BUF_SIZE, TICKET_LIMIT, TICKET_TIMEOUT,
     },
-    game::{GameEvent, InputEnvelope, game},
+    delivery::DeliveryData,
+    game::{GameCommand, GameInput, InputEnvelope, game},
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
-    wire::{ServerInput, ServerOutput},
+    wire::{Batch, ServerInput},
 };
 
 pub fn req(key: &str) -> Result<String, String> {
@@ -208,9 +209,8 @@ pub async fn establish_ws_connection(
             cancel,
             outbox,
             dropped: false,
-            seq_num: 0,
-            // installed by attach, once the game task has replayed the log to this socket.
-            cursor: None,
+            // delivery data starts empty; the game task fills it as it replays/syncs this socket.
+            delivery: DeliveryData::default(),
         },
     );
     drop(server_state);
@@ -233,7 +233,7 @@ pub async fn establish_ws_connection(
 pub async fn game_connection(
     stream: WebSocket,
     state: WrappedServerState,
-    mut recv: mpsc::Receiver<ServerOutput>,
+    mut recv: mpsc::Receiver<Batch>,
     game_id: GameId,
     ticket: Ticket,
 ) {
@@ -250,13 +250,13 @@ pub async fn game_connection(
         (conn_handle.cancel.clone(), game_state.inbox.clone())
     };
 
-    // ask for the catch-up replay before reading a single frame. it goes down the same channel as
+    // ask for the sync replay before reading a single frame. it goes down the same channel as
     // inputs, so FIFO guarantees this connection is caught up before anything it sends is executed --
     // no window in which a reply could be ordered ahead of the log it depends on.
     if inbox
-        .send(GameEvent::Attach {
+        .send(GameInput::GameCommand(GameCommand::Sync {
             ticket: ticket.clone(),
-        })
+        }))
         .is_err()
     {
         return; // game task is gone
@@ -279,7 +279,7 @@ pub async fn game_connection(
                     };
 
                     if inbox
-                        .send(GameEvent::Input(InputEnvelope {
+                        .send(GameInput::ServerInput(InputEnvelope {
                             ticket: ticket.clone(),
                             input,
                         }))
@@ -307,10 +307,10 @@ pub async fn game_connection(
                 }
                 out = recv.recv() => match out {
                     Some(out) => {
-                        // ServerOutput is ours; a serialize failure is a bug in this process, not a
+                        // Batch is ours; a serialize failure is a bug in this process, not a
                         // runtime condition. abort loudly rather than drop a message on the floor.
                         let json = serde_json::to_string(&out).unwrap_or_else(|e| {
-                            eprintln!("ServerOutput failed to serialize: {e} -- aborting");
+                            eprintln!("Batch failed to serialize: {e} -- aborting");
                             std::process::abort()
                         });
                         if ws_send.send(Message::Text(json.into())).await.is_err() {
@@ -389,6 +389,9 @@ pub async fn create_game(
                 tickets: HashMap::new(),
                 connections: HashMap::new(),
                 profiles: HashMap::new(),
+                actor_created: HashMap::new(),
+                key_created: HashMap::new(),
+                profile_created: HashMap::new(),
                 keys: HashMap::from([(
                     admin_key.clone(),
                     // child of the game token, so tearing the game down takes this key's

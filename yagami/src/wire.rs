@@ -1,22 +1,34 @@
-// Everything that crosses the socket, in one place.
-//
-// amane's bindings.ts is hand-written and must mirror these exactly (no codegen, deliberately), so
-// keeping them together is what makes the two sides diffable by eye. Nothing here should carry
-// server internals -- if a type needs a Key or a GameHandle to be understood, it belongs elsewhere.
-
 use lawliet_types::{
     action::{ActionError, ActionRequest, ActionResponse},
-    command::{Command, CommandPayload, CommandRecipient},
-    common::{ActorKey, ID, Time},
+    command::Command,
+    common::{ActorKey, ID, Time, ViewportKey},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::auth::{ActorScope, Capability, Key};
 
-// what a control produced. the game-administration counterpart to ActionResponse.
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+pub struct Profile {
+    pub display_name: Option<String>,
+}
+
+// client view of a set of privileges
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct PrivilegeSet {
+    pub actors: ActorScope,
+    pub capabilities: Vec<Capability>,
+}
+
+#[derive(Serialize)]
+pub enum ControlError {
+    KeyNotFound,
+    CannotActOnSelf,
+    RequiresSupervise,
+    CannotGrantSupervise,
+}
+
 #[derive(Serialize)]
 pub enum ControlResponse {
-    Ended,
     KeyCreated { key: Key },
     KeyRevoked,
     CapabilitiesSet,
@@ -24,174 +36,45 @@ pub enum ControlResponse {
     ProfileSet,
 }
 
-// a control refused on its own terms -- the caller IS an administrator, but not for this particular
-// target. distinct from Denied, which means they are not an administrator at all.
-#[derive(Serialize)]
-pub enum ControlError {
-    KeyNotFound,
-    // the caller holds Supervise and aimed at its own key
-    CannotActOnSelf,
-    // the target holds Administer and the caller does not hold Supervise
-    RequiresSupervise,
-    // Supervise may only come from someone who already holds it
-    CannotGrantSupervise,
+// Every server output is either a response to some input, or the result of some internal process.
+// An output can only respond to ONE input, and an input can only be attributed to ONE connection.
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub enum ViewGate {
+    Admin,
+    Viewport(ViewportKey), // must be in this viewport
+    Player(ActorKey),      // must have access to this actor
 }
 
-// split by what was asked, then by how it went, so the outcome of an action can never be read as the
-// outcome of a control and each side owns its own error type.
-#[derive(Serialize)]
-pub enum ExecOutcome {
-    Action(ActionOutcome),
-    Control(ControlOutcome),
-}
+// engine recipient to server view gate:
+// directed to system? privilege administers.
+// directed to viewport? viewport.
+// directed to actor? player.
 
-// the ActionContext is NOT inlined here -- its commands ride the enclosing Batch's command buffer, so
-// a reply and a push deliver state by the exact same path and the client has one place to apply from.
 #[derive(Serialize)]
 pub enum ActionOutcome {
     Ok(ActionResponse),
     Err(ActionError),
-    // this key may not act as the requested actor. decided here, never sent to the engine, which has
-    // no concept of connections or keys.
-    //
-    // answered rather than punished: anyone can write a client, and a UI offering something the key
-    // cannot do is a bad UI, not an attack. cutting the socket over it would be.
     Denied,
-    // the engine child died with this action in flight. the action is the prime suspect, so it is
-    // NOT logged and NOT replayed into the fresh child.
-    Crashed,
+    EnginePanic,
 }
 
 #[derive(Serialize)]
 pub enum ControlOutcome {
     Ok(ControlResponse),
     Err(ControlError),
-    // same meaning as its ActionOutcome twin: this key does not permit what was asked. here it means
-    // the key holds no administration capability at all.
     Denied,
 }
 
-// the reply echoes the input it answers, so it covers actions and controls alike -- and the client
-// can match a reply to what it sent without the server inventing a correlation id.
+// either a response or an error
 #[derive(Serialize)]
-pub struct ResponsePair {
-    pub input: ServerInput,
-    pub output: ExecOutcome,
+pub enum ExecOutcome {
+    Action(ActionOutcome),
+    Control(ControlOutcome),
 }
 
-// commands are already recipient-filtered for the connection this is addressed to. `response` is set
-// only on the connection that submitted the action.
-#[derive(Serialize)]
-pub struct Batch {
-    pub commands: Vec<CommandPayload>,
-    pub response: Option<ResponsePair>,
-}
-
-// What the SERVER knows about whoever occupies an actor slot.
-//
-// The engine emits MapActor to say a slot exists, and that is the whole of what it knows. Who is
-// playing it is a different fact with a different lifetime: it can be set after the slot exists,
-// changed later, and it survives nothing the engine would call an event. So it rides its own
-// channel rather than a synthetic Command, which would make lawliet declare a variant its engine
-// never emits.
-//
-// Deliberately a profile rather than a name. Presentation is going to grow (avatars, account
-// identity, whether anyone is currently connected); each of those is a field here and a control of
-// its own, not another parallel channel.
-#[derive(Serialize, Deserialize, Default, Clone)]
-pub struct Profile {
-    // None = the slot exists but nobody has named it yet.
-    pub display_name: Option<String>,
-}
-
-// Profiles REPLACE, per actor, exactly as the key mutators in GameControl do: an entry states the
-// complete profile for that actor, so there is no read-modify-write to get wrong. Actors not
-// mentioned are untouched.
-//
-// A profile may only ever be sent for an actor whose MapActor this connection has ALREADY been
-// delivered. Otherwise this channel becomes a second, ungated way to learn that a player exists,
-// and it would announce people to viewers the command stream deliberately kept them from. See
-// ViewportCursor::known_actors, which is the record of what a connection has been told.
-//
-// Carried by the enclosing seq_num like everything else, so it cannot race the commands it
-// describes.
-#[derive(Serialize)]
-pub struct ProfileUpdate {
-    pub profiles: Vec<(ActorKey, Profile)>,
-}
-
-// What the connection's OWN key permits: the privilege set behind it, in the client's terms.
-//
-// The client needs this because a UI offering something the key cannot do is a bad UI. It is
-// emphatically not what enforces anything -- every action and every control is checked against the
-// ledger when it arrives, and a hand-written client that ignores this packet gains nothing but
-// rejections. The name is the one §10 uses: a key resolves to a privilege set, never to an "actor".
-//
-// Sent as the first thing a connection receives and again whenever the set is rewritten, so there
-// is never a window where the client is acting on a set the server has already replaced.
-//
-// Capabilities are a list of names rather than a bitmask, matching GameControl's direction: a
-// hand-written client never has to know bit values.
-#[derive(Serialize)]
-pub struct PrivilegeSet {
-    pub actors: ActorScope,
-    pub capabilities: Vec<Capability>,
-}
-
-// For abilities like autopsy and tap in which request the server to output filtered data that
-// cannot be stored on the engine
-#[derive(Serialize)]
-pub struct LogCommand {
-    pub time: Time,
-    pub data: Command,
-}
-
-#[derive(Serialize)]
-pub enum LogType {
-    Autopsy(ActorKey),
-    TapIn(ID),
-}
-
-#[derive(Serialize)]
-pub struct LogDump {
-    pub recipients: Vec<CommandRecipient>,
-    pub data: Vec<LogCommand>,
-    pub log_type: LogType,
-}
-
-// Boxing the big variant would trade a heap allocation on the COMMON path (every batch) to shrink a
-// value that is serialized and dropped immediately. The size only ever costs us one outbox slot per
-// queued output, which is bounded by OUTBOX_BUF_SIZE.
-#[allow(clippy::large_enum_variant)]
-#[derive(Serialize)]
-pub enum OutputData {
-    Batch(Batch),
-    Profiles(ProfileUpdate),
-    Privileges(PrivilegeSet),
-    LogDump(LogDump),
-}
-
-#[derive(Serialize)]
-pub struct ServerOutput {
-    pub seq_num: u64,
-    pub data: OutputData,
-}
-
-// controls handled a level above the engine by the game task (undo N, evict key, reboot) -- they act
-// ON the engine/timeline, not IN the fiction. reboot has no live engine to reach at all.
-// Serialize as well as Deserialize because a reply echoes the input it answers (see ResponsePair).
-// every variant here needs Administer. beyond that, authority over the TARGET key is decided by
-// may_manage -- see Capability::Supervise.
-//
-// both mutators REPLACE rather than delta, so the admin's client always states the complete intended
-// privilege set and there is no read-modify-write to get wrong.
-#[derive(Serialize, Deserialize)]
-pub enum GameControl {
-    // tear this game down: engine child, connections, registry entry. the game admin's route to the
-    // same teardown a platform admin reaches over REST.
-    EndGame,
-    // mint a key for this game. this is how a player is let in: create a key scoped to their
-    // actor(s), then hand it over out of band.
+#[derive(Serialize, Deserialize, Clone)]
+pub enum AdminControl {
     CreateKey {
         actors: ActorScope,
         capabilities: Vec<Capability>,
@@ -207,22 +90,92 @@ pub enum GameControl {
         key: Key,
         actors: ActorScope,
     },
-    // state what the server knows about whoever is playing an actor slot. Separate from creating
-    // the slot, deliberately: the engine's AddPlayer knows nothing about presentation, a slot can
-    // exist before anyone is on it, and a profile can change afterwards without the engine ever
-    // hearing about it.
-    //
-    // Replaces, like the two above -- one control for the whole profile rather than one per field,
-    // because every part of a profile has identical semantics (server-level, replaced wholesale,
-    // and gated on the same MapActor). Adding a field to Profile must not add a control.
     SetProfile {
         actor: ActorKey,
         profile: Profile,
+    },
+    GoToTime {
+        time: Time,
     },
 }
 
 #[derive(Serialize, Deserialize)]
 pub enum ServerInput {
     Action(ActionRequest),
-    Control(GameControl),
+    Control(AdminControl),
+}
+
+#[derive(Serialize)]
+pub struct ResponsePair {
+    pub response: ExecOutcome,
+    pub input: ServerInput,
+}
+
+// For abilities like autopsy and tap in which request the server to output filtered data that
+// cannot be stored on the engine
+#[derive(Serialize, Clone, Debug)]
+pub struct LogCommand {
+    pub time: Time,
+    pub data: Command,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub enum LogType {
+    Autopsy(ActorKey),
+    TapIn(ID),
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub enum ServerCmd {
+    LogDump {
+        data: Vec<LogCommand>,
+        log_type: LogType,
+    },
+    ProfileRoster {
+        profiles: Vec<(ActorKey, Profile)>,
+    },
+    KeyRoster {
+        keys: Vec<(Key, PrivilegeSet)>,
+    },
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub enum OutputData {
+    Engine(Command),
+    Server(ServerCmd),
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct ServerOutput {
+    pub time: Time,
+    // if at least one gate passes, a client may receive this output
+    pub view_gates: Vec<ViewGate>,
+    pub data: OutputData,
+}
+
+// a batch can either be live, or it can be an initial batch which tells a client to initialize their
+// state, or reset their current state and construct a new state with the initialize batch.
+// widening?
+// widening becomes a rescan under the actor's new permissions, and a re-initialization.
+// this is slightly inefficient, but a widening barely occurs, and it's correct.
+// a narrowing too, however it should be noted that you cannot truly get rid of that data given a
+// client that doesnt comply to the protocol. as soon as a client is given permissions, you
+// should assume that they have everything. all a narrowing does is prevent them from acting or
+// receiving new data from those permissions.
+// what about backward time travel?
+// everyone is reinitialized, some are kicked if their key was invalidated.
+#[derive(Serialize)]
+#[allow(clippy::large_enum_variant)]
+pub enum BatchKind {
+    Live(Option<ResponsePair>),
+    Initialize,
+}
+
+// clients receive filtered batches rather than many disconnected events
+#[derive(Serialize)]
+pub struct Batch {
+    // the response pair is sent only to the connection which triggered the batch
+    pub kind: BatchKind,
+    // outputs are sent to everyone who passes the view gate
+    pub outputs: Vec<ServerOutput>,
 }

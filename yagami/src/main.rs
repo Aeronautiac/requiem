@@ -13,16 +13,12 @@
 mod constants;
 
 mod auth;
-mod control;
 mod delivery;
-mod deliveryv2;
 mod game;
-mod gamev2;
 mod http;
 mod names;
 mod state;
 mod wire;
-mod wirev2;
 
 use std::sync::{Arc, Mutex};
 

@@ -23,7 +23,7 @@ new_key_type! {
 
 pub type ID = usize;
 pub type Version = u8;
-pub type Time = u64; // virtual units
+pub type Time = u128; // virtual units
 pub type JobID = usize;
 pub type Variant = u8;
 pub type LinkWeight = u16;

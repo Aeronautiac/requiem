@@ -13,43 +13,33 @@ use std::{
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use lawliet_types::common::ActorKey;
+use lawliet_types::common::{ActorKey, Time};
 
 use crate::{
     auth::{Key, KeyData, Privileges, Ticket},
-    delivery::ViewportCursor,
-    game::GameEvent,
-    wire::{Profile, ServerOutput},
+    delivery::DeliveryData,
+    game::GameInput,
+    wire::{Batch, Profile},
 };
 
 pub type GameId = u64; // for now, strictly incrementing
 
 pub struct ConnHandle {
     pub cancel: CancellationToken,
-    pub outbox: mpsc::Sender<ServerOutput>,
+    pub outbox: mpsc::Sender<Batch>,
     // set when the game task cuts this connection; the connection task hasn't torn down yet. fan-out
     // skips a dropped entry in the window between the cancel and the ClaimGuard actually removing it.
     pub dropped: bool,
-    // this connection's own sequence counter. per-connection and runtime-only: it counts batches
-    // THIS socket was sent, so it is dense with no gaps, which is what lets the client treat a gap as
-    // a desync. 0 means nothing sent yet; the first batch is 1.
-    pub seq_num: u64,
-    // how far this connection has been delivered, per viewport. None until it attaches: a
-    // connection is in this map from the moment its socket is claimed, which is before the game
-    // task has replayed anything to it, and advancing a cursor from a baseline it was never given
-    // would leave it permanently short of the history that baseline assumes.
-    //
-    // fan-out therefore skips a connection with no cursor entirely. it loses nothing: attach
-    // replays from position 0 and hands it everything, including whatever was emitted during the
-    // window.
-    pub cursor: Option<ViewportCursor>,
+    // how far this connection has been delivered, per viewport, and which actors still grant access.
+    // filled by History's delivery as it walks the log for this connection.
+    pub delivery: DeliveryData,
 }
 
 pub struct GameHandle {
     // root of this game's token tree: every key token is a child of it and every connection token a
     // child of one of those, so cancelling here reaches all of them without walking the maps.
     pub cancel: CancellationToken,
-    pub inbox: mpsc::UnboundedSender<GameEvent>,
+    pub inbox: mpsc::UnboundedSender<GameInput>,
     pub tickets: HashMap<Ticket, Key>,
     pub connections: HashMap<Ticket, ConnHandle>,
     pub keys: HashMap<Key, KeyData>,
@@ -58,8 +48,13 @@ pub struct GameHandle {
     // set long after the slot, and changed again later. Runtime-only like the rest of this file.
     //
     // An entry here is NOT permission to see it: a profile only ever goes to a connection that has
-    // already been delivered that actor's MapActor. See wire::ProfileUpdate.
+    // already been delivered that actor's MapActor.
     pub profiles: HashMap<ActorKey, Profile>,
+    // timeline: when each actor slot was mapped, and when each key/profile was minted. kept so a
+    // rewind can discard server-side state that stands on an actor or moment that no longer exists.
+    pub actor_created: HashMap<ActorKey, Time>,
+    pub key_created: HashMap<Key, Time>,
+    pub profile_created: HashMap<ActorKey, Time>,
 }
 
 impl GameHandle {
