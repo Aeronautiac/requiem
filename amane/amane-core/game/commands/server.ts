@@ -23,4 +23,11 @@ export const serverHandlers: Handlers = {
   KeyRoster(ctx, p) {
     ctx.view.apply_keys(p.keys);
   },
+
+  // The game's clock anchor: game time as of a real-world sent_at. Rides the world-data viewport,
+  // so it lands on every view that can read the world — held per-view, read where game time is
+  // rendered.
+  GameClock(ctx, p) {
+    ctx.view.set_game_clock(p.sent_at, ctx.timestamp);
+  },
 };

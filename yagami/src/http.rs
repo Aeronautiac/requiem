@@ -390,7 +390,11 @@ pub async fn create_game(
                 connections: HashMap::new(),
                 profiles: HashMap::new(),
                 actor_created: HashMap::new(),
-                key_created: HashMap::new(),
+                // the host key is minted at game creation, i.e. game time 0, so a rewind (which can
+                // only ever go to a time >= 0) must keep it -- see discard_after, which prunes keys
+                // by mint time. forgetting this entry looks like "never minted" and strands the
+                // host (and every later key under Supervise) on any backward jump.
+                key_created: HashMap::from([(admin_key.clone(), 0)]),
                 profile_created: HashMap::new(),
                 data_viewport: None,
                 keys: HashMap::from([(

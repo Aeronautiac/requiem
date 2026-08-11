@@ -1282,7 +1282,8 @@ export type ControlResponse =
   | "KeyRevoked"
   | "CapabilitiesSet"
   | "ActorScopeSet"
-  | "ProfileSet";
+  | "ProfileSet"
+  | "TimeSet";
 
 export type ControlError =
   | "KeyNotFound"
@@ -1315,9 +1316,10 @@ export type ResponsePair = {
 // A single server output, delivered to a connection. `view_gates` is how the server says WHO may
 // see it — the engine's recipient has already been resolved into one or more gates, the server
 // filtered them against this connection's privileges, and the client uses them to route the
-// command into the right per-actor view(s). `Connection` is the one non-view gate: the output is
-// addressed to the connection itself (its own privileges), read directly rather than routed.
-export type ViewGate = "Admin" | { Viewport: ViewportKey } | { Player: ActorKey } | "Connection";
+// command into the right per-actor view(s). Connection-level context (this connection's own
+// privileges) arrives with an EMPTY gate list — its own concern, addressed to the connection, read
+// directly rather than routed to any view.
+export type ViewGate = "Admin" | { Viewport: ViewportKey } | { Player: ActorKey };
 
 // An engine command is routed like any other command. A server command is server-computed state
 // that could not live on the engine — a filtered log dump, a profile roster, a key roster.
@@ -1329,9 +1331,14 @@ export type ServerCmd =
   | { LogDump: { data: LogCommand[]; log_type: LogType } }
   | { ProfileRoster: { profiles: [ActorKey, Profile][] } }
   | { KeyRoster: { keys: [string, PrivilegeSet][] } }
-  // This connection's own privileges. Sent as the first command of every sync (fresh attach or a
-  // resync after a privilege change), and read connection-wide by the session.
-  | { Privileges: PrivilegeSet };
+  // This connection's own privileges. Sent directly to it as the first output of every sync (fresh
+  // attach or a resync after a privilege change), addressed to the connection with an empty gate
+  // list, and read connection-wide by the session.
+  | { Privileges: PrivilegeSet }
+  // The game's clock anchor, riding the world-data viewport like the ProfileRoster. Anchors the
+  // game's virtual time (`sent_at` real wall time at delivery) so a client can derive current game
+  // time. `time` on the enclosing ServerOutput is the game time it anchors.
+  | { GameClock: { sent_at: number } };
 
 export type OutputData = { Engine: Command } | { Server: ServerCmd };
 

@@ -498,7 +498,7 @@
             />
           {:else if "Write" in event.data}
             {@const w = event.data.Write}
-            <Announcement color={write_event_color(w)} description="Notebook Write">
+            <Announcement {view} timestamp={event.timestamp} color={write_event_color(w)} description="Notebook Write">
               <Name id={w.user_id} {view} chip /> wrote the name
               <span class="text-neutral-200">"{nameLabel(w.true_name)}"</span>.
               <div class="mt-1 whitespace-pre-wrap">{write_outcome_text(w)}</div>
@@ -507,7 +507,7 @@
             {@const d = event.data.Death}
             <!-- Beat 1 of the staged reveal: the death and the name behind it. The role and any
                  inheritance follow as their own events (DeathRole / DeathTransfer), timed apart. -->
-            <Announcement color="var(--color-event-death)" description="Death">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-death)" description="Death">
               <Name id={d.target_id} {view} chip /> has died.
               {#if d.death_message}
                 <div class="mt-1 italic text-neutral-300">{d.death_message}</div>
@@ -521,7 +521,7 @@
           {:else if "DeathRole" in event.data}
             {@const r = event.data.DeathRole}
             <!-- Beat 2: who they turned out to be, in that role's own colour. -->
-            <Announcement color={roleColorVar(r.role)} description="Role Revealed">
+            <Announcement {view} timestamp={event.timestamp} color={roleColorVar(r.role)} description="Role Revealed">
               <Name id={r.target_id} {view} chip /> was
               <Chip label={roleLabel(r.role)} colorVar={roleColorVar(r.role)} />.
             </Announcement>
@@ -530,7 +530,7 @@
             <!-- Beat: the affiliations they turn out to have had. On a real death these are true; on
                  a pseudocide they are whatever the faker chose to show. Leadership and OG standing,
                  normally private, are laid bare here. -->
-            <Announcement color="var(--color-event-reveal)" description="Affiliations">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-reveal)" description="Affiliations">
               <Name id={o.target_id} {view} chip /> stood with
               {#each o.orgs as org, i (org.id)}
                 {@const name = view.orgs.get(org.id)?.name}
@@ -543,25 +543,25 @@
           {:else if "DeathTransfer" in event.data}
             {@const tr = event.data.DeathTransfer}
             <!-- Beat 3: what they left behind — never to whom. -->
-            <Announcement color="var(--color-event-death)" description="Inheritance">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-death)" description="Inheritance">
               <Name id={tr.target_id} {view} chip /> is gone — but {death_transfer_text(tr)} passed
               to someone new.
             </Announcement>
           {:else if "AnonymousAnnouncement" in event.data}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-anonymous)"
               description="Anonymous Announcement"
               content={event.data.AnonymousAnnouncement.content}
             />
           {:else if "EyeDealTaken" in event.data}
             {@const u = event.data.EyeDealTaken.user}
-            <Announcement color="var(--color-event-reveal)" description="The Eye Deal">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-reveal)" description="The Eye Deal">
               <Chip label={display_string(u)} colorVar={display_color(u)} /> has taken the shinigami eye
               deal.
             </Announcement>
           {:else if "NewsAnchor" in event.data}
             {@const na = event.data.NewsAnchor}
-            <Announcement color="var(--color-news-anchor)" description="News Anchor">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-news-anchor)" description="News Anchor">
               {#if na.target_id}
                 <Name id={na.target_id} {view} chip /> is now the
                 <Chip label="News Anchor" colorVar="var(--color-news-anchor)" />.
@@ -571,7 +571,7 @@
               {/if}
             </Announcement>
           {:else if "NewsAnchorStatus" in event.data}
-            <Announcement color="var(--color-event-personal)" description="News Anchor">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-personal)" description="News Anchor">
               {#if event.data.NewsAnchorStatus.holding}
                 You are now the
                 <Chip label="News Anchor" colorVar="var(--color-news-anchor)" />.
@@ -581,7 +581,7 @@
               {/if}
             </Announcement>
           {:else if "PressConfMembership" in event.data}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-personal)"
               description="Press Conference"
             >
@@ -596,7 +596,7 @@
           {:else if "LeaderStatus" in event.data}
             {@const ls = event.data.LeaderStatus}
             {@const org_name = view.orgs.get(ls.org_id)?.name}
-            <Announcement color="var(--color-event-personal)" description="Leadership">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-personal)" description="Leadership">
               {#if ls.leader}You are now the leader of{:else}You are no longer the leader of{/if}
               <Chip
                 label={org_name ? orgDisplayName(org_name) : t("display_org_unknown")}
@@ -605,7 +605,7 @@
             </Announcement>
           {:else if "PressConfStatus" in event.data}
             {@const pc = event.data.PressConfStatus}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color="var(--color-press-conference)"
               description="Press Conference"
             >
@@ -615,7 +615,7 @@
             </Announcement>
           {:else if "FailedSilentProsecution" in event.data}
             {@const f = event.data.FailedSilentProsecution}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-prosecution)"
               description="False Accusation"
             >
@@ -629,24 +629,24 @@
             </Announcement>
           {:else if "RevealTrueName" in event.data}
             {@const r = event.data.RevealTrueName}
-            <Announcement color="var(--color-event-reveal)" description="Name Reveal">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-reveal)" description="Name Reveal">
               <Name id={r.target_id} {view} chip />'s true name is
               <span class="text-neutral-200">{nameLabel(r.true_name)}</span>.
             </Announcement>
           {:else if "RevealNotebookHolding" in event.data}
             {@const r = event.data.RevealNotebookHolding}
-            <Announcement color="var(--color-event-reveal)" description="Notebook Check">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-reveal)" description="Notebook Check">
               <Name id={r.target_id} {view} chip /> is {r.holding ? "" : "not "}currently
               holding a notebook.
             </Announcement>
           {:else if "EyeCount" in event.data}
             {@const c = event.data.EyeCount.count}
-            <Announcement color="var(--color-event-personal)" description="Shinigami Eyes">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-personal)" description="Shinigami Eyes">
               You have <span class="text-neutral-200">{c}</span> eye{c === 1 ? "" : "s"} remaining.
             </Announcement>
           {:else if "Bugged" in event.data}
             {@const b = event.data.Bugged}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-surveillance)"
               description="Surveillance"
               content={b.context === "Custody"
@@ -655,20 +655,20 @@
             />
           {:else if "RoleUpdate" in event.data}
             {@const role = event.data.RoleUpdate.role}
-            <Announcement color="var(--color-event-personal)" description="Role">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-personal)" description="Role">
               Your role is now <Chip
                 label={roleLabel(role)}
                 colorVar={roleColorVar(role)}
               />.
             </Announcement>
           {:else if "TrueNameUpdate" in event.data}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-personal)"
               description="True Name"
               content={`Your true name is now ${nameLabel(event.data.TrueNameUpdate.true_name)}.`}
             />
           {:else if "NotebookReceived" in event.data}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-death)"
               description="Notebook"
               content="A notebook has come into your possession."
@@ -696,12 +696,12 @@
             {/if}
           {:else if "PseudocideRevival" in event.data}
             {@const r = event.data.PseudocideRevival}
-            <Announcement color="var(--color-event-revival)" description="Revival">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-revival)" description="Revival">
               <Name id={r.target_id} {view} chip /> is alive.
             </Announcement>
           {:else if "KidnapReveal" in event.data}
             {@const kr = event.data.KidnapReveal}
-            <Announcement color="var(--color-event-alarm)" description="Kidnap Reveal">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-alarm)" description="Kidnap Reveal">
               Authorities have recovered {#if kr.victim}<Name
                   id={kr.victim}
                   {view}
@@ -714,24 +714,24 @@
             </Announcement>
           {:else if "Kidnapping" in event.data}
             {@const k = event.data.Kidnapping}
-            <Announcement color="var(--color-event-alarm)" description="Kidnapping">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-alarm)" description="Kidnapping">
               <Name id={k.target_id} {view} chip /> has been kidnapped.
             </Announcement>
           {:else if "Incarceration" in event.data}
             {@const inc = event.data.Incarceration}
-            <Announcement color="var(--color-event-custody)" description="Imprisonment">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-custody)" description="Imprisonment">
               <Name id={inc.victim_id} {view} chip /> has been imprisoned{#if inc.duration}
                 for {formatDuration(inc.duration)}{/if}.
             </Announcement>
           {:else if "IncarcerationReleased" in event.data}
             {@const rel = event.data.IncarcerationReleased}
-            <Announcement color="var(--color-event-custody)" description="Release">
+            <Announcement {view} timestamp={event.timestamp} color="var(--color-event-custody)" description="Release">
               {#if rel.victim}<Name id={rel.victim} {view} chip />{:else}A prisoner{/if} has
               been released.
             </Announcement>
           {:else if "NewIteration" in event.data}
             {@const it = event.data.NewIteration.iteration}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-alarm)"
               description={it === 1 ? "The Game Begins" : "New Day"}
               content={it === 1
@@ -740,7 +740,7 @@
             />
           {:else if "Blackout" in event.data}
             {@const on = event.data.Blackout.active}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-blackout)"
               description={on
                 ? t("blackout_begun_label")
@@ -748,14 +748,14 @@
               content={on ? t("blackout_begun") : t("blackout_over")}
             />
           {:else if "ChannelTapped" in event.data}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-surveillance)"
               description="Tapped"
               content="Someone outside this conversation read what was said here. There is no way to tell who."
             />
           {:else if "TapInResult" in event.data}
             {@const tr = event.data.TapInResult}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color={typeof tr.outcome === "string"
                 ? "var(--color-event-nothing)"
                 : "var(--color-event-tap)"}
@@ -764,7 +764,7 @@
             />
           {:else if "KiraConnectionAttempt" in event.data}
             {@const ka = event.data.KiraConnectionAttempt}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color={ka.success
                 ? "var(--color-event-death)"
                 : "var(--color-event-nothing)"}
@@ -781,10 +781,11 @@
               to={display_string(log.contacted)}
               event={log.event}
               timestamp={event.timestamp}
+              {view}
             />
           {:else if "ProsecutionEvent" in event.data}
             {@const pe = event.data.ProsecutionEvent}
-            <Announcement
+            <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-prosecution)"
               description={pe.ended ? "Prosecution Ended" : "Prosecution"}
               content={prosecution_event_text(pe)}

@@ -5,13 +5,13 @@
   //
   // `grouped` only drops the sender header for a continuation of an uninterrupted run from the
   // same sender. Every row stays its own hover target and carries its own time.
-  import { formatTime } from "../../lib/utils";
   import { actorLabel, displayColorVar } from "../../game/helpers.svelte";
   import type { GameView } from "../../game/view.svelte";
   import type { ActorDisplay } from "../../bindings";
   import { slotKeyToString } from "../../bindings";
   import MentionText from "./MentionText.svelte";
   import Name from "./Name.svelte";
+  import TimeStamp from "./TimeStamp.svelte";
 
   interface Props {
     senderDisplay: ActorDisplay;
@@ -37,7 +37,6 @@
     last = false,
   }: Props = $props();
 
-  const time = $derived(formatTime(timestamp));
   const senderLabel = $derived(actorLabel(senderDisplay, view.players));
   const senderColor = $derived(displayColorVar(senderDisplay, view));
   // A player sender routes through Name so its header is clickable (opens the profile menu) and
@@ -56,16 +55,17 @@
     : 'pb-0.5'} {mentioned
     ? 'bg-amber-400/10 shadow-[inset_2px_0_0_rgba(251,191,36,0.8)]'
     : 'hover:bg-neutral-800/40'}"
-  title={grouped ? time : undefined}
 >
   {#if !grouped}
-    <div class="flex items-baseline gap-2">
-      {#if senderPlayer}
-        <Name id={senderPlayer} {view} />
-      {:else}
-        <span class="font-medium" style="color: {senderColor}">{senderLabel}</span>
-      {/if}
-      <span class="text-xs text-neutral-500">{time}</span>
+    <div class="flex items-baseline justify-between gap-2">
+      <div class="flex min-w-0 items-baseline gap-2">
+        {#if senderPlayer}
+          <Name id={senderPlayer} {view} />
+        {:else}
+          <span class="font-medium" style="color: {senderColor}">{senderLabel}</span>
+        {/if}
+      </div>
+      <TimeStamp {timestamp} {view} />
     </div>
   {/if}
   <div class="whitespace-pre-wrap break-words text-sm text-neutral-300">

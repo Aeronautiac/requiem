@@ -22,7 +22,6 @@ import type {
   Statuses,
 } from "../bindings";
 import { slotKeyToString } from "../bindings";
-import { now } from "../time.svelte";
 import { NOTIF_CHANNEL, logDumpKey, new_channel, orgDisplayName, playerLabel, t } from "./helpers.svelte";
 import type {
   AbilityView,
@@ -86,15 +85,28 @@ export class GameView {
 
   // Push a run of world events on a wall-clock schedule keyed to their own timestamps: one whose
   // time has already passed lands at once, a future one after the clock reaches it. Used to stagger
-  // a single command (a death) into timed reveals. How late the command arrived is already baked
-  // into the timestamps versus `now`, so a fresh event plays out while a replayed one is all there —
-  // no notion of "live" needed. The feed sorts by timestamp, so each part still lands in order.
+  // a single command (a death) into timed reveals. The feed sorts by timestamp, so each part still
+  // lands in order.
+  //
+  // The timestamps are GAME time, so the delay is measured against game time now (not the wall
+  // clock): game time advances one-for-one with real time, so a delay in game-milliseconds is the
+  // same wall-millisecond wait. A replayed command is "all there" already -- its parts are all in
+  // the past -- so it plays out at once, with no notion of "live" needed.
   stage_world_events(parts: GameEvent[]) {
     for (const part of parts) {
-      const delay = part.timestamp - now();
+      const delay = part.timestamp - this.game_time_now();
       if (delay <= 0) this.events.push(part);
       else setTimeout(() => this.events.push(part), delay);
     }
+  }
+
+  // The current game time, from the clock anchor the server sent: game time at `sent_at`, plus one
+  // millisecond of game time per real millisecond elapsed since. Before an anchor has arrived the
+  // game is taken to be at 0 -- its start.
+  game_time_now(): number {
+    const c = this.game_clock;
+    if (!c) return 0;
+    return c.time + (Date.now() - c.sent_at);
   }
   // Read-only feeds this view builds for itself rather than being delivered, keyed "info:*".
   info_channels = new SvelteMap<string, Channel>();
@@ -372,6 +384,17 @@ export class GameView {
   apply_keys(keys: [string, PrivilegeSet][]) {
     this.keys.clear();
     for (const [id, privileges] of keys) this.keys.set(id, privileges);
+  }
+
+  // ---- game clock ----
+
+  // The game's clock anchor, riding the world-data viewport like the ProfileRoster: game time as of
+  // a real wall `sent_at`. Every view that can read the world holds one, and the UI derives current
+  // game time from `time + (Date.now() - sent_at)`.
+  game_clock = $state<{ time: number; sent_at: number } | null>(null);
+
+  set_game_clock(sent_at: number, time: number) {
+    this.game_clock = { sent_at, time };
   }
 
   // ---- log records ----

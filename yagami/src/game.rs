@@ -5,7 +5,9 @@
 // async helpers: spawn+boot, dispatch (write then read), and a select loop that feeds inputs and
 // ticks through them one at a time. There is no supervisor task, and no boot handler arm.
 
-use std::{collections::HashSet, env::current_exe, io::ErrorKind, process::Stdio, time::Duration};
+use std::{
+    collections::HashSet, env::current_exe, io::ErrorKind, process::Stdio, time::Duration, vec,
+};
 
 use lawliet_types::{
     ability::AbilityBehaviour,
@@ -27,7 +29,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     auth::{ActorScope, Capability, Key, KeyData, Privileges, Ticket, to_flags},
     constants::{ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
-    delivery::{History, key_roster_output, profile_roster_output},
+    delivery::{History, game_clock_output, key_roster_output, profile_roster_output},
     generate_seed,
     names::NamePool,
     state::{GameHandle, GameId, WrappedServerState, lock_state},
@@ -125,8 +127,8 @@ impl GameClock {
     }
 
     fn go_to(&mut self, target: Time) {
-        let offset = target - self.now();
-        self.anchor += offset as i128;
+        let offset: i128 = target as i128 - self.now() as i128;
+        self.anchor += offset;
     }
 }
 
@@ -440,10 +442,11 @@ impl Game {
 
             // jump the engine up to the clock the previous child had reached, so jobs already
             // executed are not re-run. success responses are discarded.
-            if ok && self.last_reached > 0 {
+            let t = self.last_reached;
+            if ok && t > 0 {
                 let request = ActionRequest {
                     actor: ActionActor::System,
-                    timestamp: self.last_reached,
+                    timestamp: t,
                     payload: Action::Null(Null {}),
                 };
                 if !self.fold_dispatch(&request).await {
@@ -475,7 +478,9 @@ impl Game {
                 // rewind that prunes either ledger rests the roster on the pruned reality.
                 self.append_key_roster();
                 self.append_profile_roster();
-                self.history.resync_all(&self.server_state);
+                self.append_game_clock();
+                self.history
+                    .resync_all(&self.server_state, self.clock.now());
                 return;
             }
 
@@ -520,13 +525,6 @@ impl Game {
         // read the game's persistent state (config, players, keys) from the database.
     }
 
-    // cleanup after finishing
-    async fn teardown(&mut self) {
-        let mut state = lock_state(&self.server_state);
-        self.cancel.cancel();
-        state.games.remove(&self.game_id);
-    }
-
     // ===== INPUT HANDLING ===== //
 
     async fn handle_input(&mut self, input: GameInput) {
@@ -543,7 +541,8 @@ impl Game {
                 // replay the whole entitled history to this connection and install its cursor:
                 // from now on `broadcast` advances it live. starts a sync before the socket reads a
                 // single frame, so the connection is caught up before anything it sends is executed.
-                self.history.deliver_sync(&self.server_state, ticket);
+                self.history
+                    .deliver_sync(&self.server_state, ticket, self.clock.now());
             }
         }
     }
@@ -634,7 +633,22 @@ impl Game {
         }
         let now = self.clock.now();
         match control {
-            AdminControl::GoToTime { time } => self.go_to_time(time).await,
+            AdminControl::GoToTime { time } => {
+                self.go_to_time(time).await;
+                // the jump itself already replayed (or rebuilt) history and resyncs every
+                // connection; all this reply does is settle the requesting control so the client's
+                // positional reply queue is not left with a dangling entry for the NEXT action.
+                // (see session #waiting -- every control must answer.)
+                let pair = ResponsePair {
+                    response: ExecOutcome::Control(ControlOutcome::Ok(ControlResponse::TimeSet)),
+                    input: ServerInput::Control(AdminControl::GoToTime { time }),
+                };
+                self.history.broadcast(
+                    &self.server_state,
+                    self.history.head(),
+                    Some((ticket, pair)),
+                );
+            }
             AdminControl::CreateKey {
                 actors,
                 capabilities,
@@ -855,10 +869,11 @@ impl Game {
     // returns the current head, i.e. nothing new to deliver.
     fn append_key_roster(&mut self) -> usize {
         let start = self.history.head();
+        let now = self.clock.now();
         let output = {
             let server_state = lock_state(&self.server_state);
             match server_state.games.get(&self.game_id) {
-                Some(game) => key_roster_output(&game.keys),
+                Some(game) => key_roster_output(&game.keys, now),
                 None => return start,
             }
         };
@@ -874,6 +889,7 @@ impl Game {
     // Returns the history position to walk from when broadcasting, as @[append_key_roster].
     fn append_profile_roster(&mut self) -> usize {
         let start = self.history.head();
+        let now = self.clock.now();
         let output = {
             let server_state = lock_state(&self.server_state);
             let Some(game) = server_state.games.get(&self.game_id) else {
@@ -882,7 +898,36 @@ impl Game {
             let Some(viewport) = game.data_viewport else {
                 return start; // the world-data viewport has not been announced yet
             };
-            profile_roster_output(viewport, &game.profiles)
+            profile_roster_output(viewport, &game.profiles, now)
+        };
+        self.history.append_server(vec![output]);
+        start
+    }
+
+    // snapshot the game's current clock into history as a live GameClock, aimed at the world-data
+    // viewport like the ProfileRoster it sits beside. It is game-wide state, not connection context,
+    // so it is appended to the shared log and replayed -- a fresh boot (or a rewind, which boots
+    // again) rewrites it, and any client that can read the world sees the current anchor. A client
+    // derives the current game time from `time` + (wall_now - sent_at).
+    //
+    // Returns the history position to walk from when broadcasting, as @[append_key_roster]. A
+    // no-op (game gone, or the world-data viewport not yet announced) returns the current head.
+    fn append_game_clock(&mut self) -> usize {
+        let start = self.history.head();
+        let now = self.clock.now();
+        let output = {
+            let server_state = lock_state(&self.server_state);
+            let Some(game) = server_state.games.get(&self.game_id) else {
+                return start;
+            };
+            let Some(viewport) = game.data_viewport else {
+                return start; // the world-data viewport has not been announced yet
+            };
+            let sent_at = std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .expect("wall clock before epoch")
+                .as_millis();
+            game_clock_output(viewport, now, sent_at)
         };
         self.history.append_server(vec![output]);
         start
@@ -906,7 +951,8 @@ impl Game {
             }
         };
         for ticket in tickets {
-            self.history.deliver_sync(&self.server_state, ticket);
+            self.history
+                .deliver_sync(&self.server_state, ticket, self.clock.now());
         }
     }
 
@@ -937,6 +983,9 @@ impl Game {
             };
             // a forward jump has no originating connection, but its commands still reach everyone.
             self.execute(&request, None).await;
+            // the clock was wound forward; re-anchor every client's game time on the new baseline.
+            let at = self.append_game_clock();
+            self.history.broadcast(&self.server_state, at, None);
             return;
         }
 
@@ -949,7 +998,8 @@ impl Game {
 
         // every connection's view of the world was built on a timeline that no longer exists: reset
         // each one and replay the truncated history from the start.
-        self.history.resync_all(&self.server_state);
+        self.history
+            .resync_all(&self.server_state, self.clock.now());
     }
 
     // ===== REWIND ===== //
@@ -1001,9 +1051,21 @@ impl Game {
                 }
             }
         }
+        // dropping `self` runs Drop, which tears the game out of state and cancels it, and dropping
+        // the child reaps the engine (kill_on_drop).
+    }
+}
 
-        // dropping `self` drops the child, and kill_on_drop reaps the engine.
-        self.teardown().await;
+impl Drop for Game {
+    // Graceful teardown whether `run` finishes or the task panics mid-way: on either path `self`
+    // is dropped and this runs. Remove the game from the registry and cancel its token tree so its
+    // connections' sockets close (and their clients are told they were disconnected) instead of
+    // leaking a half-alive game. Nothing here is async, and the fields needed are sync, so Drop can
+    // do this without an async teardown step that a panic would skip.
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        let mut state = lock_state(&self.server_state);
+        state.games.remove(&self.game_id);
     }
 }
 
@@ -1151,15 +1213,25 @@ fn discard_after(game: &mut GameHandle, target: Time) {
         actor_existed && minted_by
     });
 
-    // a key keeps its identity but loses scope over actors that did not exist yet.
-    game.keys.retain(|key, key_data| {
-        game.key_created.get(key).is_some_and(|t| *t <= target) && {
-            if let crate::auth::ActorScope::Only(actors) = &mut key_data.privileges.actors {
-                actors.retain(|actor| game.actor_created.get(actor).is_some_and(|t| *t <= target));
-            }
-            true
+    // a key minted after `target` did not exist yet, so it is cut -- and every connection under it
+    // is torn down the same way a revocation is (cancel the token + drop the socket), so its clients
+    // are TOLD they were disconnected rather than left socket-open-but-starved until they go silent.
+    let dropped: Vec<Key> = game
+        .keys
+        .iter()
+        .filter(|(key, _)| !game.key_created.get(key).is_some_and(|t| *t <= target))
+        .map(|(key, _)| key.clone())
+        .collect();
+    for key in dropped {
+        revoke_key(game, &key);
+    }
+
+    // a surviving key keeps its identity but loses scope over actors that did not exist yet.
+    for key_data in game.keys.values_mut() {
+        if let crate::auth::ActorScope::Only(actors) = &mut key_data.privileges.actors {
+            actors.retain(|actor| game.actor_created.get(actor).is_some_and(|t| *t <= target));
         }
-    });
+    }
 }
 
 #[cfg(test)]

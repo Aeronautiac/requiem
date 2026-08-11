@@ -5,6 +5,8 @@
   // colour and don't have to think about Tailwind's class purging — dynamic colours cannot be
   // Tailwind classes.
   import type { Snippet } from "svelte";
+  import type { GameView } from "../../game/view.svelte";
+  import TimeStamp from "./TimeStamp.svelte";
 
   interface Props {
     color: string;
@@ -13,8 +15,11 @@
     // embedded ping chip, say — and it renders in the same styled slot.
     content?: string;
     children?: Snippet;
+    // The game time the announcement appeared, shown in the header (with real wall time on hover).
+    timestamp?: number;
+    view?: GameView;
   }
-  let { color, description, content, children }: Props = $props();
+  let { color, description, content, children, timestamp, view }: Props = $props();
 </script>
 
 <div class="px-3 py-0.5">
@@ -28,11 +33,16 @@
     ></div>
 
     <div class="relative">
-      <div
-        class="text-[0.8rem] font-semibold uppercase tracking-wide"
-        style="color: {color}"
-      >
-        {description}
+      <div class="flex items-baseline justify-between gap-2">
+        <div
+          class="text-[0.8rem] font-semibold uppercase tracking-wide"
+          style="color: {color}"
+        >
+          {description}
+        </div>
+        {#if timestamp !== undefined}
+          <TimeStamp {timestamp} {view} />
+        {/if}
       </div>
       <!-- pre-wrap only for the plain-text case, where the copy carries its own newlines. Markup
            children lay out with their own elements, so collapsing source whitespace is what's wanted. -->

@@ -2,13 +2,16 @@ use std::collections::{HashMap, HashSet};
 
 use lawliet_types::{
     command::{Command, CommandPayload, CommandRecipient, TapInOutcome},
-    common::{ActorKey, LogID, ViewportKey},
+    common::{ActorKey, LogID, Time, ViewportKey},
 };
 
 use crate::{
     auth::{Capability, Key, KeyData, Privileges, Ticket},
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
-    wire::{Batch, BatchKind, LogCommand, LogType, OutputData, Profile, ResponsePair, ServerCmd, ServerOutput, ViewGate},
+    wire::{
+        Batch, BatchKind, LogCommand, LogType, OutputData, Profile, ResponsePair, ServerCmd,
+        ServerOutput, ViewGate,
+    },
 };
 
 // convert an engine payload to its stored server output: derive the view gates from the recipient,
@@ -33,29 +36,50 @@ pub fn engine_to_server_cmd(cmd: &CommandPayload) -> ServerOutput {
     }
 }
 
-// The connection's own capability set, as the first output of every sync. Connection-gated: not
-// view content, delivered to everyone, and read directly by the client rather than routed.
-fn privilege_output(privileges: &Privileges) -> ServerOutput {
+// The connection's own privilege set, sent DIRECTLY to it as the first output of every sync (a
+// fresh attach or a re-sync after a privilege change). This is connection-level context -- owned by
+// the specific connection it is pushed to, never stored in the shared log and never routed to a
+// view -- so it carries an EMPTY gate list: no actor, no viewport, no admin reach. "empty" here
+// means "this connection's concern", which is a different thing from an empty gate in the log
+// (that one delivers to nobody).
+fn privilege_output(privileges: &Privileges, time: Time) -> ServerOutput {
     ServerOutput {
-        time: 0,
-        view_gates: vec![ViewGate::Connection],
+        time,
+        view_gates: vec![],
         data: OutputData::Server(ServerCmd::Privileges(crate::wire::privileges_to_wire(
             privileges,
         ))),
     }
 }
 
+// the game's clock anchor, riding the world-data viewport like every other piece of server-computed
+// world state (the ProfileRoster). It is game-wide, not connection-specific, so it lives in the log
+// and reaches anyone who can read the world: it anchors the game's virtual time to `sent_at` real
+// wall time so a client can derive the current game time.
+pub fn game_clock_output(data_viewport: ViewportKey, time: Time, sent_at: u128) -> ServerOutput {
+    ServerOutput {
+        time,
+        view_gates: vec![ViewGate::Viewport(data_viewport), ViewGate::Admin],
+        data: OutputData::Server(ServerCmd::GameClock { sent_at }),
+    }
+}
+
 // The whole key ledger, delivered whole: every key and the privilege set it currently allows. Gated
 // Admin like the rest of the management surface, and replaced wholesale by the client, never diffed.
-pub fn key_roster_output(keys: &HashMap<Key, KeyData>) -> ServerOutput {
+pub fn key_roster_output(keys: &HashMap<Key, KeyData>, time: Time) -> ServerOutput {
     let keys: Vec<(Key, crate::wire::PrivilegeSet)> = keys
         .iter()
-        .map(|(key, data)| (key.clone(), crate::wire::privileges_to_wire(&data.privileges)))
+        .map(|(key, data)| {
+            (
+                key.clone(),
+                crate::wire::privileges_to_wire(&data.privileges),
+            )
+        })
         .collect();
     ServerOutput {
-        time: 0,
         view_gates: vec![ViewGate::Admin],
         data: OutputData::Server(ServerCmd::KeyRoster { keys }),
+        time,
     }
 }
 
@@ -64,13 +88,17 @@ pub fn key_roster_output(keys: &HashMap<Key, KeyData>) -> ServerOutput {
 // commands (Viewport + Admin), and the shared viewport is the whole correctness argument: anyone
 // who can read this roster has already been walked the actor mappings it names, by design, so a
 // client never learns a name for a slot it does not hold. Delivered whole on every change.
-pub fn profile_roster_output(data_viewport: ViewportKey, profiles: &HashMap<ActorKey, Profile>) -> ServerOutput {
+pub fn profile_roster_output(
+    data_viewport: ViewportKey,
+    profiles: &HashMap<ActorKey, Profile>,
+    time: Time,
+) -> ServerOutput {
     let profiles: Vec<(ActorKey, Profile)> =
         profiles.iter().map(|(k, v)| (*k, v.clone())).collect();
     ServerOutput {
-        time: 0,
         view_gates: vec![ViewGate::Viewport(data_viewport), ViewGate::Admin],
         data: OutputData::Server(ServerCmd::ProfileRoster { profiles }),
+        time,
     }
 }
 
@@ -103,7 +131,6 @@ impl DeliveryData {
     // membership held here.
     fn gate_passes(&self, privileges: &Privileges, gate: &ViewGate) -> bool {
         match gate {
-            ViewGate::Connection => true,
             ViewGate::Admin => privileges.capabilities.contains(Capability::Administer),
             ViewGate::Viewport(viewport) => self
                 .viewports
@@ -326,13 +353,17 @@ impl History {
         out
     }
 
-    // walk history from start point, construct a batch, and deliver to a connection
+    // walk history from start point, construct a batch, and deliver to a connection. `now` is the
+    // connection's current game time, stamped onto the connection-level outputs (its privileges)
+    // that lead the batch -- those are not moments on the timeline, but they still want to be
+    // correct if a client ever reads an "as of" off them.
     pub fn deliver(
         &self,
         state: &WrappedServerState,
         start: usize,
         ticket: Ticket,
         kind: BatchKind,
+        now: Time,
     ) {
         let mut server_state = lock_state(state);
         let Some(game) = server_state.games.get_mut(&self.game_id) else {
@@ -373,7 +404,7 @@ impl History {
         // a changed key arrive by this same route (see game::resync_key), so a rebuild always
         // carries the current set.
         if matches!(kind, BatchKind::Initialize) {
-            outputs.insert(0, privilege_output(privileges));
+            outputs.insert(0, privilege_output(privileges, now));
         }
 
         push_batch(conn, Batch { kind, outputs });
@@ -382,7 +413,7 @@ impl History {
     // re-sync one connection from the start of the log. drops the connection's delivery data first:
     // a sync is "rebuild everything from zero" (a fresh attach, or a client that must be reset because
     // the timeline it was on no longer exists), so stale watermarks must not suppress a second delivery.
-    pub fn deliver_sync(&self, state: &WrappedServerState, ticket: Ticket) {
+    pub fn deliver_sync(&self, state: &WrappedServerState, ticket: Ticket, now: Time) {
         // watermark reset is part of the sync contract, so a caller cannot forget it: drip with an
         // Initialize batch but keep old watermarks would silently skip history the client must rebuild.
         {
@@ -393,12 +424,12 @@ impl History {
                 conn.delivery = DeliveryData::default();
             }
         }
-        self.deliver(state, 0, ticket, BatchKind::Initialize)
+        self.deliver(state, 0, ticket, BatchKind::Initialize, now)
     }
 
     // re-sync every connection. used after a backward time jump, when the engine has been rebuilt onto
     // an earlier base and every client's view of the world no longer describes the timeline it is now on.
-    pub fn resync_all(&self, state: &WrappedServerState) {
+    pub fn resync_all(&self, state: &WrappedServerState, now: Time) {
         let mut server_state = lock_state(state);
         let Some(game) = server_state.games.get_mut(&self.game_id) else {
             return;
@@ -407,7 +438,7 @@ impl History {
         drop(server_state);
 
         for ticket in tickets {
-            self.deliver_sync(state, ticket);
+            self.deliver_sync(state, ticket, now);
         }
     }
 
@@ -1104,16 +1135,14 @@ mod tests {
             },
         );
 
-        let out = key_roster_output(&ledger);
+        let out = key_roster_output(&ledger, 0);
         assert!(out.view_gates.contains(&ViewGate::Admin));
 
         // an administrator passes the Admin gate; a plain player is not entrusted with it.
         let admin_data = DeliveryData::default();
-        assert!(admin_data
-            .gate_passes(&privileges(&[], true), &ViewGate::Admin));
+        assert!(admin_data.gate_passes(&privileges(&[], true), &ViewGate::Admin));
         let player_data = DeliveryData::default();
-        assert!(!player_data
-            .gate_passes(&privileges(&[], false), &ViewGate::Admin));
+        assert!(!player_data.gate_passes(&privileges(&[], false), &ViewGate::Admin));
 
         let keys = match &out.data {
             OutputData::Server(ServerCmd::KeyRoster { keys }) => keys,
@@ -1132,9 +1161,14 @@ mod tests {
     fn profile_roster_rides_the_data_viewport_and_follows_its_access() {
         let vp = viewport(1);
         let mut profiles = HashMap::new();
-        profiles.insert(actor(1), Profile { display_name: Some("Robyn".into()) });
+        profiles.insert(
+            actor(1),
+            Profile {
+                display_name: Some("Robyn".into()),
+            },
+        );
 
-        let out = profile_roster_output(vp, &profiles);
+        let out = profile_roster_output(vp, &profiles, 0);
         assert!(out.view_gates.contains(&ViewGate::Viewport(vp)));
 
         // someone who has been walked the actor mappings (holds the data viewport) sees the roster;
@@ -1146,16 +1180,21 @@ mod tests {
                 players: HashSet::from([actor(1)]),
             },
         );
-        assert!(out.view_gates.iter().any(|g| seen.gate_passes(&privileges(&[actor(1)], false), g)));
+        assert!(
+            out.view_gates
+                .iter()
+                .any(|g| seen.gate_passes(&privileges(&[actor(1)], false), g))
+        );
 
         // someone outside the viewport sees nothing -- an admin still sees everything (System reads
         // every viewport, matching the engine's own gate pair), but a plain player who has not been
         // walked the mappings is not handed names for slots it does not hold.
         let stranger = DeliveryData::default();
-        assert!(!out
-            .view_gates
-            .iter()
-            .any(|g| stranger.gate_passes(&privileges(&[actor(2)], false), g)));
+        assert!(
+            !out.view_gates
+                .iter()
+                .any(|g| stranger.gate_passes(&privileges(&[actor(2)], false), g))
+        );
 
         let keys = match &out.data {
             OutputData::Server(ServerCmd::ProfileRoster { profiles }) => profiles,

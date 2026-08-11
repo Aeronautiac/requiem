@@ -34,16 +34,18 @@ pub enum ControlResponse {
     CapabilitiesSet,
     ActorScopeSet,
     ProfileSet,
+    TimeSet,
 }
 
 // Every server output is either a response to some input, or the result of some internal process.
 // An output can only respond to ONE input, and an input can only be attributed to ONE connection.
 
+// A gate names WHO within a connection may see the output -- it is never about routing to a view on
+// its own. Connection-level facts (a connection's own privileges, sent directly rather than through
+// the log) carry an EMPTY gate list: no actor, no viewport, no special reach, just "this connection's
+// concern". That is a different thing from an empty gate in the log, which delivers to nobody.
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub enum ViewGate {
-    // connection-wide: this output is addressed to the connection itself, not to a view. passes for
-    // every connection; the client reads it directly (its own privileges) rather than routing it.
-    Connection,
     Admin,
     Viewport(ViewportKey), // must be in this viewport
     Player(ActorKey),      // must have access to this actor
@@ -144,6 +146,10 @@ pub enum ServerCmd {
     // attach or a re-sync after a privilege change -- so a client can render its own standing
     // before any gated output arrives, and again whenever that standing changes.
     Privileges(PrivilegeSet),
+    // anchor the client's game time
+    GameClock {
+        sent_at: u128, // real world time
+    },
 }
 
 // The auth layer keeps capabilities as a bitmask (for the game task's fast permission checks);
@@ -164,7 +170,7 @@ pub enum OutputData {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct ServerOutput {
-    pub time: Time,
+    pub time: Time, // game time
     // if at least one gate passes, a client may receive this output
     pub view_gates: Vec<ViewGate>,
     pub data: OutputData,
