@@ -144,8 +144,8 @@ impl Notebook {
     pub fn can_write(
         &self,
         id: ActorKey,
-        fail_limit: u16,
-        success_limit: u16,
+        fail_limit: AttemptCount,
+        success_limit: AttemptCount,
     ) -> Result<(), NotebookError> {
         if self.owner != Some(id) {
             return Err(NotebookError::NotOwned);

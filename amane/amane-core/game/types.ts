@@ -153,7 +153,7 @@ export const CHANNEL_CATEGORIES: ChannelCategory[] = [
 //   - "Info":       frontend-only feed, built by the client rather than delivered.
 //   - "Bug":        a bug's relayed messages.
 //   - "ContactLog": a contact-log passive's record.
-export type ChannelKind = "Standard" | "Info" | "Bug" | "ContactLog";
+export type ChannelKind = "Standard" | "Info" | "Bug" | "ContactLog" | "Log";
 
 export type Channel = {
   kind: ChannelKind;
@@ -401,10 +401,3 @@ export type TrackedIncarceration = {
   released: boolean;
 };
 
-// One filtered channel record this view has been handed: an autopsy of a target's record, or a
-// tapped channel's log. A channel display like a bug or a contact log, rendered on its own (see
-// the TODO in view.svelte.ts).
-export type LogDumpDatum = {
-  type: LogType;
-  entries: LogCommand[];
-};

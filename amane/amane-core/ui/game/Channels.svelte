@@ -83,6 +83,7 @@
 
     for (const [key, ch] of view.bugs) bucket(ch.category, key);
     for (const [key, ch] of view.contact_logs) bucket(ch.category, key);
+    for (const [key, ch] of view.logs) bucket(ch.category, key);
 
     return map;
   });

@@ -28,7 +28,13 @@ export function wallTimeOf(
 ): string | undefined {
 	if (!clock) return undefined;
 	const wall = clock.sent_at + (gameMs - clock.time);
-	return new Date(wall).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+	const d = new Date(wall);
+	// The game can span real days, so a bare time would silently read as "today". Prefix the date
+	// whenever the moment is not today; same-day moments stay just the time.
+	const date = d.toDateString() === new Date().toDateString()
+		? ""
+		: `${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}, `;
+	return `${date}${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 // Engine Time is unix ms, so durations like a notebook-write delay arrive in ms. Shows the largest

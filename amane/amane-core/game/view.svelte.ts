@@ -22,14 +22,14 @@ import type {
   Statuses,
 } from "../bindings";
 import { slotKeyToString } from "../bindings";
-import { NOTIF_CHANNEL, logDumpKey, new_channel, orgDisplayName, playerLabel, t } from "./helpers.svelte";
+import { NOTIF_CHANNEL, logDumpKey, logDumpLabel, new_channel, orgDisplayName, playerLabel, t } from "./helpers.svelte";
+import { commandToEvent } from "./commands/events";
 import type {
   AbilityView,
   Channel,
   ChannelView,
   GameEvent,
   InfoEvent,
-  LogDumpDatum,
   Org,
   PassiveView,
   Player,
@@ -344,6 +344,7 @@ export class GameView {
     if (key.startsWith("info:")) return this.info_channels.get(key);
     if (key.startsWith("bug:")) return this.bugs.get(key);
     if (key.startsWith("contacts:")) return this.contact_logs.get(key);
+    if (key.startsWith("autopsy:") || key.startsWith("tapin:")) return this.logs.get(key);
     return this.channels.get(key);
   }
 
@@ -399,19 +400,23 @@ export class GameView {
 
   // ---- log records ----
 
-  // A filtered channel record (an autopsy of a target's record, a tapped channel's log) is a
-  // channel display like a bug or a contact log, kept here per view under a key derived from what
-  // it is. TODO: render these as their own channel display — the entries are game messages and may
-  // feed a notification, a channel, etc., just like any other delivered content.
-  log_dumps = new SvelteMap<string, LogDumpDatum>();
+  // A filtered channel record this view has been handed: an autopsy of a target's record, or a
+  // tapped channel's log. Rendered as a read-only feed exactly like a bug log — a Log channel whose
+  // events are normalized record data — so it flows through the same sidebar + channel-view path.
+  logs = new SvelteMap<string, Channel>();
 
   apply_log_dump(log_type: LogType, entries: LogCommand[]) {
     const key = logDumpKey(log_type);
-    const existing = this.log_dumps.get(key);
-    if (existing) {
-      existing.entries.push(...entries);
-    } else {
-      this.log_dumps.set(key, { type: log_type, entries: [...entries] });
+    let feed = this.logs.get(key);
+    if (!feed) {
+      // Name by what the record is. `view.channel` routes autopsy:/tapin: keys here, so the
+      // sidebar and the channel view both resolve it without any special-casing.
+      feed = new_channel("Log", "Logs", logDumpLabel(key, this));
+      this.logs.set(key, feed);
+    }
+    for (const lc of entries) {
+      const event = commandToEvent(lc.data, lc.time);
+      if (event) feed.events.push(event);
     }
   }
 

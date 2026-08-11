@@ -1,3 +1,5 @@
+use lawliet_types::common::AttemptCount;
+
 use crate::{
     Time,
     config::ability::{AbilityIdentifier, AbilityName},
@@ -20,8 +22,8 @@ pub struct DefaultConfig {
     pub pseudocide_duration: Time,                   // milliseconds
     pub universal_abilities: Vec<AbilityIdentifier>, // the abilities that everyone gets regardless
     // of role
-    pub notebook_successes_per_day: u16,
-    pub notebook_failures_per_day: u16,
+    pub notebook_successes_per_day: AttemptCount,
+    pub notebook_failures_per_day: AttemptCount,
     pub org_vote_time: Time,
     pub debate_default_timeout: Time,
     pub debate_shortened_timeout: Time,

@@ -20,6 +20,7 @@ import type {
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { slotKeyFromString, slotKeyToString, StatusFlag } from "../bindings";
 import type { ExecError } from "../lib/protocol";
+import type { GameView } from "./view.svelte";
 import { STRINGS, type StringKey } from "../config/strings";
 import type {
   AbilityView,
@@ -101,6 +102,23 @@ export function logDumpKey(log_type: LogType): string {
   return `tapin:${log_type.TapIn}`;
 }
 
+// Whether a sidebar/selection key names a log record rather than a real channel. Both feed and log
+// surfaces route on these keys, so the prefix is the one thing they share.
+export function isLogDumpKey(key: string): boolean {
+  return key.startsWith("autopsy:") || key.startsWith("tapin:");
+}
+
+// The name a log record shows in a sidebar or header, resolved against the view it belongs to.
+export function logDumpLabel(key: string, view: GameView): string {
+  if (key.startsWith("autopsy:")) {
+    return `Autopsy: ${view.actor_name(key.slice("autopsy:".length))}`;
+  }
+  if (key.startsWith("tapin:")) {
+    return `Tap In: ${key.slice("tapin:".length)}`;
+  }
+  return "Record";
+}
+
 // ---- channel keys ----
 
 // Bugs live in their own BugKey slot space, which can collide with real ChannelKeys, so the prefix
@@ -124,7 +142,7 @@ export const NOTIF_CHANNEL = "info:notifs";
 // A feed you are handed rather than a room you are in. None are engine channels, so none carry
 // perms, loggability or a send box — the one question each render site asks.
 export function isReadOnlyKind(kind: ChannelKind): boolean {
-  return kind === "Info" || kind === "Bug" || kind === "ContactLog";
+  return kind === "Info" || kind === "Bug" || kind === "ContactLog" || kind === "Log";
 }
 
 // ---- constructors ----
@@ -545,6 +563,20 @@ export function actorLabel(d: ActorDisplay, players: ReadonlyMap<string, Player>
   if ("Role" in d) return d.Role;
   if ("Org" in d) return t("display_org_unknown");
   return t("display_unknown");
+}
+
+// A display's text and colour resolved against a view, shared by every surface that renders one —
+// the channel feed and the log-record surfaces use the same pair, so a name reads the same whether
+// it was just said live or read back out of a log.
+export function actorDisplayLabel(d: ActorDisplay, view: GameView): string {
+  return actorLabel(d, view.players);
+}
+
+export function actorDisplayColor(d: ActorDisplay, view: GameView): string {
+  return displayColorVar(d, {
+    news_anchor: view.news_anchor,
+    press_conf: view.press_conf,
+  });
 }
 
 // ---- prosecution phase ----

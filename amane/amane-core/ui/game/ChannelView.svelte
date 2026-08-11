@@ -86,6 +86,9 @@
 
   const is_bug = $derived(current_channel?.kind === "Bug");
   const is_contact_log = $derived(current_channel?.kind === "ContactLog");
+  const is_log = $derived(current_channel?.kind === "Log");
+  // Which kind of record is open — an autopsy of one actor's record, or a tap-in off a line.
+  const is_log_autopsy = $derived(is_log && backing_channel_id?.startsWith("autopsy:") === true);
   // A feed rather than a room: no perms, no send box, no loggability control. Always readable to
   // whoever it was listed for, since visibility is gated in the sidebar instead.
   const read_only_feed = $derived(
@@ -877,6 +880,15 @@
               >
                 Read-only contact log. Names here are how each contact appeared,
                 not who was really behind it.
+              </div>
+            {:else if is_log}
+              <div
+                class="rounded-lg bg-neutral-800/50 px-4 py-2.5 text-center text-sm italic text-neutral-500"
+              >
+                {is_log_autopsy
+                  ? "Autopsy — this actor's written record."
+                  : "Tap-in — what was written down on the tapped line."}{" "}
+                Read-only.
               </div>
             {:else if archived}
               <div
