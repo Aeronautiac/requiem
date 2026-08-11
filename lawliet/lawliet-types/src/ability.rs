@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    common::{ActorKey, ID, LoungeKey},
+    common::{ActorKey, LoungeKey, ID},
     organization::OrgMemberView,
     role::Role,
 };
@@ -141,8 +141,8 @@ pub struct UnderTheRadar {}
 pub struct TrueNameReroll {
     pub target: ActorKey,
     // The server replaces this before the engine sees it, exactly as it does timestamps — a client
-    // does not get to name itself. Not yet wired: yagami has no name reservoir to draw from, so
-    // today whatever arrives is used.
+    // does not get to name itself. yagami draws a fresh name from its reservoir and writes it here
+    // (see game::assign_name).
     //
     // Carried INLINE rather than fetched: an engine that replays its log needs every action to be
     // self-contained, and asking a client for a name mid-action would leave a window between the

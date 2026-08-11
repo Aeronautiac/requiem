@@ -10,6 +10,11 @@
 // Nothing here is replayable and nothing needs to be. A drawn name is written into the action before
 // the engine ever sees it, so the log carries the name itself and a replay reproduces it exactly --
 // which is the whole reason the name is chosen here rather than asked for mid-action.
+//
+// The pool owns the set of names in play: it is told about names the world holds (admin-chosen, or
+// one that arrives on a replayed command) and a draw never hands out one of them again.
+
+use std::collections::HashSet;
 
 const FIRST: &str = include_str!("../names/first.txt");
 const LAST: &str = include_str!("../names/last.txt");
@@ -22,6 +27,8 @@ const RANDOM_ATTEMPTS: usize = 32;
 pub struct NamePool {
     first: Vec<&'static str>,
     last: Vec<&'static str>,
+    // every name the world already holds, so a draw and the engine's uniqueness check agree.
+    taken: HashSet<String>,
 }
 
 fn parse(list: &'static str) -> Vec<&'static str> {
@@ -36,6 +43,7 @@ impl NamePool {
         let pool = NamePool {
             first: parse(FIRST),
             last: parse(LAST),
+            taken: HashSet::new(),
         };
         // An empty list is a broken build, not a runtime condition -- the files are embedded, so
         // this cannot become true after the binary exists.
@@ -46,18 +54,27 @@ impl NamePool {
         pool
     }
 
-    // A full name that `is_taken` rejects, or None when every pair in the reservoir is spoken for.
+    // Record a name the world already holds, so a later draw never hands it out again. Called with
+    // a name that reached the engine through another route -- an admin wrote it, or it came back on
+    // a replayed command -- so the pool stays in step with the engine's own uniqueness check.
+    pub fn mark_taken(&mut self, name: &str) {
+        self.taken.insert(name.to_string());
+    }
+
+    // A full, previously-unhanded name, or None when every pair in the reservoir is spoken for.
     //
+    // A successful draw is marked taken before it is returned, so consecutive draws never repeat.
     // Tries at random first because that is what makes names unpredictable; the sweep afterwards is
     // only there so a genuinely exhausted pool returns an answer instead of looping.
-    pub fn draw(&self, is_taken: impl Fn(&str) -> bool) -> Option<String> {
+    pub fn draw(&mut self) -> Option<String> {
         for _ in 0..RANDOM_ATTEMPTS {
             let candidate = format!(
                 "{} {}",
                 self.first[self.index(self.first.len())],
                 self.last[self.index(self.last.len())]
             );
-            if !is_taken(&candidate) {
+            if !self.taken.contains(&candidate) {
+                self.taken.insert(candidate.clone());
                 return Some(candidate);
             }
         }
@@ -65,7 +82,8 @@ impl NamePool {
         for first in &self.first {
             for last in &self.last {
                 let candidate = format!("{first} {last}");
-                if !is_taken(&candidate) {
+                if !self.taken.contains(&candidate) {
+                    self.taken.insert(candidate.clone());
                     return Some(candidate);
                 }
             }
@@ -96,17 +114,35 @@ mod tests {
     }
 
     #[test]
-    fn a_draw_avoids_taken_names() {
-        let pool = NamePool::new();
-        let first = pool.draw(|_| false).expect("a fresh pool always has one");
-        let second = pool.draw(|name| name == first).expect("and a second");
+    fn consecutive_draws_never_repeat() {
+        let mut pool = NamePool::new();
+        let first = pool.draw().expect("a fresh pool always has one");
+        let second = pool.draw().expect("and a second");
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn a_draw_avoids_marked_names() {
+        let mut pool = NamePool::new();
+        pool.mark_taken("Robyn Holmes");
+        for _ in 0..200 {
+            let name = pool.draw().expect("a large pool stays drawable");
+            assert_ne!(name, "Robyn Holmes");
+        }
     }
 
     // The sweep is the only thing standing between an exhausted pool and a loop.
     #[test]
     fn an_exhausted_pool_gives_up() {
-        let pool = NamePool::new();
-        assert_eq!(pool.draw(|_| true), None);
+        let mut pool = NamePool::new();
+        let all: Vec<String> = pool
+            .first
+            .iter()
+            .flat_map(|f| pool.last.iter().map(move |l| format!("{f} {l}")))
+            .collect();
+        for name in &all {
+            pool.mark_taken(name);
+        }
+        assert_eq!(pool.draw(), None);
     }
 }

@@ -1,5 +1,5 @@
-import type { CommandPayload } from "../bindings";
-import { recipientToViewport } from "./helpers.svelte";
+import type { ServerOutput } from "../bindings";
+import { gateViewports } from "./helpers.svelte";
 
 // Every command this client has received, in order, plus an index over the viewport-addressed
 // ones. Deliberately the same structure as yagami's History — the server holds exactly this and
@@ -8,18 +8,20 @@ import { recipientToViewport } from "./helpers.svelte";
 // The one thing shared by every view. Not reactive: nothing renders from the log, only from the
 // state applying it produces.
 export class History {
-  #log: CommandPayload[] = [];
+  #log: ServerOutput[] = [];
   // viewport key -> its positions in #log, ascending. Positions, not payloads: there is exactly
   // one copy of every command.
   #index = new Map<string, number[]>();
 
   // Returns the position, which is what watermarks are measured in.
-  append(payload: CommandPayload): number {
+  //
+  // Everything that travels the per-command wire enters the log, engine commands and server
+  // commands alike — a log dump is delivered through the same per-view path as a command, so it
+  // has to be replayable the same way.
+  append(out: ServerOutput): number {
     const pos = this.#log.length;
-    this.#log.push(payload);
-
-    const viewport = recipientToViewport(payload.recipient);
-    if (viewport !== undefined) {
+    this.#log.push(out);
+    for (const viewport of gateViewports(out)) {
       let positions = this.#index.get(viewport);
       if (!positions) {
         positions = [];
@@ -27,7 +29,6 @@ export class History {
       }
       positions.push(pos);
     }
-
     return pos;
   }
 
@@ -36,7 +37,7 @@ export class History {
   // Note what CANNOT come back from here: EnterViewport and ExitViewport are addressed to the
   // actor they concern, never to a viewport, so replaying a viewport's history can never contain
   // another access change. That is what keeps backfill from recursing.
-  *range(viewport: string, from: number, until: number): Generator<[number, CommandPayload]> {
+  *range(viewport: string, from: number, until: number): Generator<[number, ServerOutput]> {
     for (const pos of this.#index.get(viewport) ?? []) {
       if (pos < from) continue;
       if (pos >= until) return;

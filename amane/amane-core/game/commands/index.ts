@@ -1,10 +1,12 @@
-// One function per command, and a table saying which.
+// One function per command, and a table saying which. A command is anything on the wire — an
+// engine command or a server command (a log dump, a roster) — normalized to the same shape, so
+// there is exactly one path into a handler and no engine/server split.
 //
 // Every handler receives the view it is being applied INTO, and there is no other tier to write
 // to: if a fact should reach a view, the router delivered the command to that view and the handler
 // writes it there. A handler therefore decides nothing about WHO sees what — only what the fact
 // means once it has arrived.
-import type { Command, CommandRecipient } from "../../bindings";
+import type { WireCommand } from "../../bindings";
 import type { Toast } from "../../lib/protocol";
 import type { GameView } from "../view.svelte";
 
@@ -15,13 +17,13 @@ import { notebookHandlers } from "./notebooks";
 import { orgHandlers } from "./orgs";
 import { pollHandlers } from "./polls";
 import { prosecutionHandlers } from "./prosecutions";
+import { serverHandlers } from "./server";
 import { viewportHandlers } from "./viewports";
 import { worldHandlers } from "./world";
 
 // What a handler is given besides its payload.
 export type CmdCtx = {
   view: GameView;
-  recipient: CommandRecipient;
   timestamp: number;
   // The viewport this command was addressed to, if any. Handlers use it to record where an
   // object's content rides, and to tell an org's copy of a command from a player's own.
@@ -39,11 +41,12 @@ export type CmdCtx = {
   backfill: (viewport: string, until: number) => void;
 };
 
-// Every key of the Command union, and the payload behind one of them. The union is externally
+// Every key of the command union, and the payload behind one of them. The union is externally
 // tagged, so each member is a single-key object and these two are enough to type the table.
-export type CommandName = Command extends infer U ? (U extends object ? keyof U : never) : never;
+export type CommandName =
+  WireCommand extends infer U ? (U extends object ? keyof U : never) : never;
 export type PayloadOf<K extends PropertyKey> =
-  Command extends infer U ? (U extends Record<K, infer P> ? P : never) : never;
+  WireCommand extends infer U ? (U extends Record<K, infer P> ? P : never) : never;
 
 export type Handlers = {
   [K in CommandName]?: (ctx: CmdCtx, payload: PayloadOf<K>) => void;
@@ -59,6 +62,7 @@ const HANDLERS: Handlers = {
   ...pollHandlers,
   ...prosecutionHandlers,
   ...worldHandlers,
+  ...serverHandlers,
 };
 
 // Apply one command to one view. A command with no handler is ignored on purpose: the engine emits
@@ -66,9 +70,12 @@ const HANDLERS: Handlers = {
 //
 // The one cast in the pipeline lives here. Above it the table is fully typed per variant; below it
 // the payload has been narrowed by the same key that chose the handler.
-export function applyCommand(ctx: CmdCtx, cmd: Command): void {
+export function applyCommand(ctx: CmdCtx, cmd: WireCommand): void {
   const name = Object.keys(cmd)[0] as CommandName;
   const handler = HANDLERS[name] as ((ctx: CmdCtx, payload: unknown) => void) | undefined;
-  if (!handler) return;
+  if (!handler) {
+    console.log("[diag] no handler for command:", name);
+    return;
+  }
   handler(ctx, (cmd as Record<string, unknown>)[name as string]);
 }

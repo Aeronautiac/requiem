@@ -2,16 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use lawliet_types::{
     command::{Command, CommandPayload, CommandRecipient, TapInOutcome},
-    common::{ActorKey, LogID, Time, ViewportKey},
+    common::{ActorKey, LogID, ViewportKey},
 };
 
 use crate::{
-    auth::{Capability, Privileges, Ticket},
+    auth::{Capability, Key, KeyData, Privileges, Ticket},
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
-    wire::{
-        Batch, BatchKind, LogCommand, LogType, OutputData, ResponsePair, ServerCmd, ServerOutput,
-        ViewGate,
-    },
+    wire::{Batch, BatchKind, LogCommand, LogType, OutputData, Profile, ResponsePair, ServerCmd, ServerOutput, ViewGate},
 };
 
 // convert an engine payload to its stored server output: derive the view gates from the recipient,
@@ -33,6 +30,47 @@ pub fn engine_to_server_cmd(cmd: &CommandPayload) -> ServerOutput {
         time: cmd.timestamp,
         view_gates,
         data: OutputData::Engine(cmd.cmd.clone()),
+    }
+}
+
+// The connection's own capability set, as the first output of every sync. Connection-gated: not
+// view content, delivered to everyone, and read directly by the client rather than routed.
+fn privilege_output(privileges: &Privileges) -> ServerOutput {
+    ServerOutput {
+        time: 0,
+        view_gates: vec![ViewGate::Connection],
+        data: OutputData::Server(ServerCmd::Privileges(crate::wire::privileges_to_wire(
+            privileges,
+        ))),
+    }
+}
+
+// The whole key ledger, delivered whole: every key and the privilege set it currently allows. Gated
+// Admin like the rest of the management surface, and replaced wholesale by the client, never diffed.
+pub fn key_roster_output(keys: &HashMap<Key, KeyData>) -> ServerOutput {
+    let keys: Vec<(Key, crate::wire::PrivilegeSet)> = keys
+        .iter()
+        .map(|(key, data)| (key.clone(), crate::wire::privileges_to_wire(&data.privileges)))
+        .collect();
+    ServerOutput {
+        time: 0,
+        view_gates: vec![ViewGate::Admin],
+        data: OutputData::Server(ServerCmd::KeyRoster { keys }),
+    }
+}
+
+// What the SERVER knows about who occupies the slots, aimed at the DATA viewport -- the same one
+// actor existence (MapActor) rides. The gate pair matches the engine's own for viewport-addressed
+// commands (Viewport + Admin), and the shared viewport is the whole correctness argument: anyone
+// who can read this roster has already been walked the actor mappings it names, by design, so a
+// client never learns a name for a slot it does not hold. Delivered whole on every change.
+pub fn profile_roster_output(data_viewport: ViewportKey, profiles: &HashMap<ActorKey, Profile>) -> ServerOutput {
+    let profiles: Vec<(ActorKey, Profile)> =
+        profiles.iter().map(|(k, v)| (*k, v.clone())).collect();
+    ServerOutput {
+        time: 0,
+        view_gates: vec![ViewGate::Viewport(data_viewport), ViewGate::Admin],
+        data: OutputData::Server(ServerCmd::ProfileRoster { profiles }),
     }
 }
 
@@ -65,6 +103,7 @@ impl DeliveryData {
     // membership held here.
     fn gate_passes(&self, privileges: &Privileges, gate: &ViewGate) -> bool {
         match gate {
+            ViewGate::Connection => true,
             ViewGate::Admin => privileges.capabilities.contains(Capability::Administer),
             ViewGate::Viewport(viewport) => self
                 .viewports
@@ -321,12 +360,20 @@ impl History {
             return;
         }
 
-        let outputs = self.build_batch(&mut conn.delivery, privileges, start);
+        let mut outputs = self.build_batch(&mut conn.delivery, privileges, start);
 
         // an initialize is the "you are caught up" marker and goes out even when empty; anything
         // else that produced nothing sends nothing.
         if outputs.is_empty() && !matches!(kind, BatchKind::Initialize) {
             return;
+        }
+
+        // every sync leads with the connection's own privileges, ahead of the replay it concerns:
+        // by the time gated output arrives the client already knows what it can see. Deliveries for
+        // a changed key arrive by this same route (see game::resync_key), so a rebuild always
+        // carries the current set.
+        if matches!(kind, BatchKind::Initialize) {
+            outputs.insert(0, privilege_output(privileges));
         }
 
         push_batch(conn, Batch { kind, outputs });
@@ -438,6 +485,7 @@ mod tests {
     use std::collections::HashSet;
 
     use enumflags2::BitFlags;
+    use lawliet_types::common::Time;
     use slotmap::KeyData;
 
     use super::*;
@@ -1026,5 +1074,94 @@ mod tests {
             0,
         );
         assert!(stranger.is_empty());
+    }
+
+    #[test]
+    fn key_roster_is_admin_gated_and_carries_every_set() {
+        let mut ledger = HashMap::new();
+        let admin = Key::generate();
+        let player = Key::generate();
+        ledger.insert(
+            admin.clone(),
+            crate::auth::KeyData {
+                cancel: tokio_util::sync::CancellationToken::new(),
+                tickets: HashSet::new(),
+                privileges: Privileges {
+                    actors: Scope::All,
+                    capabilities: Capability::Administer.into(),
+                },
+            },
+        );
+        ledger.insert(
+            player.clone(),
+            crate::auth::KeyData {
+                cancel: tokio_util::sync::CancellationToken::new(),
+                tickets: HashSet::new(),
+                privileges: Privileges {
+                    actors: Scope::Only(HashSet::from([actor(1)])),
+                    capabilities: BitFlags::empty(),
+                },
+            },
+        );
+
+        let out = key_roster_output(&ledger);
+        assert!(out.view_gates.contains(&ViewGate::Admin));
+
+        // an administrator passes the Admin gate; a plain player is not entrusted with it.
+        let admin_data = DeliveryData::default();
+        assert!(admin_data
+            .gate_passes(&privileges(&[], true), &ViewGate::Admin));
+        let player_data = DeliveryData::default();
+        assert!(!player_data
+            .gate_passes(&privileges(&[], false), &ViewGate::Admin));
+
+        let keys = match &out.data {
+            OutputData::Server(ServerCmd::KeyRoster { keys }) => keys,
+            _ => panic!("expected a key roster"),
+        };
+        assert_eq!(keys.len(), 2);
+        let restored: HashMap<_, _> = keys.iter().cloned().collect();
+        assert_eq!(
+            restored.get(&admin).unwrap().capabilities,
+            vec![Capability::Administer]
+        );
+        assert!(restored.get(&player).unwrap().capabilities.is_empty());
+    }
+
+    #[test]
+    fn profile_roster_rides_the_data_viewport_and_follows_its_access() {
+        let vp = viewport(1);
+        let mut profiles = HashMap::new();
+        profiles.insert(actor(1), Profile { display_name: Some("Robyn".into()) });
+
+        let out = profile_roster_output(vp, &profiles);
+        assert!(out.view_gates.contains(&ViewGate::Viewport(vp)));
+
+        // someone who has been walked the actor mappings (holds the data viewport) sees the roster;
+        let mut seen = DeliveryData::default();
+        seen.viewports.insert(
+            vp,
+            ViewportData {
+                delivered_to: 0,
+                players: HashSet::from([actor(1)]),
+            },
+        );
+        assert!(out.view_gates.iter().any(|g| seen.gate_passes(&privileges(&[actor(1)], false), g)));
+
+        // someone outside the viewport sees nothing -- an admin still sees everything (System reads
+        // every viewport, matching the engine's own gate pair), but a plain player who has not been
+        // walked the mappings is not handed names for slots it does not hold.
+        let stranger = DeliveryData::default();
+        assert!(!out
+            .view_gates
+            .iter()
+            .any(|g| stranger.gate_passes(&privileges(&[actor(2)], false), g)));
+
+        let keys = match &out.data {
+            OutputData::Server(ServerCmd::ProfileRoster { profiles }) => profiles,
+            _ => panic!("expected a profile roster"),
+        };
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].1.display_name.as_deref(), Some("Robyn"));
     }
 }

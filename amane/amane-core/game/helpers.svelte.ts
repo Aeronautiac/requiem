@@ -7,13 +7,14 @@ import type {
   ActorDisplay,
   BugKey,
   ChannelProfileView,
-  CommandRecipient,
   ContactLogType,
+  LogType,
   OrganizationName,
   PassiveType,
   PollSubject,
   ProsecutionPhaseView,
   Role,
+  ServerOutput,
   Statuses,
 } from "../bindings";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
@@ -59,26 +60,45 @@ export function t(key: StringKey, vars?: Record<string, string | number>): strin
   );
 }
 
-// ---- recipients ----
+// ---- recipients (from an output's view gates) ----
 
-// The key of the single view a recipient targets. Undefined for a Viewport recipient, which names
-// no one view — the router fans those out instead — and for a Log, which names no audience at all
-// and is filtered out by the server before a client ever sees it.
-export function recipientToView(rec: CommandRecipient): string | undefined {
-  if (rec === "System") return "System";
-  if (typeof rec !== "string" && "Actor" in rec) return slotKeyToString(rec.Actor);
-  return undefined;
+// The server resolved an engine recipient into one or more gates and filtered them against the
+// connection's privileges; these are what the client routes on. A gate list can name several
+// players and/or viewports, so the helpers return arrays and the router iterates every gate
+// rather than assuming a single recipient.
+
+// The viewports this output is addressed to, in gate order. Empty for a command with none.
+export function gateViewports(out: ServerOutput): string[] {
+  const out_views: string[] = [];
+  for (const gate of out.view_gates) {
+    if (typeof gate !== "string" && "Viewport" in gate) {
+      out_views.push(slotKeyToString(gate.Viewport));
+    }
+  }
+  return out_views;
 }
 
-export function recipientToViewport(rec: CommandRecipient): string | undefined {
-  if (typeof rec !== "string" && "Viewport" in rec) return slotKeyToString(rec.Viewport);
-  return undefined;
+// The actors this output is addressed to, in gate order. Empty for a command addressed to none.
+export function gateActors(out: ServerOutput): string[] {
+  const out_actors: string[] = [];
+  for (const gate of out.view_gates) {
+    if (typeof gate !== "string" && "Player" in gate) {
+      out_actors.push(slotKeyToString(gate.Player));
+    }
+  }
+  return out_actors;
 }
 
-// The actor a command is addressed to, when it is addressed to one at all.
-export function recipientToActor(rec: CommandRecipient): string | undefined {
-  if (typeof rec !== "string" && "Actor" in rec) return slotKeyToString(rec.Actor);
-  return undefined;
+// Whether this output is addressed to an administrator (System view).
+export function gateAdmin(out: ServerOutput): boolean {
+  return out.view_gates.includes("Admin");
+}
+
+// The stable per-view key for a log record, derived from what it is. An autopsy is of one actor's
+// record; a tap-in is of one channel by contact id.
+export function logDumpKey(log_type: LogType): string {
+  if ("Autopsy" in log_type) return `autopsy:${slotKeyToString(log_type.Autopsy)}`;
+  return `tapin:${log_type.TapIn}`;
 }
 
 // ---- channel keys ----

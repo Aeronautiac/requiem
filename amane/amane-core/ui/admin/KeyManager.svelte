@@ -1,22 +1,25 @@
 <script lang="ts">
-  // Minting the keys that let anyone else into the game.
+  // Minting the keys that let anyone else into the game, and managing the ones that exist.
   //
   // Creating a game mints exactly one key — the admin's — so every other participant's credential
   // has to come from here. A key is not a person and not a connection: it is a privilege set, and
   // "associating it with an actor" means naming the slots its holder may play as.
   //
-  // A minted key is the one fact a response carries that arrives nowhere else. It is a secret for a
-  // single holder, so it is deliberately NOT a command — broadcasting it would hand it to everyone
-  // entitled to the stream. The server keeps no retrievable copy either, which is why the list
-  // below exists: this dialog is the only place the key is ever shown, and it is gone when the
-  // session ends.
+  // The set that already exists arrives on the KeyRoster, a whole-set server command gated to
+  // admins, and is rendered below as one list: what each key permits, and how to change or revoke
+  // it. Authority to touch a given key is the server's to decide — a supervisor key, or the full
+  // set, or one's own key — and a refused control surfaces its error here, so the table offers
+  // everything and the server denies what it must. A freshly created key lands in the same list
+  // the moment the roster refreshes, no separate handling. Secret tokens are shown plainly: keys
+  // are how someone gets in, handed over out of band (see copy), not worth treating as the crown
+  // jewels.
   import { getContext } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { GAME_STATE_KEY, type GameState } from "../../game/state.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
   import { execErrorText, playerLabel } from "../../game/helpers.svelte";
-  import { slotKeyFromString } from "../../bindings";
-  import type { ActorScope, Capability } from "../../bindings";
+  import { slotKeyFromString, slotKeyToString } from "../../bindings";
+  import type { ActorScope, Capability, PrivilegeSet } from "../../bindings";
   import Button from "../kit/Button.svelte";
   import Dialog from "../kit/Dialog.svelte";
   import Select from "../kit/Select.svelte";
@@ -44,18 +47,13 @@
     supervisor: ["Administer", "Supervise"],
   };
 
-  // A key shown once. Held here rather than in any state layer: it is not game state, nothing else
-  // may read it, and losing it on leaving the game is correct — the server cannot reissue it either.
-  type Minted = { key: string; summary: string };
+  // ---- minting ----
 
   let open = $state(false);
   let grant = $state<Grant>("player");
-  // `All` covers actors created LATER, which an enumerated set cannot, so it is its own choice
-  // rather than "tick everyone".
   let every_actor = $state(false);
   const chosen = new SvelteSet<string>();
   let busy = $state(false);
-  let minted = $state<Minted[]>([]);
 
   // The System view, never the selected one: an admin reading a player's view must still be able to
   // mint for every slot. Orgs are excluded deliberately — no connection may act as an org (the
@@ -67,6 +65,14 @@
       .sort((a, b) => a.label.localeCompare(b.label));
   });
 
+  // ---- the ledger ----
+
+  // Every key on the roster, in display order. The whole set, delivered a fresh copy each change.
+  const keys = $derived.by(() => {
+    const sys = game.system_view();
+    return [...sys.keys.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  });
+
   function toggle(id: string) {
     if (chosen.has(id)) chosen.delete(id);
     else chosen.add(id);
@@ -76,18 +82,30 @@
     return every_actor ? "All" : { Only: [...chosen].map(slotKeyFromString) };
   }
 
-  // Frozen at mint time. The scope can be changed later by another control, so this states what the
-  // key was created for rather than pretending to track what it currently permits.
-  function summarize(): string {
-    const who = every_actor
-      ? "Every actor"
-      : chosen.size === 0
-        ? "No actors"
-        : players
-            .filter((p) => chosen.has(p.id))
-            .map((p) => p.label)
-            .join(", ");
-    return `${who} · ${GRANTS.find((g) => g.value === grant)!.label.split(" — ")[0]}`;
+  // The capabilities a set amounts to, pinned to the three grant bins the UI offers.
+  function grantFor(caps: Capability[]): Grant {
+    if (caps.includes("Supervise")) return "supervisor";
+    if (caps.includes("Administer")) return "admin";
+    return "player";
+  }
+
+  function grantLabel(privileges: PrivilegeSet): string {
+    return GRANTS.find((g) => g.value === grantFor(privileges.capabilities))!.label;
+  }
+
+  function scopeLabel(privileges: PrivilegeSet): string {
+    if (privileges.actors === "All") return "Every actor";
+    return (
+      privileges.actors.Only.map((a) => playerLabel(slotKeyToString(a), game.system_view().players))
+        .filter(Boolean)
+        .join(", ") || "No actors"
+    );
+  }
+
+  function reset_mint() {
+    chosen.clear();
+    every_actor = false;
+    grant = "player";
   }
 
   async function create() {
@@ -99,7 +117,6 @@
     }
 
     busy = true;
-    const summary = summarize();
     const reply = await session.submit_control({
       CreateKey: { actors: scope(), capabilities: CAPABILITIES[grant] },
     });
@@ -110,17 +127,17 @@
       return;
     }
     // Every other control answers with a bare tag, so a response without the key means the reply
-    // stream is not what this client thinks it is — say so rather than showing a blank key.
+    // stream is not what this client thinks it is — say so rather than showing a key that isn't
+    // about to appear in the ledger.
     if (typeof reply.value === "string" || !("KeyCreated" in reply.value)) {
       flash.set_error("The server answered something other than a key.");
       return;
     }
 
-    minted = [{ key: reply.value.KeyCreated.key, summary }, ...minted];
-    chosen.clear();
-    every_actor = false;
-    grant = "player";
-    flash.set_success("Key created — copy it now.");
+    // The new key lands in the ledger (and thus the list below) on the roster refresh that follows
+    // the mint; nothing special is done with the key from the reply alone.
+    reset_mint();
+    flash.set_success("Key created — it's in the list below.");
   }
 
   async function copy(key: string) {
@@ -136,6 +153,72 @@
       flash.set_error("Could not copy — select the key and copy it by hand.");
     }
   }
+
+  // ---- editing an existing key ----
+
+  // The key currently being edited, and the drafts of its capabilities and scope. Editing is
+  // draft-then-commit: nothing reaches the server until Save, and the drafts start from the key's
+  // current set, so an untouched Save is a no-op re-statement.
+  let editing = $state<string | null>(null);
+  let edit_grant = $state<Grant>("player");
+  let edit_every = $state(false);
+  const edit_chosen = new SvelteSet<string>();
+  let saving = $state(false);
+
+  function begin_edit(key: string) {
+    const privileges = game.system_view().keys.get(key);
+    if (!privileges) return;
+    editing = key;
+    edit_grant = grantFor(privileges.capabilities);
+    edit_every = privileges.actors === "All";
+    edit_chosen.clear();
+    if (privileges.actors !== "All") {
+      for (const actor of privileges.actors.Only) edit_chosen.add(slotKeyToString(actor));
+    }
+  }
+
+  function toggle_edit(id: string) {
+    if (edit_chosen.has(id)) edit_chosen.delete(id);
+    else edit_chosen.add(id);
+  }
+
+  function edit_scope(): ActorScope {
+    return edit_every ? "All" : { Only: [...edit_chosen].map(slotKeyFromString) };
+  }
+
+  async function save() {
+    const key = editing;
+    if (!key) return;
+    saving = true;
+    const set_caps = await session.submit_control({
+      SetCapabilities: { key, capabilities: CAPABILITIES[edit_grant] },
+    });
+    if (!set_caps.ok) {
+      flash.set_error(execErrorText(set_caps.error));
+      saving = false;
+      return;
+    }
+    const set_scope = await session.submit_control({
+      SetActorScope: { key, actors: edit_scope() },
+    });
+    saving = false;
+    if (!set_scope.ok) {
+      flash.set_error(execErrorText(set_scope.error));
+      return;
+    }
+    flash.set_success("Key updated.");
+    editing = null;
+  }
+
+  async function revoke(key: string) {
+    if (!confirm("Revoke this key? Its holder is disconnected immediately.")) return;
+    const reply = await session.submit_control({ RevokeKey: { key } });
+    if (!reply.ok) flash.set_error(execErrorText(reply.error));
+    else {
+      flash.set_success("Key revoked.");
+      if (editing === key) editing = null;
+    }
+  }
 </script>
 
 <Button variant="ghost" size="sm" onclick={() => (open = true)}>Keys</Button>
@@ -143,9 +226,10 @@
 <Dialog bind:open title="Keys">
   <p class="text-xs text-ink-dim">
     A key is how someone gets in. Choose the players its holder may act as, hand it over out of
-    band, and they join with it.
+    band, and they join with it. Every existing key shows below with what it may do.
   </p>
 
+  <!-- mint -->
   <label class="flex items-center gap-2 text-sm">
     <input type="checkbox" bind:checked={every_actor} />
     Every actor, including ones added later
@@ -174,23 +258,56 @@
 
   <Button disabled={busy} onclick={create}>Create key</Button>
 
-  {#if minted.length > 0}
-    <div class="flex flex-col gap-2 border-t border-edge pt-3">
-      <p class="text-xs text-ink-dim">
-        Shown here and nowhere else. The server keeps no readable copy, and closing the game loses
-        this list.
-      </p>
-      {#each minted as entry (entry.key)}
-        <div class="rounded-md border border-edge p-2">
-          <p class="text-xs text-ink-dim">{entry.summary}</p>
-          <div class="flex items-center gap-2">
-            <code class="min-w-0 flex-1 break-all font-mono text-xs">{entry.key}</code>
-            <Button size="sm" variant="ghost" onclick={() => copy(entry.key)}>Copy</Button>
+  <!-- the ledger: the same list a fresh key lands in -->
+  <div class="flex flex-col gap-2 border-t border-edge pt-3">
+    <p class="text-xs text-ink-dim">Keys, as the server holds them.</p>
+    {#each keys as [key, privileges] (key)}
+      <div class="rounded-md border border-edge p-2">
+        {#if editing === key}
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" bind:checked={edit_every} />
+            Every actor, including ones added later
+          </label>
+          <div
+            class="max-h-32 overflow-y-auto rounded-md border border-edge"
+            class:opacity-50={edit_every}
+          >
+            {#each players as player (player.id)}
+              <label class="flex items-center gap-1 px-2 py-1 text-sm hover:bg-raised">
+                <input
+                  type="checkbox"
+                  disabled={edit_every}
+                  checked={edit_chosen.has(player.id)}
+                  onchange={() => toggle_edit(player.id)}
+                />
+                {player.label}
+              </label>
+            {/each}
           </div>
-        </div>
-      {/each}
-    </div>
-  {/if}
+          <Select bind:value={edit_grant} options={GRANTS} class="w-full" />
+          <div class="flex gap-2">
+            <Button size="sm" disabled={saving} onclick={save}>Save</Button>
+            <Button size="sm" variant="ghost" onclick={() => (editing = null)}>Cancel</Button>
+          </div>
+        {:else}
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <code class="block truncate font-mono text-xs">{key}</code>
+              <p class="text-xs text-ink-dim">{grantLabel(privileges)}</p>
+              <p class="text-xs text-ink-dim">{scopeLabel(privileges)}</p>
+            </div>
+            <div class="flex shrink-0 gap-2">
+              <Button size="sm" variant="ghost" onclick={() => copy(key)}>Copy</Button>
+              <Button size="sm" variant="ghost" onclick={() => begin_edit(key)}>Edit</Button>
+              <Button size="sm" variant="danger" onclick={() => revoke(key)}>Revoke</Button>
+            </div>
+          </div>
+        {/if}
+      </div>
+    {:else}
+      <p class="text-xs text-ink-dim">No keys yet — create one above.</p>
+    {/each}
+  </div>
 
   <FlashDisplay {flash} />
 </Dialog>

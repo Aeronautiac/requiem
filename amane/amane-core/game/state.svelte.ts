@@ -4,10 +4,12 @@
 // holds no game state of its own: there is nowhere for a fact to land except inside a view, which
 // is what makes it impossible for one view to render something addressed to another.
 import { SvelteMap } from "svelte/reactivity";
-import type { CommandPayload, CommandRecipient, ProfileUpdate } from "../bindings";
+import { outputCommand } from "../bindings";
+import type { ServerOutput } from "../bindings";
 import { slotKeyToString } from "../bindings";
 import { applyCommand } from "./commands";
-import { recipientToActor, recipientToView, recipientToViewport } from "./helpers.svelte";
+import type { WireCommand } from "../bindings";
+import { gateActors, gateViewports } from "./helpers.svelte";
 import { History } from "./history";
 import type { Toast } from "../lib/protocol";
 import { GameView } from "./view.svelte";
@@ -23,6 +25,15 @@ export type NotifySink = (view: GameView, toast: Toast) => void;
 // Backfill replays history a late-arriving view missed; none of it is news, so it must never toast.
 const NO_NOTIFY: (toast: Toast) => void = () => {};
 
+// One delivery: the view a command reaches, along with the viewport and actor it is about *for
+// that view*. A gate list can name several actors and viewports; each named view is delivered
+// with its own context, not a single hard-coded first one.
+export interface Delivery {
+  view: GameView;
+  viewport: string | undefined;
+  actor: string | undefined;
+}
+
 export class GameState {
   // Actor key -> that actor's world. "System" is the admin view: it reads every viewport, holds no
   // actors of its own to enter with, and is the only view the personal-info System copies reach.
@@ -34,14 +45,6 @@ export class GameState {
   // handler's notify is inert.
   #notify_sink: NotifySink = () => {};
 
-  // slot -> the name the SERVER gave it, for every slot this connection has been told about.
-  //
-  // Connection-level rather than per-view, because that is what the server sends: one profile
-  // channel, gated on the connection having received the MapActor. Views take names from here
-  // rather than holding the only copy, so a name that arrived before a view existed is not lost
-  // to it. See #name_players.
-  #profiles = new SvelteMap<string, string | null>();
-
   constructor() {
     this.views.set("System", new GameView("System"));
   }
@@ -52,42 +55,52 @@ export class GameState {
     this.#notify_sink = sink;
   }
 
-  // The public seam the Sequencer drives. Command ordering within a batch is significant
+  // Reset the SAME instance in place, never a whole new one: the UI binds to this exact object
+  // through context, so replacing it would strand every component on the stale pre-resync layers.
+  // Everything is cleared and re-seeded with a fresh System view, so the catch-up folds into clean
+  // state. Mutating the reactive maps (not reassigning the field) is what keeps components live.
+  reset() {
+    this.#history = new History();
+    this.views.clear();
+    this.views.set("System", new GameView("System"));
+  }
+
+  // Fold one server output into the wire. Every output is routed by its own view gates and applied
+  // through ONE handler table — engine command, log dump, roster: the client does not distinguish,
+  // it obeys what it receives. Command ordering within a batch is significant
   // (create-before-reference, last-write-wins perms), so never reorder.
-  apply_batch(commands: CommandPayload[]) {
-    for (const payload of commands) this.#apply(payload);
-    // A batch can introduce a slot, or a whole view, that a profile already arrived for.
-    this.#name_players();
-  }
-
-  #apply(payload: CommandPayload) {
-    const pos = this.#history.append(payload);
-    for (const view of this.#recipients(payload.recipient)) {
-      // Live delivery: a toast a handler composes reaches the session's judge, tagged with the view
-      // it landed in so the session can ask whether that view is the one on screen.
-      this.#deliver(view, payload, pos, (toast) => this.#notify_sink(view, toast));
+  apply_output(out: ServerOutput): number {
+    const cmd = outputCommand(out);
+    const pos = this.#history.append(out);
+    const deliveries = this.#recipients(out);
+    for (const { view, viewport, actor } of deliveries) {
+      this.#deliver(view, cmd, out.time, actor, viewport, pos, (toast) =>
+        this.#notify_sink(view, toast),
+      );
     }
+    return deliveries.length;
   }
 
-  // Apply one command into one view, live or replayed. Everything a handler is allowed to touch
+  // Deliver one command into one view, live or replayed. Everything a handler is allowed to touch
   // reaches it through here.
   #deliver(
     view: GameView,
-    { recipient, cmd, timestamp }: CommandPayload,
+    cmd: WireCommand,
+    time: number,
+    actor: string | undefined,
+    viewport: string | undefined,
     pos: number,
     notify: (toast: Toast) => void,
   ) {
-    const viewport = recipientToViewport(recipient);
     // So a later entry by another of this client's actors knows where its own gap begins.
     if (viewport !== undefined) view.deliver_to(viewport, pos + 1);
 
     applyCommand(
       {
         view,
-        recipient,
-        timestamp,
+        timestamp: time,
         viewport,
-        actor: recipientToActor(recipient),
+        actor,
         pos,
         notify,
         backfill: (v, until) => this.#backfill(view, v, until),
@@ -96,27 +109,51 @@ export class GameState {
     );
   }
 
-  // Which views a command lands in.
-  //
-  // The server already decided this CONNECTION may see it. An Actor-addressed command names
-  // exactly one view; a Viewport-addressed one names none — the server sent it because SOME actor
-  // here has access, and which ones is a question only the client can answer.
-  #recipients(recipient: CommandRecipient): GameView[] {
-    const viewport = recipientToViewport(recipient);
-    if (viewport === undefined) {
-      const key = recipientToView(recipient);
-      return key === undefined ? [] : [this.view_for(key)];
-    }
+  // Which views an output lands in, and the context each is delivered with, decided from its view
+  // gates. The server already decided this CONNECTION may see the output; the gates say who within
+  // the connection it concerns and what it is about for each of them.
+  #recipients(out: ServerOutput): Delivery[] {
+    const result: Delivery[] = [];
+    const seen = new Set<GameView>();
+    const command_viewports = gateViewports(out);
+    const command_actors = gateActors(out);
 
-    const out: GameView[] = [];
-    for (const [key, view] of this.views) {
-      // System reads every viewport — the server sends it everything, and it holds no actors of
-      // its own to enter with. That is what lets admin watch a deception: they see the fiction
-      // through the same viewport the players do, and any truth the engine exposes arrives
-      // separately as a System-addressed command to compose against it.
-      if (key === "System" || view.viewports.has(viewport)) out.push(view);
+    for (const gate of out.view_gates) {
+      if (gate === "Admin") {
+        // System has no viewport or actor of its own — it reads everything. For a command that
+        // also names a viewport (every viewport command carries an Admin gate), the viewport the
+        // content rides is still what a handler needs to record where objects live.
+        const view = this.system_view();
+        if (!seen.has(view)) {
+          seen.add(view);
+          result.push({ view, viewport: command_viewports[0], actor: command_actors[0] });
+        }
+      } else if (typeof gate !== "string" && "Player" in gate) {
+        const key = slotKeyToString(gate.Player);
+        const view = this.view_for(key);
+        if (!seen.has(view)) {
+          seen.add(view);
+          result.push({ view, viewport: command_viewports[0], actor: key });
+        }
+      } else if (typeof gate !== "string" && "Viewport" in gate) {
+        const viewport = slotKeyToString(gate.Viewport);
+        for (const [key, view] of this.views) {
+          // System reads every viewport — the server sends it everything (an Admin gate rides
+          // alongside every Viewport gate), and it holds no actors of its own to enter with. That
+          // is what lets admin watch a deception: they see the fiction through the same viewport
+          // the players do.
+          if (key !== "System" && view.viewports.has(viewport)) {
+            if (!seen.has(view)) {
+              seen.add(view);
+              result.push({ view, viewport, actor: command_actors[0] });
+            }
+          }
+        }
+      }
+      // "Connection" routes to no view: the output is this connection's own fact (its privileges),
+      // which the session reads directly rather than displaying.
     }
-    return out;
+    return result;
   }
 
   // Hand one view the part of a viewport's past it has not been given.
@@ -129,8 +166,8 @@ export class GameState {
   // The two are complementary and cannot overlap: the server sends what the connection lacked,
   // this replays what the connection had and this view lacked. The watermark separates them.
   #backfill(view: GameView, viewport: string, until: number) {
-    for (const [pos, payload] of this.#history.range(viewport, view.delivered(viewport), until)) {
-      this.#deliver(view, payload, pos, NO_NOTIFY);
+    for (const [pos, out] of this.#history.range(viewport, view.delivered(viewport), until)) {
+      this.#deliver(view, outputCommand(out), out.time, gateActors(out)[0], viewport, pos, NO_NOTIFY);
     }
     view.deliver_to(viewport, until);
   }
@@ -162,40 +199,5 @@ export class GameState {
   // a case that already has a correct representation.
   view_of(viewer: string): GameView {
     return this.view_for(viewer === "Admin" ? "System" : viewer);
-  }
-
-  // What the SERVER knows about who occupies a slot, on its own channel beside the command stream.
-  //
-  // Applied per view, and only where that view already knows the slot. The server gates these on
-  // the connection having received the MapActor, but a connection holding several actors is not
-  // the same as any one of them having received it — so the check is repeated here, per view,
-  // where the answer is actually per-actor.
-  apply_profiles(update: ProfileUpdate) {
-    for (const [id, profile] of update.profiles) {
-      this.#profiles.set(slotKeyToString(id), profile.display_name);
-    }
-    this.#name_players();
-  }
-
-  // Push the current name onto every slot a view holds one for.
-  //
-  // Existence and naming arrive on different channels with different lifetimes, and only existence
-  // is replayable: a view created later backfills the presence viewport and learns the slot, but
-  // nothing re-sends the profile that named it. Reconciling after every batch is what keeps a slot
-  // from rendering as `player-3v0` forever just because it was named before the view existed.
-  //
-  // Assigns rather than fills, so a rename lands everywhere the old name was — including clearing
-  // one back to null. `#profiles` is the authority; nothing else writes display_name. A slot with
-  // no profile at all is left alone.
-  //
-  // This leaks nothing. A view is only ever named for a slot it already holds, so what it may SEE
-  // is still decided entirely by what it was delivered; this only decides what to CALL it.
-  #name_players() {
-    for (const view of this.views.values()) {
-      for (const [key, player] of view.players) {
-        const name = this.#profiles.get(key);
-        if (name !== undefined) player.display_name = name;
-      }
-    }
   }
 }

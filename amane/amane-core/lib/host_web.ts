@@ -16,7 +16,7 @@ import type {
   PlatformApi,
   Toast,
 } from "./protocol";
-import type { ServerInput, ServerOutput } from "../bindings";
+import type { Batch, ServerInput } from "../bindings";
 
 export interface WebHostConfig {
   // Origin of the yagami API, e.g. "https://play.example.com".
@@ -79,7 +79,7 @@ export function createWebHost(config: WebHostConfig): HostContext {
       );
 
       const socket = new WebSocket(socketUrl(config.baseUrl, gameId, ticket));
-      let handler: ((batch: ServerOutput) => void) | undefined;
+      let handler: ((batch: Batch) => void) | undefined;
       let live = false;
 
       await new Promise<void>((resolve, reject) => {
@@ -100,7 +100,7 @@ export function createWebHost(config: WebHostConfig): HostContext {
 
       socket.addEventListener("message", (event) => {
         if (typeof event.data !== "string") return; // the protocol is text-only
-        let batch: ServerOutput;
+        let batch: Batch;
         try {
           batch = JSON.parse(event.data);
         } catch {
@@ -130,7 +130,7 @@ export function createWebHost(config: WebHostConfig): HostContext {
           socket.send(JSON.stringify(input));
         },
 
-        onBatch(next: (batch: ServerOutput) => void): () => void {
+        onBatch(next: (batch: Batch) => void): () => void {
           handler = next;
           return () => {
             handler = undefined;

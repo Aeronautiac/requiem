@@ -38,7 +38,7 @@ export const STRINGS = {
 
   control_Denied: "You are not an administrator of this game.",
   control_KeyNotFound: "That key does not exist.",
-  control_CannotActOnSelf: "You cannot change your own key.",
+  control_CannotActOnSelf: "Supervisors cannot change their own key.",
   control_RequiresSupervise: "Only a supervisor can change another administrator's key.",
   control_CannotGrantSupervise: "Only a supervisor can grant the supervisor capability.",
 

@@ -37,7 +37,7 @@ pub enum ViewportKind {
     // which is what a blackout is — nobody exits presence, the world simply stops announcing. What
     // happened still happens, and is handed over in order when the blackout lifts.
     WorldEvents,
-    // The world's structural facts: who exists, what day it is. Every present player holds it and
+    // The world's structural facts: who exists, what day it is. Every player holds it and
     // a blackout does not touch it, because a game that cannot tell you a player joined is broken
     // rather than dark.
     WorldData,

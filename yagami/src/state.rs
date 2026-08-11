@@ -13,7 +13,7 @@ use std::{
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use lawliet_types::common::{ActorKey, Time};
+use lawliet_types::common::{ActorKey, Time, ViewportKey};
 
 use crate::{
     auth::{Key, KeyData, Privileges, Ticket},
@@ -55,6 +55,10 @@ pub struct GameHandle {
     pub actor_created: HashMap<ActorKey, Time>,
     pub key_created: HashMap<Key, Time>,
     pub profile_created: HashMap<ActorKey, Time>,
+    // the viewport the engine announced as the world-data viewport (its MapViewport kind), where
+    // actor existence and the server's profile roster both ride. None until the engine has booted
+    // and announced it. derived from the command stream, never assumed.
+    pub data_viewport: Option<ViewportKey>,
 }
 
 impl GameHandle {

@@ -1259,59 +1259,30 @@ export type ViewportKind =
   | "WorldEvents"
   | "WorldData";
 
-// Log is here for completeness of the protocol only. Nothing addressed to a record is ever
-// delivered to any client, admin included, so a client never observes one.
-export type CommandRecipient =
-  | "System"
-  | { Actor: ActorKey }
-  | { Viewport: ViewportKey }
-  | { Log: LogID };
-
-export type CommandPayload = {
-  timestamp: number;
-  recipient: CommandRecipient;
-  cmd: Command;
-};
-
-export type ActionContext = {
-  commands: CommandPayload[];
-};
-
-export type IpcExecutionResult =
-  | { Ok: [ActionResponse, ActionContext] }
-  | { Err: [ActionError, ActionContext] };
-
-export type AppExecResult =
-  | { Standard: IpcExecutionResult }
-  | "Crashed";
-
-export type AppExecution = {
-  exec_result: AppExecResult;
-};
-
 export type ServerInput =
   | { Action: ActionRequest }
-  | { Control: GameControl };
+  | { Control: AdminControl };
 
 export type Capability = "Administer" | "Supervise";
 
 export type ActorScope = "All" | { Only: ActorKey[] };
 
-export type GameControl =
-  | "EndGame"
+// Admin controls, as yagami's game task presents them: they act ON the game, not in the fiction,
+// and every one requires Administer. GoToTime is the game task's own time-travel mechanic.
+export type AdminControl =
   | { CreateKey: { actors: ActorScope; capabilities: Capability[] } }
   | { RevokeKey: { key: string } }
   | { SetCapabilities: { key: string; capabilities: Capability[] } }
   | { SetActorScope: { key: string; actors: ActorScope } }
-  | { SetProfile: { actor: ActorKey; profile: Profile } };
+  | { SetProfile: { actor: ActorKey; profile: Profile } }
+  | { GoToTime: { time: number } };
 
 export type ControlResponse =
-  | "Ended"
+  | { KeyCreated: { key: string } }
   | "KeyRevoked"
   | "CapabilitiesSet"
   | "ActorScopeSet"
-  | "ProfileSet"
-  | { KeyCreated: { key: string } };
+  | "ProfileSet";
 
 export type ControlError =
   | "KeyNotFound"
@@ -1323,7 +1294,7 @@ export type ActionOutcome =
   | { Ok: ActionResponse }
   | { Err: ActionError }
   | "Denied"
-  | "Crashed";
+  | "EnginePanic";
 
 export type ControlOutcome =
   | { Ok: ControlResponse }
@@ -1335,39 +1306,71 @@ export type ExecOutcome =
   | { Control: ControlOutcome };
 
 export type ResponsePair = {
+  response: ExecOutcome;
   input: ServerInput;
-  output: ExecOutcome;
 };
 
+// ---- the server -> client wire (yagami) ----
+
+// A single server output, delivered to a connection. `view_gates` is how the server says WHO may
+// see it — the engine's recipient has already been resolved into one or more gates, the server
+// filtered them against this connection's privileges, and the client uses them to route the
+// command into the right per-actor view(s). `Connection` is the one non-view gate: the output is
+// addressed to the connection itself (its own privileges), read directly rather than routed.
+export type ViewGate = "Admin" | { Viewport: ViewportKey } | { Player: ActorKey } | "Connection";
+
+// An engine command is routed like any other command. A server command is server-computed state
+// that could not live on the engine — a filtered log dump, a profile roster, a key roster.
+export type LogCommand = { time: number; data: Command };
+
+export type LogType = { Autopsy: ActorKey } | { TapIn: number };
+
+export type ServerCmd =
+  | { LogDump: { data: LogCommand[]; log_type: LogType } }
+  | { ProfileRoster: { profiles: [ActorKey, Profile][] } }
+  | { KeyRoster: { keys: [string, PrivilegeSet][] } }
+  // This connection's own privileges. Sent as the first command of every sync (fresh attach or a
+  // resync after a privilege change), and read connection-wide by the session.
+  | { Privileges: PrivilegeSet };
+
+export type OutputData = { Engine: Command } | { Server: ServerCmd };
+
+// Server commands are written as single-key variants just like engine commands, so every output
+// normalizes to ONE uniform command type and flows through a single dispatch path — the client
+// does not distinguish engine from server; it obeys whatever it received.
+export type WireCommand = Command | ServerCmd;
+
+// The command an output carries, whatever its origin.
+export function outputCommand(out: ServerOutput): WireCommand {
+  return "Engine" in out.data ? out.data.Engine : out.data.Server;
+}
+
+export type ServerOutput = {
+  time: number;
+  view_gates: ViewGate[];
+  data: OutputData;
+};
+
+// A batch is either the catch-up that initializes (or resets and rebuilds) a connection's state,
+// or a live batch of new outputs. A Live batch optionally carries the reply to THIS connection's
+// own input, in `kind`.
+export type BatchKind = "Initialize" | { Live: ResponsePair | null };
+
 export type Batch = {
-  commands: CommandPayload[];
-  response: ResponsePair | null;
+  kind: BatchKind;
+  outputs: ServerOutput[];
 };
 
 export type Profile = {
   display_name: string | null;
 };
 
-export type ProfileUpdate = {
-  profiles: [ActorKey, Profile][];
-};
-
-// What this connection's own key permits. Arrives before anything else and again whenever it is
-// rewritten, so the UI never has to infer its own standing from which commands happened to show up.
-// UX only — the server checks every action and control against the ledger regardless.
+// What this connection's own key permits. UX only — the server checks every action and control
+// against the ledger regardless. Delivered inside a Server(KeyRoster); the client picks its own
+// entry by matching the key it joined with.
 export type PrivilegeSet = {
   actors: ActorScope;
   capabilities: Capability[];
-};
-
-export type OutputData =
-  | { Batch: Batch }
-  | { Profiles: ProfileUpdate }
-  | { Privileges: PrivilegeSet };
-
-export type ServerOutput = {
-  seq_num: number;
-  data: OutputData;
 };
 
 export function slotKeyToString(key: SlotKey): string {

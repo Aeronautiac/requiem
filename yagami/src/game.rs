@@ -8,9 +8,10 @@
 use std::{collections::HashSet, env::current_exe, io::ErrorKind, process::Stdio, time::Duration};
 
 use lawliet_types::{
-    action::{Action, ActionActor, ActionRequest, InitializeEngine, Null},
+    ability::AbilityBehaviour,
+    action::{Action, ActionActor, ActionRequest, AddPlayer, InitializeEngine, Null, SetTrueName},
     command::{Command, CommandPayload},
-    common::{Seed, Time},
+    common::{ActorKey, Seed, Time},
     engine::ExecutionResult,
 };
 use serde::Serialize;
@@ -24,22 +25,22 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    auth::{Capability, Key, KeyData, Privileges, Ticket, to_flags},
+    auth::{ActorScope, Capability, Key, KeyData, Privileges, Ticket, to_flags},
     constants::{ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
-    delivery::History,
+    delivery::{History, key_roster_output, profile_roster_output},
     generate_seed,
+    names::NamePool,
     state::{GameHandle, GameId, WrappedServerState, lock_state},
     wire::{
         ActionOutcome, AdminControl, ControlError, ControlOutcome, ControlResponse, ExecOutcome,
-        ResponsePair, ServerInput,
+        Profile, ResponsePair, ServerInput,
     },
 };
 
 // TODO:
-// - server data deliveries. people need to see keys, profiles, and other similar information.
-// simply construct a server command on change, append it to history, and deliver it as you would
-// anything else.
-// - client migration to the new server model.
+// the client currently works on real time, not sandboxed time. we likely need a new sort of server
+// clock setting command that the client uses to render its time. this is important for stuff like
+// death announcements which use time to stagger the different parts of it.
 
 pub fn to_line<T: Serialize>(value: &T) -> String {
     match serde_json::to_string(value) {
@@ -144,6 +145,8 @@ struct Game {
     clock: GameClock,             // sandboxed source of action timestamps
     accepted: Vec<ActionRequest>, // accepted engine inputs, replayed on boot
     history: History,             // the command log every connection walks from
+    true_names: NamePool,         // true names drawn for unnamed players, tracking what is in play
+    display_names: NamePool,      // display names drawn for unnamed players, tracking those in play
 
     // process comms. the child is held here so the engine stays alive for as long as this task does:
     // dropping it would trigger kill_on_drop.
@@ -174,6 +177,8 @@ impl Game {
             clock: GameClock::new(),
             accepted: Vec::new(),
             history: History::new(game_id),
+            true_names: NamePool::new(),
+            display_names: NamePool::new(),
             child: None,
             stdin: None,
             stdout: None,
@@ -261,8 +266,19 @@ impl Game {
                 // an error still carries the world progression that ran before the action failed
                 // (see the ExecutionResult alias), so actor mappings in it are still real.
                 self.record_actor_creations(&commands);
+                self.record_true_names(&commands);
+                self.record_data_viewport(&commands);
+                // a fresh player slot draws a display name before the roster is broadcast, so it
+                // rides out in the same batch as the MapActor that entitles a connection to it.
+                let profiles_changed = self.assign_display_names(&commands);
 
                 let at = self.history.append_engine(commands);
+
+                // the roster follows the engine commands it describes, inside the same broadcast.
+                if profiles_changed {
+                    self.append_profile_roster();
+                }
+
                 let reply = reply.map(|(ticket, input)| {
                     (
                         ticket,
@@ -294,20 +310,6 @@ impl Game {
         }
     }
 
-    // hand one connection a reply with no new commands -- a deny, or a crash already handled above.
-    // rides an empty broadcast so the batch reaches that one socket and no other.
-    fn deliver_reply(&self, ticket: Ticket, input: ServerInput, outcome: ExecOutcome) {
-        let pair = ResponsePair {
-            response: outcome,
-            input,
-        };
-        self.history.broadcast(
-            &self.server_state,
-            self.history.head(),
-            Some((ticket, pair)),
-        );
-    }
-
     // scan one execution's output for actor mappings and record when each actor slot came into
     // being. this is what a rewind uses to know whether a profile or key stands on an actor that
     // did not exist yet at the target time.
@@ -317,6 +319,71 @@ impl Game {
             return;
         };
         record_actor_creations(game, commands);
+    }
+
+    // scan one execution's output for the engine's world-data viewport announcement and remember
+    // it, so server state (profiles) can be addressed to the same viewport actor existence rides.
+    fn record_data_viewport(&self, commands: &[CommandPayload]) {
+        let mut server_state = lock_state(&self.server_state);
+        let Some(game) = server_state.games.get_mut(&self.game_id) else {
+            return;
+        };
+        record_data_viewport(game, commands);
+    }
+
+    // scan one execution's output for true-name announcements and tell the pool, so a later draw
+    // never hands out a name that is already in play -- whether it was drawn by the server or typed
+    // by an admin straight into the action. TrueNameUpdate is emitted on every SetTrueName,
+    // including a player's first, so the pool learns the whole roster as it is built.
+    fn record_true_names(&mut self, commands: &[CommandPayload]) {
+        for payload in commands {
+            if let Command::TrueNameUpdate { true_name, .. } = &payload.cmd {
+                self.true_names.mark_taken(true_name);
+            }
+        }
+    }
+
+    // A newly-mapped PLAYER slot gets a display name drawn for it, so nobody is ever left rendering
+    // as a raw `player-<slot>`. Cosmetic, like a colour in a lobby, and drawn independently of the
+    // true name -- a display name may coincide with a true name (the two pools never share their
+    // drawn-name sets), but never with another drawn display name. An admin replaces it with
+    // SetProfile when they want.
+    //
+    // Encountering the MapActor for a player is when the profile is created: existence (MapActor)
+    // and identity (profile) meet here, so a profile only ever exists for a slot that does. Returns
+    // whether any profile changed, so the caller can append the roster behind this execution.
+    fn assign_display_names(&mut self, commands: &[CommandPayload]) -> bool {
+        let mut server_state = lock_state(&self.server_state);
+        let Some(game) = server_state.games.get_mut(&self.game_id) else {
+            return false;
+        };
+        assign_display_names(game, &mut self.display_names, commands)
+    }
+
+    // The server names people, not their clients. An unnamed AddPlayer or SetTrueName is how an
+    // admin asks for a drawn name; a TrueNameReroll is a player's own ability, so its name is ALWAYS
+    // replaced -- letting the user choose is the whole thing being prevented. A name a request
+    // carries is kept as sent. An exhausted reservoir leaves the request untouched, and the engine
+    // refuses it as a duplicate -- a wrong name is worse than a failed action.
+    fn assign_name(&mut self, request: &mut ActionRequest) {
+        let unnamed = match &mut request.payload {
+            Action::UseAbility(use_ability) => match &mut use_ability.ability_args {
+                AbilityBehaviour::TrueNameReroll(reroll) => Some(&mut reroll.true_name),
+                _ => None,
+            },
+            Action::AddPlayer(AddPlayer { true_name, .. }) if true_name.is_empty() => {
+                Some(true_name)
+            }
+            Action::SetTrueName(SetTrueName { true_name, .. }) if true_name.is_empty() => {
+                Some(true_name)
+            }
+            _ => None,
+        };
+        if let Some(slot) = unnamed
+            && let Some(name) = self.true_names.draw()
+        {
+            *slot = name;
+        }
     }
 
     // ===== PROCESS MANAGEMENT ===== //
@@ -352,12 +419,19 @@ impl Game {
             self.stdin = Some(stdin);
             self.stdout = Some(BufReader::new(stdout).lines());
 
+            // history is rebuilt from the replay as the engine is brought up: everything an
+            // initialization action emits lands in the log, so a freshly-synced client can
+            // reconstruct the same world a live one saw. Rebuild, not append, so a re-boot (or a
+            // rewind) never duplicates commands that are already there, and truncated timelines
+            // drop what never happened.
+            self.history = History::new(self.game_id);
+
             let mut ok = true;
 
-            // replay every accepted input. success responses are discarded.
+            // replay every accepted input, folding each one's commands into the rebuilt history.
             let accepted = std::mem::take(&mut self.accepted);
             for request in &accepted {
-                if self.dispatch(request).await.is_err() {
+                if !self.fold_dispatch(request).await {
                     ok = false;
                     break;
                 }
@@ -372,7 +446,7 @@ impl Game {
                     timestamp: self.last_reached,
                     payload: Action::Null(Null {}),
                 };
-                if self.dispatch(&request).await.is_err() {
+                if !self.fold_dispatch(&request).await {
                     ok = false;
                 }
             }
@@ -386,12 +460,22 @@ impl Game {
                     payload: Action::InitializeEngine(InitializeEngine { seed: self.seed }),
                 };
                 match self.dispatch(&request).await {
-                    Ok(_) => self.accepted.push(request),
+                    Ok(inner) => {
+                        self.append_execution(inner);
+                        self.accepted.push(request);
+                    }
                     Err(_) => ok = false,
                 }
             }
 
             if ok {
+                // history was rebuilt from scratch and rebuilt from the init replay: every
+                // connection reconstructs against it. Lead it with the ledgers as they stand at
+                // boot, so a freshly-joined client has the sets before replay fills the world -- a
+                // rewind that prunes either ledger rests the roster on the pruned reality.
+                self.append_key_roster();
+                self.append_profile_roster();
+                self.history.resync_all(&self.server_state);
                 return;
             }
 
@@ -400,6 +484,32 @@ impl Game {
             self.stdin = None;
             self.stdout = None;
         }
+    }
+
+    // dispatch one replay request and fold its command output into history. returns whether the
+    // dispatch succeeded.
+    async fn fold_dispatch(&mut self, request: &ActionRequest) -> bool {
+        match self.dispatch(request).await {
+            Ok(inner) => {
+                self.append_execution(inner);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    // fold one execution's command context into history. an error still carries the world
+    // progression that ran before the action failed, so a failed initialization still contributes
+    // whatever it minted.
+    fn append_execution(&mut self, result: ExecutionResult) {
+        let commands = match result {
+            Ok((_, context)) => context.commands,
+            Err((_, context)) => context.commands,
+        };
+        // boot's own replay never passes through execute, so the data-viewport announcement it
+        // makes is learned here, not only on the live path.
+        self.record_data_viewport(&commands);
+        self.history.append_engine(commands);
     }
 
     // ===== INITIALIZATION AND TEARDOWN ===== //
@@ -465,38 +575,26 @@ impl Game {
 
         match input {
             ServerInput::Control(control) => {
-                if !self.authorize_control(&ticket) {
-                    self.deliver_reply(
-                        ticket,
-                        ServerInput::Control(control),
-                        ExecOutcome::Control(ControlOutcome::Denied),
-                    );
-                    return;
-                }
-                match control {
-                    AdminControl::GoToTime { time } => self.go_to_time(time).await,
-                    _ => {
-                        let outcome = handle_control(
-                            &self.server_state,
-                            self.game_id,
-                            &ticket,
-                            self.clock.now(),
-                            &control,
-                        );
-                        self.deliver_control_feedback(&ticket, &control, outcome);
-                    }
-                }
+                self.execute_control(ticket, control).await;
             }
             ServerInput::Action(mut request) => {
                 // override the client's reported value. only the game task truly knows the game's
                 // virtual clock, and a client cannot be trusted.
                 request.timestamp = self.clock.now();
+                // ... and, like the timestamp, the server names people rather than their clients:
+                // an unnamed request gets a fresh draw before the engine ever sees it.
+                self.assign_name(&mut request);
 
                 if !self.authorize_action(&ticket, &request) {
-                    self.deliver_reply(
-                        ticket,
-                        ServerInput::Action(request),
-                        ExecOutcome::Action(ActionOutcome::Denied),
+                    // a deny appends nothing, so the reply rides a broadcast from the current head.
+                    let pair = ResponsePair {
+                        response: ExecOutcome::Action(ActionOutcome::Denied),
+                        input: ServerInput::Action(request),
+                    };
+                    self.history.broadcast(
+                        &self.server_state,
+                        self.history.head(),
+                        Some((ticket, pair)),
                     );
                     return;
                 }
@@ -514,19 +612,302 @@ impl Game {
         }
     }
 
-    // reply to a control. the feedback is immediate -- it never touches the engine -- so it rides
-    // out as its own payload rather than a response to a dispatch.
-    fn deliver_control_feedback(
+    // ===== CONTROL EXECUTION ===== //
+
+    // carry out one control -- the control analog of `execute`. It authorizes, then hands each
+    // control variant to its own handler; no variant is special-cased out of the match, and a
+    // control is just another execution -- one that writes the server's ledger (keys, profiles)
+    // instead of the engine's, so each handler appends whatever roster its change rewrites and
+    // the reply rides one broadcast from there.
+    async fn execute_control(&mut self, ticket: Ticket, control: AdminControl) {
+        if !self.authorize_control(&ticket) {
+            let pair = ResponsePair {
+                response: ExecOutcome::Control(ControlOutcome::Denied),
+                input: ServerInput::Control(control),
+            };
+            self.history.broadcast(
+                &self.server_state,
+                self.history.head(),
+                Some((ticket, pair)),
+            );
+            return;
+        }
+        let now = self.clock.now();
+        match control {
+            AdminControl::GoToTime { time } => self.go_to_time(time).await,
+            AdminControl::CreateKey {
+                actors,
+                capabilities,
+            } => self.create_key_control(ticket, now, actors, capabilities),
+            AdminControl::RevokeKey { key } => self.revoke_key_control(ticket, now, key),
+            AdminControl::SetCapabilities { key, capabilities } => {
+                self.set_capabilities_control(ticket, now, key, capabilities)
+            }
+            AdminControl::SetActorScope { key, actors } => {
+                self.set_actor_scope_control(ticket, now, key, actors)
+            }
+            AdminControl::SetProfile { actor, profile } => {
+                self.set_profile_control(ticket, now, actor, profile)
+            }
+        }
+    }
+
+    fn create_key_control(
+        &mut self,
+        ticket: Ticket,
+        now: Time,
+        actors: ActorScope,
+        capabilities: Vec<Capability>,
+    ) {
+        let outcome = self.ledger_control(&ticket, now, |game, _caller, supervises, now| {
+            let capabilities = to_flags(&capabilities);
+            if capabilities.contains(Capability::Supervise) && !supervises {
+                return Err(ControlError::CannotGrantSupervise);
+            }
+            let key = Key::generate();
+            game.keys.insert(
+                key.clone(),
+                KeyData {
+                    cancel: game.cancel.child_token(),
+                    tickets: HashSet::new(),
+                    privileges: Privileges {
+                        actors: actors.clone(),
+                        capabilities,
+                    },
+                },
+            );
+            game.key_created.insert(key.clone(), now);
+            Ok(ControlResponse::KeyCreated { key })
+        });
+        let at = if matches!(outcome, ControlOutcome::Ok(_)) {
+            self.append_key_roster()
+        } else {
+            self.history.head()
+        };
+        self.broadcast_control(
+            ticket,
+            AdminControl::CreateKey {
+                actors,
+                capabilities,
+            },
+            outcome,
+            at,
+        );
+    }
+
+    fn revoke_key_control(&mut self, ticket: Ticket, now: Time, key: Key) {
+        let outcome = self.ledger_control(&ticket, now, |game, caller, supervises, _now| {
+            may_manage(game, caller, supervises, &key)?;
+            revoke_key(game, &key);
+            Ok(ControlResponse::KeyRevoked)
+        });
+        let at = if matches!(outcome, ControlOutcome::Ok(_)) {
+            self.append_key_roster()
+        } else {
+            self.history.head()
+        };
+        self.broadcast_control(ticket, AdminControl::RevokeKey { key }, outcome, at);
+    }
+
+    fn set_capabilities_control(
+        &mut self,
+        ticket: Ticket,
+        now: Time,
+        key: Key,
+        capabilities: Vec<Capability>,
+    ) {
+        let outcome = self.ledger_control(&ticket, now, |game, caller, supervises, _now| {
+            may_manage(game, caller, supervises, &key)?;
+            let capabilities = to_flags(&capabilities);
+            if capabilities.contains(Capability::Supervise) && !supervises {
+                return Err(ControlError::CannotGrantSupervise);
+            }
+            let key_data = game
+                .keys
+                .get_mut(&key)
+                .expect("target key resolved by may_manage");
+            let before = key_data.privileges.clone();
+            key_data.privileges.capabilities = capabilities;
+            apply_privilege_change(game, &key, before);
+            Ok(ControlResponse::CapabilitiesSet)
+        });
+        let at = if matches!(outcome, ControlOutcome::Ok(_)) {
+            let at = self.append_key_roster();
+            // a privilege change resets the affected key's live connections so its clients see the
+            // new set -- and any narrowed scope -- from scratch.
+            self.resync_key(&key);
+            at
+        } else {
+            self.history.head()
+        };
+        self.broadcast_control(
+            ticket,
+            AdminControl::SetCapabilities { key, capabilities },
+            outcome,
+            at,
+        );
+    }
+
+    fn set_actor_scope_control(&mut self, ticket: Ticket, now: Time, key: Key, actors: ActorScope) {
+        let outcome = self.ledger_control(&ticket, now, |game, caller, supervises, _now| {
+            may_manage(game, caller, supervises, &key)?;
+            let key_data = game
+                .keys
+                .get_mut(&key)
+                .expect("target key resolved by may_manage");
+            let before = key_data.privileges.clone();
+            key_data.privileges.actors = actors.clone();
+            apply_privilege_change(game, &key, before);
+            Ok(ControlResponse::ActorScopeSet)
+        });
+        let at = if matches!(outcome, ControlOutcome::Ok(_)) {
+            let at = self.append_key_roster();
+            self.resync_key(&key);
+            at
+        } else {
+            self.history.head()
+        };
+        self.broadcast_control(
+            ticket,
+            AdminControl::SetActorScope { key, actors },
+            outcome,
+            at,
+        );
+    }
+
+    fn set_profile_control(
+        &mut self,
+        ticket: Ticket,
+        now: Time,
+        actor: ActorKey,
+        profile: Profile,
+    ) {
+        let outcome = self.ledger_control(&ticket, now, |game, _caller, _supervises, now| {
+            game.profiles.insert(actor, profile.clone());
+            game.profile_created.insert(actor, now);
+            Ok(ControlResponse::ProfileSet)
+        });
+        let at = if matches!(outcome, ControlOutcome::Ok(_)) {
+            self.append_profile_roster()
+        } else {
+            self.history.head()
+        };
+        self.broadcast_control(
+            ticket,
+            AdminControl::SetProfile { actor, profile },
+            outcome,
+            at,
+        );
+    }
+
+    // resolve the caller's authority and run one ledger mutation under the lock, returning its
+    // outcome. an unreachable caller entry denies.
+    fn ledger_control(
         &self,
         ticket: &Ticket,
-        control: &AdminControl,
+        now: Time,
+        run: impl FnOnce(&mut GameHandle, &Key, bool, Time) -> Result<ControlResponse, ControlError>,
+    ) -> ControlOutcome {
+        let mut server_state = lock_state(&self.server_state);
+        let Some(game) = server_state.games.get_mut(&self.game_id) else {
+            return ControlOutcome::Denied;
+        };
+        let Some(caller_key) = game.tickets.get(ticket).cloned() else {
+            return ControlOutcome::Denied;
+        };
+        let Some(caller) = game.keys.get(&caller_key) else {
+            return ControlOutcome::Denied;
+        };
+        let supervises = caller
+            .privileges
+            .capabilities
+            .contains(Capability::Supervise);
+        match run(game, &caller_key, supervises, now) {
+            Ok(response) => ControlOutcome::Ok(response),
+            Err(error) => ControlOutcome::Err(error),
+        }
+    }
+
+    // reply to a control from `at` -- where its roster was appended, or head for a no-op --
+    // carrying both the outcome and any output the change appended in one broadcast.
+    fn broadcast_control(
+        &self,
+        ticket: Ticket,
+        control: AdminControl,
         outcome: ControlOutcome,
+        at: usize,
     ) {
-        self.deliver_reply(
-            ticket.clone(),
-            ServerInput::Control((*control).clone()),
-            ExecOutcome::Control(outcome),
-        );
+        let pair = ResponsePair {
+            response: ExecOutcome::Control(outcome),
+            input: ServerInput::Control(control),
+        };
+        self.history
+            .broadcast(&self.server_state, at, Some((ticket, pair)));
+    }
+
+    // snapshot the whole current key ledger into history as a live KeyRoster. Rosters travel the
+    // log like any other output -- see the TODO by the imports -- so a fresh admin connection
+    // replays the set in the state each change left it, and the broadcast that follows a control
+    // delivers this entry to every admin that passes its Admin gate.
+    //
+    // Returns the history position to walk from when broadcasting, so the caller's control reply
+    // rides a batch that includes this roster: `head()` before the append. A no-op (game gone)
+    // returns the current head, i.e. nothing new to deliver.
+    fn append_key_roster(&mut self) -> usize {
+        let start = self.history.head();
+        let output = {
+            let server_state = lock_state(&self.server_state);
+            match server_state.games.get(&self.game_id) {
+                Some(game) => key_roster_output(&game.keys),
+                None => return start,
+            }
+        };
+        self.history.append_server(vec![output]);
+        start
+    }
+
+    // snapshot the whole profile ledger into history, aimed at the world-data viewport (the one
+    // actor existence rides -- see record_data_viewport). Because it shares that viewport, anyone
+    // who can read it has been walked the mappings it names. Appended on every profile change and
+    // at boot, so a rewind that prunes profiles rewrites the roster its clients replay.
+    //
+    // Returns the history position to walk from when broadcasting, as @[append_key_roster].
+    fn append_profile_roster(&mut self) -> usize {
+        let start = self.history.head();
+        let output = {
+            let server_state = lock_state(&self.server_state);
+            let Some(game) = server_state.games.get(&self.game_id) else {
+                return start;
+            };
+            let Some(viewport) = game.data_viewport else {
+                return start; // the world-data viewport has not been announced yet
+            };
+            profile_roster_output(viewport, &game.profiles)
+        };
+        self.history.append_server(vec![output]);
+        start
+    }
+
+    // deliver a full resync to every live connection held by `key` -- the "an Initialize batch"
+    // reset that rebuilds the client's view of the game under the key's current privileges. Used on
+    // a privilege change (narrowing and widening both) so the client's standing and reach are told
+    // from the new ledger, never a stale one.
+    fn resync_key(&self, key: &Key) {
+        let tickets: Vec<Ticket> = {
+            let server_state = lock_state(&self.server_state);
+            match server_state.games.get(&self.game_id) {
+                Some(game) => game
+                    .tickets
+                    .iter()
+                    .filter(|(_, k)| *k == key)
+                    .map(|(ticket, _)| ticket.clone())
+                    .collect(),
+                None => Vec::new(),
+            }
+        };
+        for ticket in tickets {
+            self.history.deliver_sync(&self.server_state, ticket);
+        }
     }
 
     // GoToTime: move the game to a past (or future) instant.
@@ -636,7 +1017,7 @@ pub async fn game(
     Game::new(game_id, state, cancel, events).run().await;
 }
 
-// ===== CONTROL / KEY MANAGEMENT ===== //
+// ===== KEY AUTHORITY ===== //
 
 // may the caller act on this target key? the single authority rule for every key-management control,
 // kept in one place so a control added later cannot quietly skip it.
@@ -695,132 +1076,6 @@ fn revoke_key(game: &mut GameHandle, key: &Key) {
 #[allow(unused)]
 fn apply_privilege_change(_game: &mut GameHandle, _key: &Key, _before: Privileges) {}
 
-// carry out one control. authority over the target is checked per-control rather than up front,
-// because CreateKey has no target. `now` is the control's timestamp, stamped onto any server-side
-// state the control mints so a rewind can discard it.
-fn manage(
-    game: &mut GameHandle,
-    caller_key: &Key,
-    supervises: bool,
-    now: Time,
-    control: &AdminControl,
-) -> Result<ControlResponse, ControlError> {
-    match control {
-        AdminControl::CreateKey {
-            actors,
-            capabilities,
-        } => {
-            let capabilities = to_flags(capabilities);
-            if capabilities.contains(Capability::Supervise) && !supervises {
-                return Err(ControlError::CannotGrantSupervise);
-            }
-
-            let key = Key::generate();
-            game.keys.insert(
-                key.clone(),
-                KeyData {
-                    cancel: game.cancel.child_token(),
-                    tickets: HashSet::new(),
-                    privileges: Privileges {
-                        actors: actors.clone(),
-                        capabilities,
-                    },
-                },
-            );
-            game.key_created.insert(key.clone(), now);
-
-            Ok(ControlResponse::KeyCreated { key })
-        }
-
-        AdminControl::RevokeKey { key } => {
-            may_manage(game, caller_key, supervises, key)?;
-            revoke_key(game, key);
-            Ok(ControlResponse::KeyRevoked)
-        }
-
-        AdminControl::SetCapabilities { key, capabilities } => {
-            may_manage(game, caller_key, supervises, key)?;
-
-            let capabilities = to_flags(capabilities);
-            if capabilities.contains(Capability::Supervise) && !supervises {
-                return Err(ControlError::CannotGrantSupervise);
-            }
-
-            let key_data = game
-                .keys
-                .get_mut(key)
-                .expect("target key resolved by may_manage");
-            let before = key_data.privileges.clone();
-            key_data.privileges.capabilities = capabilities;
-
-            apply_privilege_change(game, key, before);
-
-            Ok(ControlResponse::CapabilitiesSet)
-        }
-
-        AdminControl::SetActorScope { key, actors } => {
-            may_manage(game, caller_key, supervises, key)?;
-
-            let key_data = game
-                .keys
-                .get_mut(key)
-                .expect("target key resolved by may_manage");
-            let before = key_data.privileges.clone();
-            key_data.privileges.actors = actors.clone();
-
-            apply_privilege_change(game, key, before);
-
-            Ok(ControlResponse::ActorScopeSet)
-        }
-
-        AdminControl::SetProfile { actor, profile } => {
-            game.profiles.insert(*actor, profile.clone());
-            game.profile_created.insert(*actor, now);
-            Ok(ControlResponse::ProfileSet)
-        }
-
-        // time travel is the game task's own mechanic, handled by go_to_time, not key management.
-        AdminControl::GoToTime { .. } => unreachable!(),
-    }
-}
-
-fn handle_control(
-    state: &WrappedServerState,
-    game_id: GameId,
-    ticket: &Ticket,
-    now: Time,
-    control: &AdminControl,
-) -> ControlOutcome {
-    let mut server_state = lock_state(state);
-    let Some(game) = server_state.games.get_mut(&game_id) else {
-        return ControlOutcome::Denied; // game is gone
-    };
-
-    let Some(caller_key) = game.tickets.get(ticket).cloned() else {
-        return ControlOutcome::Denied;
-    };
-    let Some(caller) = game.keys.get(&caller_key) else {
-        return ControlOutcome::Denied;
-    };
-
-    let capabilities = caller.privileges.capabilities;
-
-    if !capabilities.contains(Capability::Administer) {
-        return ControlOutcome::Denied;
-    }
-
-    match manage(
-        game,
-        &caller_key,
-        capabilities.contains(Capability::Supervise),
-        now,
-        control,
-    ) {
-        Ok(response) => ControlOutcome::Ok(response),
-        Err(error) => ControlOutcome::Err(error),
-    }
-}
-
 // see Game::record_actor_creations.
 fn record_actor_creations(game: &mut GameHandle, commands: &[CommandPayload]) {
     for payload in commands {
@@ -828,6 +1083,52 @@ fn record_actor_creations(game: &mut GameHandle, commands: &[CommandPayload]) {
             game.actor_created
                 .entry(*actor_id)
                 .or_insert(payload.timestamp);
+        }
+    }
+}
+
+// see Game::assign_display_names.
+fn assign_display_names(
+    game: &mut GameHandle,
+    display_names: &mut NamePool,
+    commands: &[CommandPayload],
+) -> bool {
+    let mut changed = false;
+    for payload in commands {
+        let Command::MapActor {
+            actor_id,
+            kind: lawliet_types::actor::ActorKind::Player,
+        } = &payload.cmd
+        else {
+            continue;
+        };
+        if game.profiles.contains_key(actor_id) {
+            continue;
+        }
+        let Some(display_name) = display_names.draw() else {
+            continue;
+        };
+        game.profiles.insert(
+            *actor_id,
+            Profile {
+                display_name: Some(display_name),
+            },
+        );
+        game.profile_created.insert(*actor_id, payload.timestamp);
+        changed = true;
+    }
+    changed
+}
+
+// learn which viewport the engine treats as the world-data viewport -- the one actor existence
+// rides and profiles must ride too -- from its own announcement. announced exactly once, on boot,
+// so the first (and only) match sticks.
+fn record_data_viewport(game: &mut GameHandle, commands: &[CommandPayload]) {
+    for payload in commands {
+        if let Command::MapViewport { viewport, kind } = &payload.cmd
+            && *kind == lawliet_types::viewport::ViewportKind::WorldData
+        {
+            game.data_viewport = Some(*viewport);
         }
     }
 }
@@ -890,44 +1191,52 @@ mod game_tests {
             actor_created: HashMap::new(),
             key_created: HashMap::new(),
             profile_created: HashMap::new(),
+            data_viewport: None,
         }
     }
 
     fn map_actor(who: ActorKey, at: Time) -> CommandPayload {
+        map_actor_kind(who, lawliet_types::actor::ActorKind::Player, at)
+    }
+
+    fn map_actor_kind(
+        who: ActorKey,
+        kind: lawliet_types::actor::ActorKind,
+        at: Time,
+    ) -> CommandPayload {
         CommandPayload {
             timestamp: at,
             recipient: CommandRecipient::Viewport(KeyData::from_ffi(1 | (1 << 32)).into()),
             cmd: Command::MapActor {
                 actor_id: who,
-                kind: lawliet_types::actor::ActorKind::Player,
+                kind,
             },
         }
     }
 
     fn mint_key(game: &mut GameHandle, actors: &[ActorKey], at: Time) -> Key {
-        let control = AdminControl::CreateKey {
-            actors: ActorScope::Only(actors.iter().copied().collect()),
-            capabilities: vec![],
-        };
-        let response = match manage(game, &Key::generate(), false, at, &control) {
-            Ok(r) => r,
-            Err(e) => panic!("create key failed"),
-        };
-        match response {
-            ControlResponse::KeyCreated { key } => key,
-            _ => panic!("expected a key"),
-        }
+        // plain state setup for the rewind tests: a key with an enumerated scope and none of the
+        // capabilities. nothing here is under test -- it just stands in for a minted key.
+        let key = Key::generate();
+        game.keys.insert(
+            key.clone(),
+            crate::auth::KeyData {
+                cancel: CancellationToken::new(),
+                tickets: HashSet::new(),
+                privileges: Privileges {
+                    actors: ActorScope::Only(actors.iter().copied().collect()),
+                    capabilities: BitFlags::empty(),
+                },
+            },
+        );
+        game.key_created.insert(key.clone(), at);
+        key
     }
 
     fn set_profile(game: &mut GameHandle, who: ActorKey, at: Time) {
-        let control = AdminControl::SetProfile {
-            actor: who,
-            profile: Profile::default(),
-        };
-        match manage(game, &Key::generate(), false, at, &control) {
-            Ok(_) => {}
-            Err(e) => panic!("set profile failed"),
-        }
+        // plain state setup for the rewind tests: stamp a profile for a slot at a time.
+        game.profiles.insert(who, Profile::default());
+        game.profile_created.insert(who, at);
     }
 
     fn mint_all_scope_key(game: &mut GameHandle, at: Time) -> Key {
@@ -1076,5 +1385,59 @@ mod game_tests {
         // minting governs every key, whatever its scope -- All has no actors to trim away, but the
         // key itself still postdates the target and goes.
         assert!(!game.keys.contains_key(&key));
+    }
+
+    #[test]
+    fn a_player_mapping_draws_a_profile_and_names_never_collide() {
+        let mut game = handle();
+        let mut names = NamePool::new();
+        // two players mapped in the same execution.
+        let cmds = vec![map_actor(actor(1), 10), map_actor(actor(2), 20)];
+
+        assert!(assign_display_names(&mut game, &mut names, &cmds));
+
+        let name_1 = game
+            .profiles
+            .get(&actor(1))
+            .and_then(|p| p.display_name.as_deref())
+            .expect("player 1 is named");
+        let name_2 = game
+            .profiles
+            .get(&actor(2))
+            .and_then(|p| p.display_name.as_deref())
+            .expect("player 2 is named");
+        assert_ne!(name_1, name_2);
+    }
+
+    #[test]
+    fn an_existing_profile_is_never_overwritten() {
+        let mut game = handle();
+        let mut names = NamePool::new();
+        set_profile(&mut game, actor(1), 5);
+
+        // the slot is mapped later, but its profile already exists (an admin set one).
+        assert!(!assign_display_names(
+            &mut game,
+            &mut names,
+            &[map_actor(actor(1), 10)]
+        ));
+        // the pre-existing profile (default: no display name) is untouched.
+        assert_eq!(game.profiles.get(&actor(1)).unwrap().display_name, None);
+    }
+
+    #[test]
+    fn non_player_mappings_get_no_profile() {
+        let mut game = handle();
+        let mut names = NamePool::new();
+        let cmds = vec![map_actor_kind(
+            actor(1),
+            lawliet_types::actor::ActorKind::Org(
+                lawliet_types::organization::OrganizationName::SPK,
+            ),
+            10,
+        )];
+
+        assert!(!assign_display_names(&mut game, &mut names, &cmds));
+        assert!(!game.profiles.contains_key(&actor(1)));
     }
 }

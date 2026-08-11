@@ -1,11 +1,11 @@
 use lawliet_types::{
     action::{ActionError, ActionRequest, ActionResponse},
     command::Command,
-    common::{ActorKey, ID, Time, ViewportKey},
+    common::{ActorKey, Time, ViewportKey, ID},
 };
 use serde::{Deserialize, Serialize};
 
-use crate::auth::{ActorScope, Capability, Key};
+use crate::auth::{from_flags, ActorScope, Capability, Key};
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct Profile {
@@ -41,6 +41,9 @@ pub enum ControlResponse {
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub enum ViewGate {
+    // connection-wide: this output is addressed to the connection itself, not to a view. passes for
+    // every connection; the client reads it directly (its own privileges) rather than routing it.
+    Connection,
     Admin,
     Viewport(ViewportKey), // must be in this viewport
     Player(ActorKey),      // must have access to this actor
@@ -137,6 +140,20 @@ pub enum ServerCmd {
     KeyRoster {
         keys: Vec<(Key, PrivilegeSet)>,
     },
+    // What THIS connection's own key permits. Sent as the first command of every sync -- a fresh
+    // attach or a re-sync after a privilege change -- so a client can render its own standing
+    // before any gated output arrives, and again whenever that standing changes.
+    Privileges(PrivilegeSet),
+}
+
+// The auth layer keeps capabilities as a bitmask (for the game task's fast permission checks);
+// the wire carries an enumerated set of names so a hand-written client never has to know bit
+// values.
+pub fn privileges_to_wire(privileges: &crate::auth::Privileges) -> PrivilegeSet {
+    PrivilegeSet {
+        actors: privileges.actors.clone(),
+        capabilities: from_flags(privileges.capabilities),
+    }
 }
 
 #[derive(Serialize, Clone, Debug)]

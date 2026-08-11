@@ -70,7 +70,7 @@ export const actorHandlers: Handlers = {
   // The System copy feeds the admin inspector; the actor's own goes to their notifications. Two
   // recipients, two views, one handler.
   RoleUpdate(ctx: CmdCtx, p) {
-    if (ctx.recipient === "System") {
+    if (ctx.view.own_key === "System") {
       const key = slotKeyToString(p.target_id);
       ctx.view.player_info.set(key, { ...ctx.view.player_info.get(key), role: p.role });
       return;
@@ -81,7 +81,7 @@ export const actorHandlers: Handlers = {
   },
 
   TrueNameUpdate(ctx: CmdCtx, p) {
-    if (ctx.recipient === "System") {
+    if (ctx.view.own_key === "System") {
       const key = slotKeyToString(p.target_id);
       ctx.view.player_info.set(key, {
         ...ctx.view.player_info.get(key),
@@ -178,7 +178,7 @@ export const actorHandlers: Handlers = {
   // OG standing is personal info: it reaches the member and System, and nobody else in the org.
   OgStatus(ctx: CmdCtx, p) {
     const org_key = slotKeyToString(p.org_id);
-    if (ctx.recipient === "System") {
+    if (ctx.view.own_key === "System") {
       const key = slotKeyToString(p.target_id);
       const info = ctx.view.player_info.get(key) ?? {};
       const orgs = info.og_orgs ?? new SvelteSet<string>();

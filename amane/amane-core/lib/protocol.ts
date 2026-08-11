@@ -8,7 +8,7 @@
 // promise and a push stream would let them race, so the transport surfaces batches only, and a
 // caller waiting on its own input is resolved from inside the ordered apply, never ahead of it.
 
-import type { ServerInput, ServerOutput } from "../bindings";
+import type { Batch, ServerInput } from "../bindings";
 
 // Why a submission produced no value. A VALUE, not a sentence: the render site turns it into copy
 // through the strings config, so nothing in the pipeline holds a word of English.
@@ -21,9 +21,6 @@ export type ExecError =
   | { kind: "refused"; code: string };
 
 export type Reply<T> = { ok: true; value: T } | { ok: false; error: ExecError };
-
-// Server-stamped, per-connection, strictly +1 from 1. 0 means "nothing applied yet".
-export type Seq = number;
 
 // Deliberately NOT named `Notification`: that shadows the DOM global a web host uses to raise one,
 // and this is the desktop popup, distinct from the in-app "Notifications" channel (the persistent
@@ -38,13 +35,15 @@ export interface Toast {
 // created and destroyed as the player joins and leaves games — it is not the app.
 export interface GameConnection {
   // Fire-and-forget: the reply comes back on the batch stream, not from here. Callers that need
-  // to know how their input went register a waiter with the client, resolved when the batch
-  // carrying the reply is applied in seq order.
+  // to know how their input went register a waiter with the client, resolved when the Live batch
+  // carrying the reply is applied.
   send(input: ServerInput): void;
 
   // This client's own replies AND everything caused by other clients or the server's own ticks.
-  // Returns an unsubscribe function.
-  onBatch(handler: (batch: ServerOutput) => void): () => void;
+  // Batches arrive in order — the server drives every connection's outbox with a single task, and
+  // a reliable, ordered transport below it — so no sequencing is needed; a batch is applied when
+  // it arrives. Returns an unsubscribe function.
+  onBatch(handler: (batch: Batch) => void): () => void;
 
   // Idempotent — closing an already-closed connection is not an error.
   close(): void;
@@ -87,41 +86,4 @@ export interface HostContext {
   // than guessing at the environment.
   readonly canQuit: boolean;
   quit(): void;
-}
-
-// One seq-ordered unit of client state change.
-export interface SeqUnit {
-  seq: Seq;
-  // Must be synchronous and total (apply everything or throw) — a half-applied unit can
-  // reference-before-create.
-  run: () => void;
-}
-
-// Out-of-order units are buffered until the gap fills; already-applied seqs are dropped. A gap
-// that never fills is a desync: `waiting` stays true and the caller should resync from
-// `lastApplied`.
-export class Sequencer {
-  #last: Seq = 0;
-  #pending = new Map<Seq, SeqUnit>();
-
-  ingest(unit: SeqUnit): void {
-    if (unit.seq <= this.#last) return; // already applied — dup or replay
-    this.#pending.set(unit.seq, unit);
-    while (this.#pending.has(this.#last + 1)) {
-      const next = this.#pending.get(this.#last + 1)!;
-      this.#pending.delete(next.seq);
-      next.run();
-      this.#last = next.seq;
-    }
-  }
-
-  // Resync requests start from here.
-  get lastApplied(): Seq {
-    return this.#last;
-  }
-
-  // Transient during normal delivery; persistent means desync.
-  get waiting(): boolean {
-    return this.#pending.size > 0;
-  }
 }

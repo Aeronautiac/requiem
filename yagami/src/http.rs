@@ -392,6 +392,7 @@ pub async fn create_game(
                 actor_created: HashMap::new(),
                 key_created: HashMap::new(),
                 profile_created: HashMap::new(),
+                data_viewport: None,
                 keys: HashMap::from([(
                     admin_key.clone(),
                     // child of the game token, so tearing the game down takes this key's

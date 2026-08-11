@@ -6,6 +6,8 @@ import type {
   BugContext,
   ChannelProfileView,
   ContactLog,
+  LogCommand,
+  LogType,
   OrgAbility,
   ProfileOwners,
   OrganizationName,
@@ -397,4 +399,12 @@ export type TrackedIncarceration = {
   victim: string;
   duration: number | null; // null = held until released
   released: boolean;
+};
+
+// One filtered channel record this view has been handed: an autopsy of a target's record, or a
+// tapped channel's log. A channel display like a bug or a contact log, rendered on its own (see
+// the TODO in view.svelte.ts).
+export type LogDumpDatum = {
+  type: LogType;
+  entries: LogCommand[];
 };

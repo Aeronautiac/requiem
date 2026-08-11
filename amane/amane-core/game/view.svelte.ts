@@ -10,16 +10,27 @@
 // the price of the guarantee, and it is bounded by what was actually delivered rather than by the
 // size of the game.
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import type { ActorDisplay, ProsecutionSide, Role, Statuses } from "../bindings";
+import type {
+  ActorDisplay,
+  ActorKey,
+  LogCommand,
+  LogType,
+  PrivilegeSet,
+  Profile,
+  ProsecutionSide,
+  Role,
+  Statuses,
+} from "../bindings";
 import { slotKeyToString } from "../bindings";
 import { now } from "../time.svelte";
-import { NOTIF_CHANNEL, new_channel, orgDisplayName, playerLabel, t } from "./helpers.svelte";
+import { NOTIF_CHANNEL, logDumpKey, new_channel, orgDisplayName, playerLabel, t } from "./helpers.svelte";
 import type {
   AbilityView,
   Channel,
   ChannelView,
   GameEvent,
   InfoEvent,
+  LogDumpDatum,
   Org,
   PassiveView,
   Player,
@@ -336,6 +347,49 @@ export class GameView {
 
   push_notif(timestamp: number, data: InfoEvent) {
     this.notif_channel().events.push({ timestamp, data });
+  }
+
+  // ---- names ----
+
+  // What the SERVER knows about who occupies the slots this view already holds, routed here by the
+  // same gates as any command. A view cannot learn a name before it learns the slot — the server
+  // only ever sends a profile for an actor whose MapActor this view already received — so the name
+  // is written straight onto the held player, never stashed for a slot that may not exist.
+  apply_profiles(profiles: [ActorKey, Profile][]) {
+    for (const [id, profile] of profiles) {
+      const player = this.players.get(slotKeyToString(id));
+      if (player) player.display_name = profile.display_name;
+    }
+  }
+
+  // ---- keys ----
+
+  // The whole key ledger, as the server keeps it: every key and what its holder may do. Admin-gated,
+  // so this fills the System view only. Replaced wholesale on every delivery — the roster is whole,
+  // never a diff — so a stale entry over a revoked key is gone the moment the new set lands.
+  keys = new SvelteMap<string, PrivilegeSet>();
+
+  apply_keys(keys: [string, PrivilegeSet][]) {
+    this.keys.clear();
+    for (const [id, privileges] of keys) this.keys.set(id, privileges);
+  }
+
+  // ---- log records ----
+
+  // A filtered channel record (an autopsy of a target's record, a tapped channel's log) is a
+  // channel display like a bug or a contact log, kept here per view under a key derived from what
+  // it is. TODO: render these as their own channel display — the entries are game messages and may
+  // feed a notification, a channel, etc., just like any other delivered content.
+  log_dumps = new SvelteMap<string, LogDumpDatum>();
+
+  apply_log_dump(log_type: LogType, entries: LogCommand[]) {
+    const key = logDumpKey(log_type);
+    const existing = this.log_dumps.get(key);
+    if (existing) {
+      existing.entries.push(...entries);
+    } else {
+      this.log_dumps.set(key, { type: log_type, entries: [...entries] });
+    }
   }
 
   // An actor key to the name this view knows it by. A vote opener may be a player or an org.
