@@ -10,6 +10,7 @@
   import AddPlayers from "./AddPlayers.svelte";
   import KeyManager from "./KeyManager.svelte";
   import GoToTime from "./GoToTime.svelte";
+  import TimelineViewer from "./TimelineViewer.svelte";
 
   const session = getContext<SessionState>(SESSION_KEY);
   const flash = new Flash();
@@ -32,6 +33,7 @@
       <AddPlayers />
       <KeyManager />
       <GoToTime {flash} />
+      <TimelineViewer />
 
       <!-- Rejected once the game is running, so this is safe to leave in place rather than gate on a
            phase the client is not told. -->

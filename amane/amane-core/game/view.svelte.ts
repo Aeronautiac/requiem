@@ -11,6 +11,8 @@
 // size of the game.
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import type {
+  ActionOutcome,
+  ActionRequest,
   ActorDisplay,
   ActorKey,
   LogCommand,
@@ -41,7 +43,16 @@ import type {
   TrackedKidnapping,
 } from "./types";
 
-export class GameView {
+  // Exactly one entry on the host's action timeline: an action request a connection submitted and
+  // how it came out, as the server recorded them at the time it was asked. The request is "who did
+  // what, as whom"; the outcome is how the engine (or the gate in front of it) answered.
+  export interface ActionLogEntry {
+    time: number;
+    action: ActionRequest;
+    outcome: ActionOutcome;
+  }
+
+  export class GameView {
   // This view's own actor key ("System" for the admin view). What a mention tests itself against,
   // and how the view knows which orgs it belongs to (membership is org.members.has(own_key)).
   readonly own_key: string;
@@ -399,6 +410,15 @@ export class GameView {
   }
 
   // ---- log records ----
+
+  // The host's action timeline, appended in delivery order and never reordered. Admin-gated, so it
+  // fills only the System view. Kept separate from the engine-command log because it answers a
+  // different question -- "what was asked, and how it went" -- rather than "what the world now is".
+  action_log: ActionLogEntry[] = $state([]);
+
+  apply_log_action(action: ActionRequest, outcome: ActionOutcome, time: number) {
+    this.action_log.push({ time, action, outcome });
+  }
 
   // A filtered channel record this view has been handed: an autopsy of a target's record, or a
   // tapped channel's log. Rendered as a read-only feed exactly like a bug log — a Log channel whose

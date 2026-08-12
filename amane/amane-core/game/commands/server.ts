@@ -3,6 +3,12 @@
 import type { Handlers } from "./index";
 
 export const serverHandlers: Handlers = {
+  // The host's record of one action request and its outcome, gated Admin so it lands in the System
+  // view only. Appended as a live timeline, preserved on a replay exactly as it happened.
+  LogAction(ctx, p) {
+    ctx.view.apply_log_action(p.action, p.outcome, ctx.timestamp);
+  },
+
   // A filtered channel record: an autopsy of a target's record, or a tapped channel's log. It is
   // a channel display like a bug or contact log — routed to whoever it is owed, kept per-view so
   // a later entry (or a replay) appends to the same record. Rendering is not wired yet: see the

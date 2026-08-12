@@ -69,7 +69,7 @@
    * events share one: a kidnapping and a new day are both the same kind of "sit up" as far as the
    * eye is concerned. Read as inline `var(--color-event-*)` rather than as utilities, because an
    * Announcement takes a colour string and tints itself with it. */
-  --color-event-death: #ef4444; /* somebody died, or is about to */
+  --color-event-death: #aa79df; /* somebody died, or is about to */
   --color-event-alarm: #f59e0b; /* something happened TO a player, and the day turning */
   --color-event-nothing: #6b7280; /* the attempt found nothing */
   --color-event-anonymous: #a855f7; /* said by someone unnamed */
@@ -91,12 +91,12 @@
    * given a colour here. Keep these light enough to read on the dark surface; the chip background is
    * derived from the same value at low opacity. */
   --color-mention-player: #7dd3fc; /* sky-300 */
-  --color-mention-system: #fca5a5; /* red-300 */
+  --color-mention-system: #f1c40f; /* red-300 */
   /* The news anchor and the press conference are positions, not roles, but they read like one each:
    * their own accent, shared by the chip on the announcement and the @-ping of whoever currently
    * holds the post / sits in the conference. */
-  --color-news-anchor: #facc15; /* yellow-400 */
-  --color-press-conference: #5eead4; /* teal-300 */
+  --color-news-anchor: #f6b3de; /* yellow-400 */
+  --color-press-conference: #f1c40f; /* teal-300 */
 
   --color-role: #fcd34d; /* default role accent (amber-300) */
   --color-role-Kira: #f87171;
@@ -105,17 +105,17 @@
   --color-role-Watari: #7dd3fc;
   --color-role-BeyondBirthday: #a78bfa;
   --color-role-PrivateInvestigator: #2dd4bf;
-  --color-role-Civilian: #a3a3a3;
-  --color-role-RogueCivilian: #d8b4fe;
-  --color-role-Poser: #c084fc;
-  --color-role-ConArtist: #e879f9;
-  --color-role-WantedCivilian: #fb7185;
+  --color-role-Civilian: #8ca8c0;
+  --color-role-RogueCivilian: #fa5205;
+  --color-role-Poser: #bc1aac;
+  --color-role-ConArtist: #88ce17;
+  --color-role-WantedCivilian: #d68e31;
   --color-role-Near: #94a3b8;
   --color-role-Mello: #f472b6;
 
   --color-org: #c4b5fd; /* default org accent (violet-300) */
-  --color-org-KK: #f87171; /* Kira's Kingdom */
-  --color-org-TF: #60a5fa; /* Task Force */
+  --color-org-KK: #f10a0a; /* Kira's Kingdom */
+  --color-org-TF: #4c6876; /* Task Force */
   --color-org-SPK: #34d399; /* SPK */
   --color-org-NULL: #9ca3af; /* Null */
 }

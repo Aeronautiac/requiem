@@ -1331,6 +1331,11 @@ export type ServerCmd =
   | { LogDump: { data: LogCommand[]; log_type: LogType } }
   | { ProfileRoster: { profiles: [ActorKey, Profile][] } }
   | { KeyRoster: { keys: [string, PrivilegeSet][] } }
+  // The host's record of one action REQUEST a connection submitted and its outcome, gated Admin so
+  // it lands in the System view only. Appended after the request's own engine commands (or in place
+  // of them for a denied or crashed request), so the host's timeline reconstructs exactly what was
+  // asked and how it went.
+  | { LogAction: { action: ActionRequest; outcome: ActionOutcome } }
   // This connection's own privileges. Sent directly to it as the first output of every sync (fresh
   // attach or a resync after a privilege change), addressed to the connection with an empty gate
   // list, and read connection-wide by the session.

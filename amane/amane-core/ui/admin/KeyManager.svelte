@@ -223,7 +223,7 @@
 
 <Button variant="ghost" size="sm" onclick={() => (open = true)}>Keys</Button>
 
-<Dialog bind:open title="Keys">
+<Dialog bind:open title="Keys" width="42rem">
   <p class="text-xs text-ink-dim">
     A key is how someone gets in. Choose the players its holder may act as, hand it over out of
     band, and they join with it. Every existing key shows below with what it may do.
@@ -286,8 +286,8 @@
           </div>
           <Select bind:value={edit_grant} options={GRANTS} class="w-full" />
           <div class="flex gap-2">
-            <Button size="sm" disabled={saving} onclick={save}>Save</Button>
-            <Button size="sm" variant="ghost" onclick={() => (editing = null)}>Cancel</Button>
+            <Button disabled={saving} onclick={save}>Save</Button>
+            <Button variant="ghost" onclick={() => (editing = null)}>Cancel</Button>
           </div>
         {:else}
           <div class="flex items-center justify-between gap-2">
@@ -296,10 +296,10 @@
               <p class="text-xs text-ink-dim">{grantLabel(privileges)}</p>
               <p class="text-xs text-ink-dim">{scopeLabel(privileges)}</p>
             </div>
-            <div class="flex shrink-0 gap-2">
-              <Button size="sm" variant="ghost" onclick={() => copy(key)}>Copy</Button>
-              <Button size="sm" variant="ghost" onclick={() => begin_edit(key)}>Edit</Button>
-              <Button size="sm" variant="danger" onclick={() => revoke(key)}>Revoke</Button>
+            <div class="flex shrink-0 gap-1.5">
+              <Button variant="ghost" onclick={() => copy(key)}>Copy</Button>
+              <Button variant="ghost" onclick={() => begin_edit(key)}>Edit</Button>
+              <Button variant="danger" onclick={() => revoke(key)}>Revoke</Button>
             </div>
           </div>
         {/if}

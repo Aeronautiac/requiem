@@ -8,6 +8,7 @@
     open = $bindable(false),
     title,
     header,
+    width = "28rem",
     class: klass = "",
     onOpenChange,
     children,
@@ -16,6 +17,10 @@
     // The ordinary case. Use `header` instead when the heading needs its own markup.
     title?: string;
     header?: Snippet;
+    // Max width. The default is the same as Tailwind's max-w-md; set it per dialog when a grid
+    // needs room to breathe. Inline style rather than a class so it reliably beats the base
+    // max-width utility, which a class override would lose to on CSS source order.
+    width?: string;
     class?: string;
     onOpenChange?: (open: boolean) => void;
     children: Snippet;
@@ -50,8 +55,9 @@
   bind:this={el}
   onclose={closed}
   onclick={backdrop}
-  class="m-auto w-full max-w-md rounded-lg border border-edge bg-panel p-0 text-ink
+  class="m-auto w-full rounded-lg border border-edge bg-panel p-0 text-ink
          backdrop:bg-black/60 {klass}"
+  style:max-width={width}
 >
   <div class="flex flex-col gap-3 p-5">
     {#if header}

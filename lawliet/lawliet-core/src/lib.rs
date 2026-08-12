@@ -188,31 +188,6 @@ pub use common::{
     LoungeKey, NotebookKey, PassiveKey, PollKey, ProsecutionKey, Time,
 };
 
-// autopsy and tap in implementation:
-// a new server output. a log dump category. it has a list of recipients, either actor or system. it
-// contains a vector of lightweight command wrappers containing only their time and raw command data.
-// it also contains the kind of log. the reason the recipients are a list is because these payloads
-// could become massive, and they're the same for everyone who receives them, so its not necessary
-// to duplicate them on the wire.
-//
-// time control implementation:
-// - a GoToTime server input which works both for rewind and for skipping ahead
-// - Go back in time -> start from zero, apply logged events until an event >= the current time is
-// reached, and if the gap is more than zero, append a null tick
-// - Go forward in time -> append null tick
-//
-// sandboxed time implementation:
-// - the game always starts at 0. time is counted in terms of raw time units, for instance:
-// 11h:02m:11s
-// - the reason we aren't using something like Day 1, 1pm here is because game iterations are of
-// variable duration depending on what the host decides, so displaying something like that wouldn't
-// be accurate. the duration of a day can change mid game, and if someone took a screenshot of
-// something with an old day duration, and then day duration changed, that screenshot would become
-// misleading. raw time units like hours will never change inside of the sandbox.
-// - clients may also render the real world time when they hover over the timestamp. this helps
-// people communicate across timezones and makes it so they dont have to manually do weird
-// calculations to figure out the exact time of something.
-//
 // dynamic config implementation:
 // - an editor should be contained within the client, and you should be able to export/import json
 // configs using this editor. if a config file is outdated, it is reconciled, and invalid values are
@@ -237,12 +212,6 @@ pub use common::{
 // it here.
 
 // CURRENT PROJECT ISSUES:
-// - autopsy and tap in are not implemented on the server and client
-// - there is no way to skip time on the server. the server needs some kind of offset value. you
-// should be able to send in a "time skip" value as an admin and skip ahead by that amount. this
-// decouples game time from real world time, but this might be how it should have been from the
-// start. the game can have conceptual time starting from 0, conceptual weekdays, etc... i doubt
-// this would be hard to change. it requires no engine work.
 // - you cannot edit the game's config as an admin.
 // - you cannot see the list of running games on the platform layer of the client. not important
 // yet, but eventually needs to get done.

@@ -29,7 +29,9 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     auth::{ActorScope, Capability, Key, KeyData, Privileges, Ticket, to_flags},
     constants::{ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
-    delivery::{History, game_clock_output, key_roster_output, profile_roster_output},
+    delivery::{
+        History, game_clock_output, key_roster_output, log_action_output, profile_roster_output,
+    },
     generate_seed,
     names::NamePool,
     state::{GameHandle, GameId, WrappedServerState, lock_state},
@@ -39,10 +41,9 @@ use crate::{
     },
 };
 
-// TODO:
-// the client currently works on real time, not sandboxed time. we likely need a new sort of server
-// clock setting command that the client uses to render its time. this is important for stuff like
-// death announcements which use time to stagger the different parts of it.
+// BUG:
+// - display names are not properly maintained across time travel jumps
+// - deaths are not rendered on the client across time jumps
 
 pub fn to_line<T: Serialize>(value: &T) -> String {
     match serde_json::to_string(value) {
@@ -52,16 +53,6 @@ pub fn to_line<T: Serialize>(value: &T) -> String {
             std::process::abort()
         }
     }
-}
-
-pub enum GameError {
-    PlayerDoesntExist,
-}
-
-// server extension of the engine's error set
-pub enum InputError {
-    EngineErr(lawliet_types::action::ActionError),
-    GameErr(GameError),
 }
 
 // carries the source ticket so the game task can route replies and enforce permissions.
@@ -253,11 +244,13 @@ impl Game {
     // `reply` echoes whatever was sent (see ResponsePair); `None` means a server-issued action with
     // no originating connection -- a tick or a jump -- whose commands still reach everyone.
     // also logs the current last executed time on success.
+    // returns the outcome: Some when the engine processed the action (whether it accepted it or
+    // refused), None when the engine crashed mid-action and had to be rebooted.
     async fn execute(
         &mut self,
         request: &ActionRequest,
         reply: Option<(Ticket, ServerInput)>,
-    ) -> bool {
+    ) -> Option<ActionOutcome> {
         match self.dispatch(request).await {
             Ok(result) => {
                 self.last_reached = request.timestamp;
@@ -281,6 +274,14 @@ impl Game {
                     self.append_profile_roster();
                 }
 
+                // a connection-requested action (one with a reply) is a request by a person, so its
+                // record rides this same broadcast, after its own commands. server-initiated actions
+                // (ticks, forward jumps) have no reply and are not recorded.
+                if reply.is_some() {
+                    self.append_log_action(request, outcome.clone());
+                }
+
+                let returned = outcome.clone();
                 let reply = reply.map(|(ticket, input)| {
                     (
                         ticket,
@@ -291,23 +292,21 @@ impl Game {
                     )
                 });
                 self.history.broadcast(&self.server_state, at, reply);
-                true
+                Some(returned)
             }
             Err(_) => {
                 self.boot().await;
-                // the action died in flight: tell whoever sent it.
+                // the action died in flight: tell whoever sent it, and record that it crashed.
                 if let Some((ticket, input)) = reply {
+                    let at = self.append_log_action(request, ActionOutcome::EnginePanic);
                     let pair = ResponsePair {
                         response: ExecOutcome::Action(ActionOutcome::EnginePanic),
                         input,
                     };
-                    self.history.broadcast(
-                        &self.server_state,
-                        self.history.head(),
-                        Some((ticket, pair)),
-                    );
+                    self.history
+                        .broadcast(&self.server_state, at, Some((ticket, pair)));
                 }
-                false
+                None
             }
         }
     }
@@ -430,13 +429,15 @@ impl Game {
 
             let mut ok = true;
 
-            // replay every accepted input, folding each one's commands into the rebuilt history.
+            // replay every accepted input, folding each one's commands into the rebuilt history and
+            // re-recording it in the host's timeline, so a rebuilt history still shows who did what.
             let accepted = std::mem::take(&mut self.accepted);
             for request in &accepted {
-                if !self.fold_dispatch(request).await {
+                let Some(outcome) = self.fold_dispatch(request).await else {
                     ok = false;
                     break;
-                }
+                };
+                self.append_log_action(request, outcome);
             }
             self.accepted = accepted;
 
@@ -449,7 +450,7 @@ impl Game {
                     timestamp: t,
                     payload: Action::Null(Null {}),
                 };
-                if !self.fold_dispatch(&request).await {
+                if self.fold_dispatch(&request).await.is_none() {
                     ok = false;
                 }
             }
@@ -462,12 +463,12 @@ impl Game {
                     timestamp: self.clock.now(),
                     payload: Action::InitializeEngine(InitializeEngine { seed: self.seed }),
                 };
-                match self.dispatch(&request).await {
-                    Ok(inner) => {
-                        self.append_execution(inner);
+                match self.fold_dispatch(&request).await {
+                    Some(outcome) => {
+                        self.append_log_action(&request, outcome);
                         self.accepted.push(request);
                     }
-                    Err(_) => ok = false,
+                    None => ok = false,
                 }
             }
 
@@ -491,15 +492,22 @@ impl Game {
         }
     }
 
-    // dispatch one replay request and fold its command output into history. returns whether the
-    // dispatch succeeded.
-    async fn fold_dispatch(&mut self, request: &ActionRequest) -> bool {
+    // dispatch one replay request and fold its command output into history. returns the action's
+    // outcome: Some when the engine processed it, None when the dispatch failed (nothing folded).
+    // the caller decides whether to record the action itself -- a boot's replay records each
+    // accepted request so the host's timeline survives a rebuild, while the resume null tick does
+    // not (it is server-initiated).
+    async fn fold_dispatch(&mut self, request: &ActionRequest) -> Option<ActionOutcome> {
         match self.dispatch(request).await {
             Ok(inner) => {
+                let outcome = match &inner {
+                    Ok((response, _)) => ActionOutcome::Ok(response.clone()),
+                    Err((error, _)) => ActionOutcome::Err(error.clone()),
+                };
                 self.append_execution(inner);
-                true
+                Some(outcome)
             }
-            Err(_) => false,
+            Err(_) => None,
         }
     }
 
@@ -515,6 +523,15 @@ impl Game {
         // makes is learned here, not only on the live path.
         self.record_data_viewport(&commands);
         self.history.append_engine(commands);
+    }
+
+    // append the admin-visible record of one action request and its outcome to history, right after
+    // its engine commands, and return where it landed. same place in the log as the backing
+    // `accepted` entry, so a boot rebuild replays both together and a host's timeline survives a
+    // reboot or a rewind.
+    fn append_log_action(&mut self, request: &ActionRequest, outcome: ActionOutcome) -> usize {
+        self.history
+            .append_server(vec![log_action_output(request, outcome, request.timestamp)])
     }
 
     // ===== INITIALIZATION AND TEARDOWN ===== //
@@ -585,23 +602,26 @@ impl Game {
                 self.assign_name(&mut request);
 
                 if !self.authorize_action(&ticket, &request) {
-                    // a deny appends nothing, so the reply rides a broadcast from the current head.
+                    // a denied request is still a request, so it is recorded for the host; nothing
+                    // else was appended, so the reply rides from the record it sits right after.
+                    let at = self.append_log_action(&request, ActionOutcome::Denied);
                     let pair = ResponsePair {
                         response: ExecOutcome::Action(ActionOutcome::Denied),
                         input: ServerInput::Action(request),
                     };
-                    self.history.broadcast(
-                        &self.server_state,
-                        self.history.head(),
-                        Some((ticket, pair)),
-                    );
+                    self.history
+                        .broadcast(&self.server_state, at, Some((ticket, pair)));
                     return;
                 }
                 // the reply echoes the request, so clone for the dispatch and keep the original to
                 // record as accepted.
                 let reply_input = ServerInput::Action(request.clone());
-                if !self.execute(&request, Some((ticket, reply_input))).await {
-                    // the crash is answered inside execute.
+                if self
+                    .execute(&request, Some((ticket, reply_input)))
+                    .await
+                    .is_none()
+                {
+                    // the crash is answered (and recorded) inside execute.
                     return;
                 }
                 // this input ran and was accepted, so it is part of the engine's state and

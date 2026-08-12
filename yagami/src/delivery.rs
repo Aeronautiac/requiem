@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use lawliet_types::{
+    action::ActionRequest,
     command::{Command, CommandPayload, CommandRecipient, TapInOutcome},
     common::{ActorKey, LogID, Time, ViewportKey},
 };
@@ -9,10 +10,22 @@ use crate::{
     auth::{Capability, Key, KeyData, Privileges, Ticket},
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
     wire::{
-        Batch, BatchKind, LogCommand, LogType, OutputData, Profile, ResponsePair, ServerCmd,
-        ServerOutput, ViewGate,
+        ActionOutcome, Batch, BatchKind, LogCommand, LogType, OutputData, Profile, ResponsePair,
+        ServerCmd, ServerOutput, ViewGate,
     },
 };
+
+// The server's own record of one action request and how it came out, gated Admin so only the host
+// ever sees it. The server writes this into the log alongside the request's engine commands (or in
+// its place, for a denied or crashed request) so a host's timeline can name who did what, and
+// rebuilds it on boot as history is replayed.
+pub fn log_action_output(action: &ActionRequest, outcome: ActionOutcome, time: Time) -> ServerOutput {
+    ServerOutput {
+        time,
+        view_gates: vec![ViewGate::Admin],
+        data: OutputData::Server(ServerCmd::LogAction { action: action.clone(), outcome }),
+    }
+}
 
 // convert an engine payload to its stored server output: derive the view gates from the recipient,
 // keep the engine command as the payload. nothing server-computed is done here -- a log dump is a

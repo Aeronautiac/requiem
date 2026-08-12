@@ -24,7 +24,7 @@ use crate::{
     role::Role,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ActionError {
     EngineNotInitialized,
     NoDuplicateOrgs,
@@ -1549,7 +1549,7 @@ pub enum Action {
     SetNewsAnchor(SetNewsAnchor),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ActionResponse {
     StartGame(StartGameResponse),
     NextIteration(NextIterationResponse),
