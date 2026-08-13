@@ -1,9 +1,7 @@
-// One game, one task.
-//
-// A select arm, once chosen, runs to completion and no other arm may interleave. That single fact
-// collapses the old supervisor/watchdog/coordinator pile into one task and a handful of linear
-// async helpers: spawn+boot, dispatch (write then read), and a select loop that feeds inputs and
-// ticks through them one at a time. There is no supervisor task, and no boot handler arm.
+// I have unified this game handler into a single task. The old supervisor/process manager,
+// watchdog, and co-ordinator/game logic manager has been collapsed into one extremely simple
+// stream. This was possible because tokio select arms, once chosen, may not interleave with each
+// other. When an arm is chosen, it runs exclusively to completion (within that set of select arms).
 
 use std::{
     collections::HashSet, env::current_exe, io::ErrorKind, process::Stdio, time::Duration, vec,
@@ -41,9 +39,13 @@ use crate::{
     },
 };
 
+// TODO:
+// persistence, and showing the current game time on the ui
+// role colours are not shown on displays on the player menu, and they should be
+
 // BUG:
-// - display names are not properly maintained across time travel jumps
 // - deaths are not rendered on the client across time jumps
+// - the admin cannot see their own key on the key roster until they create another key
 
 pub fn to_line<T: Serialize>(value: &T) -> String {
     match serde_json::to_string(value) {
@@ -420,24 +422,15 @@ impl Game {
             self.stdin = Some(stdin);
             self.stdout = Some(BufReader::new(stdout).lines());
 
-            // history is rebuilt from the replay as the engine is brought up: everything an
-            // initialization action emits lands in the log, so a freshly-synced client can
-            // reconstruct the same world a live one saw. Rebuild, not append, so a re-boot (or a
-            // rewind) never duplicates commands that are already there, and truncated timelines
-            // drop what never happened.
-            self.history = History::new(self.game_id);
-
             let mut ok = true;
 
-            // replay every accepted input, folding each one's commands into the rebuilt history and
-            // re-recording it in the host's timeline, so a rebuilt history still shows who did what.
+            // rehydrate the engine with the accepted log
             let accepted = std::mem::take(&mut self.accepted);
             for request in &accepted {
-                let Some(outcome) = self.fold_dispatch(request).await else {
+                if self.dispatch(request).await.is_err() {
                     ok = false;
                     break;
                 };
-                self.append_log_action(request, outcome);
             }
             self.accepted = accepted;
 
@@ -450,7 +443,7 @@ impl Game {
                     timestamp: t,
                     payload: Action::Null(Null {}),
                 };
-                if self.fold_dispatch(&request).await.is_none() {
+                if self.dispatch(&request).await.is_err() {
                     ok = false;
                 }
             }
@@ -463,51 +456,26 @@ impl Game {
                     timestamp: self.clock.now(),
                     payload: Action::InitializeEngine(InitializeEngine { seed: self.seed }),
                 };
-                match self.fold_dispatch(&request).await {
-                    Some(outcome) => {
-                        self.append_log_action(&request, outcome);
-                        self.accepted.push(request);
-                    }
-                    None => ok = false,
+                if let Ok(res) = self.dispatch(&request).await {
+                    self.accepted.push(request);
+                    self.append_execution(res);
+
+                    // this stuff isnt part of the engine, but still needs to create an initial base
+                    // on boot
+                    self.append_key_roster();
+                    self.append_profile_roster();
+                    self.append_game_clock();
                 }
             }
 
             if ok {
-                // history was rebuilt from scratch and rebuilt from the init replay: every
-                // connection reconstructs against it. Lead it with the ledgers as they stand at
-                // boot, so a freshly-joined client has the sets before replay fills the world -- a
-                // rewind that prunes either ledger rests the roster on the pruned reality.
-                self.append_key_roster();
-                self.append_profile_roster();
-                self.append_game_clock();
-                self.history
-                    .resync_all(&self.server_state, self.clock.now());
-                return;
+                break;
             }
 
             // the fresh child failed right out of the gate. discard it and try again.
             self.child = None;
             self.stdin = None;
             self.stdout = None;
-        }
-    }
-
-    // dispatch one replay request and fold its command output into history. returns the action's
-    // outcome: Some when the engine processed it, None when the dispatch failed (nothing folded).
-    // the caller decides whether to record the action itself -- a boot's replay records each
-    // accepted request so the host's timeline survives a rebuild, while the resume null tick does
-    // not (it is server-initiated).
-    async fn fold_dispatch(&mut self, request: &ActionRequest) -> Option<ActionOutcome> {
-        match self.dispatch(request).await {
-            Ok(inner) => {
-                let outcome = match &inner {
-                    Ok((response, _)) => ActionOutcome::Ok(response.clone()),
-                    Err((error, _)) => ActionOutcome::Err(error.clone()),
-                };
-                self.append_execution(inner);
-                Some(outcome)
-            }
-            Err(_) => None,
         }
     }
 
@@ -526,9 +494,7 @@ impl Game {
     }
 
     // append the admin-visible record of one action request and its outcome to history, right after
-    // its engine commands, and return where it landed. same place in the log as the backing
-    // `accepted` entry, so a boot rebuild replays both together and a host's timeline survives a
-    // reboot or a rewind.
+    // its engine commands, and return where it landed.
     fn append_log_action(&mut self, request: &ActionRequest, outcome: ActionOutcome) -> usize {
         self.history
             .append_server(vec![log_action_output(request, outcome, request.timestamp)])
@@ -879,8 +845,8 @@ impl Game {
             .broadcast(&self.server_state, at, Some((ticket, pair)));
     }
 
-    // snapshot the whole current key ledger into history as a live KeyRoster. Rosters travel the
-    // log like any other output -- see the TODO by the imports -- so a fresh admin connection
+    // snapshot the whole current key set into history as a live KeyRoster. Rosters travel the
+    // log like any other output, so a new admin connection
     // replays the set in the state each change left it, and the broadcast that follows a control
     // delivers this entry to every admin that passes its Admin gate.
     //
@@ -901,10 +867,11 @@ impl Game {
         start
     }
 
-    // snapshot the whole profile ledger into history, aimed at the world-data viewport (the one
-    // actor existence rides -- see record_data_viewport). Because it shares that viewport, anyone
-    // who can read it has been walked the mappings it names. Appended on every profile change and
-    // at boot, so a rewind that prunes profiles rewrites the roster its clients replay.
+    // snapshot the whole profile set into history, aimed at the world-data viewport (the one
+    // actor existence is sent on).
+    // since it shares the same viewport, and a profile can only be created for an actor after it
+    // exists, then anyone who receives a profile MUST have also received that actor's mapping
+    // BEFORE receiving the profile. this is structurally true.
     //
     // Returns the history position to walk from when broadcasting, as @[append_key_roster].
     fn append_profile_roster(&mut self) -> usize {
@@ -924,11 +891,8 @@ impl Game {
         start
     }
 
-    // snapshot the game's current clock into history as a live GameClock, aimed at the world-data
-    // viewport like the ProfileRoster it sits beside. It is game-wide state, not connection context,
-    // so it is appended to the shared log and replayed -- a fresh boot (or a rewind, which boots
-    // again) rewrites it, and any client that can read the world sees the current anchor. A client
-    // derives the current game time from `time` + (wall_now - sent_at).
+    // snapshot the game's current clock into history as a live GameClock.
+    // Sent on the world-data viewport.
     //
     // Returns the history position to walk from when broadcasting, as @[append_key_roster]. A
     // no-op (game gone, or the world-data viewport not yet announced) returns the current head.
@@ -1014,6 +978,7 @@ impl Game {
         self.accepted.retain(|request| request.timestamp <= target);
         self.last_reached = target;
         self.discard_after(target);
+        self.history.cut_to_time(target);
         self.boot().await;
 
         // every connection's view of the world was built on a timeline that no longer exists: reset

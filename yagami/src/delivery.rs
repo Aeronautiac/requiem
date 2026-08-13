@@ -15,22 +15,23 @@ use crate::{
     },
 };
 
-// The server's own record of one action request and how it came out, gated Admin so only the host
-// ever sees it. The server writes this into the log alongside the request's engine commands (or in
-// its place, for a denied or crashed request) so a host's timeline can name who did what, and
-// rebuilds it on boot as history is replayed.
-pub fn log_action_output(action: &ActionRequest, outcome: ActionOutcome, time: Time) -> ServerOutput {
+// An action request and its output. Sent to admin so they can see a timeline.
+pub fn log_action_output(
+    action: &ActionRequest,
+    outcome: ActionOutcome,
+    time: Time,
+) -> ServerOutput {
     ServerOutput {
         time,
         view_gates: vec![ViewGate::Admin],
-        data: OutputData::Server(ServerCmd::LogAction { action: action.clone(), outcome }),
+        data: OutputData::Server(ServerCmd::LogAction {
+            action: action.clone(),
+            outcome,
+        }),
     }
 }
 
-// convert an engine payload to its stored server output: derive the view gates from the recipient,
-// keep the engine command as the payload. nothing server-computed is done here -- a log dump is a
-// property of CONSUMPTION (see History::transform), because it depends on how much of the log has
-// been written by that point.
+// convert an engine payload to its stored server output
 pub fn engine_to_server_cmd(cmd: &CommandPayload) -> ServerOutput {
     let view_gates = match &cmd.recipient {
         CommandRecipient::System => vec![ViewGate::Admin],
@@ -49,12 +50,7 @@ pub fn engine_to_server_cmd(cmd: &CommandPayload) -> ServerOutput {
     }
 }
 
-// The connection's own privilege set, sent DIRECTLY to it as the first output of every sync (a
-// fresh attach or a re-sync after a privilege change). This is connection-level context -- owned by
-// the specific connection it is pushed to, never stored in the shared log and never routed to a
-// view -- so it carries an EMPTY gate list: no actor, no viewport, no admin reach. "empty" here
-// means "this connection's concern", which is a different thing from an empty gate in the log
-// (that one delivers to nobody).
+// The connection's own privilege set, sent DIRECTLY to it as the first output of every sync
 fn privilege_output(privileges: &Privileges, time: Time) -> ServerOutput {
     ServerOutput {
         time,
@@ -66,9 +62,7 @@ fn privilege_output(privileges: &Privileges, time: Time) -> ServerOutput {
 }
 
 // the game's clock anchor, riding the world-data viewport like every other piece of server-computed
-// world state (the ProfileRoster). It is game-wide, not connection-specific, so it lives in the log
-// and reaches anyone who can read the world: it anchors the game's virtual time to `sent_at` real
-// wall time so a client can derive the current game time.
+// world state (the ProfileRoster). It is game wide.
 pub fn game_clock_output(data_viewport: ViewportKey, time: Time, sent_at: u128) -> ServerOutput {
     ServerOutput {
         time,
@@ -77,8 +71,7 @@ pub fn game_clock_output(data_viewport: ViewportKey, time: Time, sent_at: u128) 
     }
 }
 
-// The whole key ledger, delivered whole: every key and the privilege set it currently allows. Gated
-// Admin like the rest of the management surface, and replaced wholesale by the client, never diffed.
+// The whole key set
 pub fn key_roster_output(keys: &HashMap<Key, KeyData>, time: Time) -> ServerOutput {
     let keys: Vec<(Key, crate::wire::PrivilegeSet)> = keys
         .iter()
@@ -179,6 +172,40 @@ impl History {
             logs: HashMap::default(),
             cmds: vec![],
         }
+    }
+
+    // cut off the tail of history up to a certain point in time (not inclusive).
+    // filter any removed index out of viewports and logs.
+    pub fn cut_to_time(&mut self, time: Time) {
+        let mut to_remove_vp = vec![];
+        for (key, entries) in self.viewports.iter_mut() {
+            entries.retain(|i| {
+                let out = &self.cmds[*i];
+                out.time <= time
+            });
+            if entries.is_empty() {
+                to_remove_vp.push(*key);
+            }
+        }
+        for key in to_remove_vp {
+            self.viewports.remove(&key);
+        }
+
+        let mut to_remove_logs = vec![];
+        for (id, entries) in self.logs.iter_mut() {
+            entries.retain(|i| {
+                let out = &self.cmds[*i];
+                out.time <= time
+            });
+            if entries.is_empty() {
+                to_remove_logs.push(*id);
+            }
+        }
+        for key in to_remove_logs {
+            self.logs.remove(&key);
+        }
+
+        self.cmds.retain(|output| output.time <= time);
     }
 
     // append to history and return the next start position (inclusive). records the viewport/log
@@ -423,12 +450,10 @@ impl History {
         push_batch(conn, Batch { kind, outputs });
     }
 
-    // re-sync one connection from the start of the log. drops the connection's delivery data first:
+    // re-sync one connection from the start of the log.
     // a sync is "rebuild everything from zero" (a fresh attach, or a client that must be reset because
-    // the timeline it was on no longer exists), so stale watermarks must not suppress a second delivery.
+    // the timeline it was on no longer exists), so stale watermarks must not suppress a second delivery
     pub fn deliver_sync(&self, state: &WrappedServerState, ticket: Ticket, now: Time) {
-        // watermark reset is part of the sync contract, so a caller cannot forget it: drip with an
-        // Initialize batch but keep old watermarks would silently skip history the client must rebuild.
         {
             let mut server_state = lock_state(state);
             if let Some(game) = server_state.games.get_mut(&self.game_id)
@@ -440,8 +465,7 @@ impl History {
         self.deliver(state, 0, ticket, BatchKind::Initialize, now)
     }
 
-    // re-sync every connection. used after a backward time jump, when the engine has been rebuilt onto
-    // an earlier base and every client's view of the world no longer describes the timeline it is now on.
+    // re-sync every connection
     pub fn resync_all(&self, state: &WrappedServerState, now: Time) {
         let mut server_state = lock_state(state);
         let Some(game) = server_state.games.get_mut(&self.game_id) else {
@@ -515,8 +539,6 @@ impl History {
     }
 }
 
-// best effort by design: a connection whose outbox is full is cut, not waited on -- a client
-// missing state is worse than one that has to reconnect.
 fn push_batch(conn: &mut ConnHandle, batch: Batch) {
     if conn.outbox.try_send(batch).is_err() {
         conn.cancel.cancel();
