@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
-  import { permsLabel, playerLabel } from "../../game/helpers.svelte";
+  import { actorDisplayColor, permsLabel, playerLabel } from "../../game/helpers.svelte";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import type { GameState } from "../../game/state.svelte";
   import type { UiState } from "../../ui_state.svelte.ts";
@@ -100,11 +100,18 @@
     {#if pid}
       <Player id={pid} perms={member.perms} />
     {:else}
-      <!-- nothing to contact or inspect -->
+      <!-- nothing to contact or inspect. A role / org / anonymous display colours by its own entity
+           accent, exactly as that same display reads in a chat row -- one colour source for the same
+           thing in both surfaces. -->
       <div
-        class="flex items-start justify-between gap-2 px-2 py-1.5 text-sm text-neutral-300"
+        class="flex items-start justify-between gap-2 px-2 py-1.5 text-sm"
       >
-        <span class="min-w-0 break-words">{view.resolve_display(member.display)}</span>
+        <span
+          class="min-w-0 break-words font-medium"
+          style="color: {actorDisplayColor(member.display, view)}"
+        >
+          {view.resolve_display(member.display)}
+        </span>
         {#if permsLabel(member.perms)}
           <span class="shrink-0 text-xs text-neutral-600">
             {permsLabel(member.perms)}

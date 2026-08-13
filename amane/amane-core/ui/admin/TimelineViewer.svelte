@@ -51,6 +51,57 @@
     return Object.keys(a)[0];
   }
 
+  // ---- arguments ----
+  //
+  // An action payload variant rides a struct (e.g. `Kill: Kill`), so beyond the variant name there
+  // is a row per field. The timeline is host tooling, so these format locally; actor keys resolve to
+  // player names, Options unwrap, and anything more exotic falls back to a compact read.
+
+  function prettyArg(k: string): string {
+    const s = k.replace(/_id$/, "").replace(/_/g, " ");
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  function isSlotKey(v: unknown): v is { idx: number; version: number } {
+    return (
+      !!v &&
+      typeof v === "object" &&
+      typeof (v as { idx: unknown }).idx === "number" &&
+      typeof (v as { version: unknown }).version === "number"
+    );
+  }
+
+  function fmtArg(v: unknown): string {
+    if (v === null || v === undefined) return "—";
+    if (isSlotKey(v)) return playerLabel(slotKeyToString(v), view.players);
+    if (typeof v === "string") return v;
+    if (typeof v === "boolean") return String(v);
+    if (typeof v === "number") return isFinite(v) ? String(v) : `${v}`;
+    if (Array.isArray(v)) {
+      const s = v.map(fmtArg);
+      return s.length > 3 ? `${s.slice(0, 3).join(", ")} +${s.length - 3}` : s.join(", ");
+    }
+    if (typeof v === "object") {
+      const obj = v as Record<string, unknown>;
+      if ("Some" in obj) return fmtArg(obj.Some);
+      if ("None" in obj) return "—";
+      const entries = Object.entries(obj);
+      if (entries.length === 0) return "∅";
+      return entries.map(([k, x]) => `${prettyArg(k)}: ${fmtArg(x)}`).join(", ");
+    }
+    return String(v);
+  }
+
+  function payloadArgs(a: Action): { key: string; value: string }[] {
+    const name = Object.keys(a)[0];
+    const data = (a as unknown as Record<string, unknown>)[name];
+    if (!data || typeof data !== "object") return [];
+    return Object.entries(data as Record<string, unknown>).map(([k, v]) => ({
+      key: prettyArg(k),
+      value: fmtArg(v),
+    }));
+  }
+
   function actorText(actor: ActionActor): string {
     if (actor === "Admin") return "Admin";
     if (actor === "System") return "System";
@@ -122,12 +173,19 @@
   {:else}
     <ol bind:this={list} class="max-h-[30rem] overflow-y-auto divide-y divide-edge">
       {#each shown as entry (entry.time + ":" + actionName(entry.action.payload))}
-        <li class="flex items-center gap-3 py-2 text-[0.9375rem]">
-          <span class="shrink-0 font-mono text-[0.8125rem] text-ink-dim tabular-nums w-16">
+        <li class="flex items-start gap-3 py-1.5 text-[0.9375rem]">
+          <span class="shrink-0 font-mono text-[0.8125rem] text-ink-dim tabular-nums w-16 pt-0.5">
             {timeText(entry.time)}
           </span>
-          <span class="min-w-0 shrink-0 truncate text-ink-dim w-40">{actorText(entry.action.actor)}</span>
-          <span class="min-w-0 flex-1 truncate">{actionName(entry.action.payload)}</span>
+          <span class="min-w-0 shrink-0 truncate text-ink-dim w-40 pt-0.5">{actorText(entry.action.actor)}</span>
+          <div class="min-w-0 flex-1">
+            <div class="font-medium">{actionName(entry.action.payload)}</div>
+            {#each payloadArgs(entry.action.payload) as r (r.key)}
+              <div class="text-xs text-neutral-500">
+                <span class="text-neutral-600">{r.key}:</span> {r.value}
+              </div>
+            {/each}
+          </div>
           <span class={`shrink-0 rounded px-1.5 text-[0.7rem] uppercase ${outcomeClass(entry.outcome)}`}>
             {outcomeText(entry.outcome)}
           </span>

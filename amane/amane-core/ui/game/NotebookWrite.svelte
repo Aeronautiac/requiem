@@ -4,6 +4,7 @@
   import Dialog from "../kit/Dialog.svelte";
   import Input from "../kit/Input.svelte";
   import Button from "../kit/Button.svelte";
+  import MentionInput from "./MentionInput.svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
   import type { GameState } from "../../game/state.svelte";
@@ -25,6 +26,8 @@
 
   const session = getContext<SessionState>(SESSION_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
+
+  const view = $derived(game.view_of(ui.viewer));
 
   let true_name = $state("");
   let death_message = $state("");
@@ -82,7 +85,16 @@
 
 <Dialog bind:open title="Write Name">
   <Input bind:value={true_name} placeholder="True Name" />
-  <Input bind:value={death_message} placeholder="Death Message (optional)" />
+  <MentionInput
+    bind:value={death_message}
+    players={view.players}
+    orgs={view.orgs}
+    newsAnchor={view.news_anchor}
+    pressConf={view.press_conf}
+    placeholder="Death Message (optional)"
+    boxed
+    onsubmit={submit}
+  />
 
   <div>
     <p class="mb-1 text-xs text-ink-dim">Delay</p>

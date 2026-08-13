@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getContext } from "svelte";
   import MentionInput from "./MentionInput.svelte";
+  import MentionText from "./MentionText.svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import {
     PERM_SEND,
@@ -513,7 +514,9 @@
             <Announcement {view} timestamp={event.timestamp} color="var(--color-event-death)" description="Death">
               <Name id={d.target_id} {view} chip /> has died.
               {#if d.death_message}
-                <div class="mt-1 italic text-neutral-300">{d.death_message}</div>
+                <div class="mt-1 italic whitespace-pre-wrap text-neutral-300">
+                  <MentionText content={d.death_message} {view} />
+                </div>
               {/if}
               <div class="mt-1 text-neutral-400">
                 Their true name was <span class="text-neutral-200"
@@ -554,8 +557,11 @@
             <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-anonymous)"
               description="Anonymous Announcement"
-              content={event.data.AnonymousAnnouncement.content}
-            />
+            >
+              <div class="whitespace-pre-wrap">
+                <MentionText content={event.data.AnonymousAnnouncement.content} {view} />
+              </div>
+            </Announcement>
           {:else if "EyeDealTaken" in event.data}
             {@const u = event.data.EyeDealTaken.user}
             <Announcement {view} timestamp={event.timestamp} color="var(--color-event-reveal)" description="The Eye Deal">

@@ -27,6 +27,9 @@
     newsAnchor: string | null;
     pressConf: ReadonlySet<string>;
     placeholder?: string;
+    // A standalone prose box (announcement, death message) rather than the cramped composer field:
+    // visibly bordered, taller, and full width so it reads as a real text box.
+    boxed?: boolean;
     onsubmit: () => void;
   }
   let {
@@ -36,6 +39,7 @@
     newsAnchor,
     pressConf,
     placeholder,
+    boxed = false,
     onsubmit,
   }: Props = $props();
 
@@ -217,12 +221,73 @@
       el.replaceChildren();
     }
   });
-</script>
 
-<div class="relative flex-1">
+  // The candidate list node, once its #if mounts it.
+  let listEl = $state<HTMLUListElement>();
+
+  // The top edge of the visible text box to anchor the dropdown to. In a boxed field the editable
+  // IS the box; in the chat composer the editable sits a few px inside the bordered bar (it is
+  // vertically centred), so pinning to the editable's top would overlap the box's top edge -- ugly.
+  // Walk up to the nearest ancestor that actually draws a background, which is the box a reader can
+  // see, and anchor there.
+  function boxTop(node: HTMLElement): number {
+    let cur: HTMLElement | null = node;
+    while (cur) {
+      const bg = getComputedStyle(cur).backgroundColor;
+      if (bg && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)") return cur.getBoundingClientRect().top;
+      cur = cur.parentElement;
+    }
+    return node.getBoundingClientRect().top;
+  }
+
+  // Position the popover flush at the top edge of the visible text box, growing upward. A manual
+  // popover lives in the browser's top layer, so no ancestor (a panel, a channel scroller, even a
+  // `showModal()` dialog) can clip it or paint over it. Pinning with `bottom` needs no height
+  // measurement, so there is nothing to mis-measure mid-layout.
+  function placePopover() {
+    const node = listEl;
+    const anchor = el;
+    if (!node || !anchor) return;
+    const r = anchor.getBoundingClientRect();
+    const width = Math.max(r.width, 288);
+    node.style.position = "fixed";
+    node.style.margin = "0";
+    node.style.width = `${Math.min(width, window.innerWidth - 12)}px`;
+    let left = r.left;
+    if (left + width > window.innerWidth - 12) left = window.innerWidth - 12 - width;
+    node.style.left = `${Math.max(6, left)}px`;
+    node.style.right = "auto";
+    node.style.top = "auto";
+    node.style.bottom = `${window.innerHeight - boxTop(anchor)}px`;
+  }
+
+  $effect(() => {
+    const node = listEl;
+    // The #if removes the list the moment there are no candidates, so existence is the only thing
+    // to guard on here -- deliberately not `candidates.length`, which would re-run this effect (and
+    // flicker the popover) on every keystroke. Since the list's bottom is pinned to the input, its
+    // content growing or shrinking never needs re-placing.
+    if (!open || !node) return;
+    // Unless it is already open (a re-run as the candidate list changes), put it in the top layer.
+    if (!node.matches(":popover-open")) node.showPopover();
+    placePopover();
+    window.addEventListener("scroll", placePopover, true);
+    window.addEventListener("resize", placePopover);
+    return () => {
+      window.removeEventListener("scroll", placePopover, true);
+      window.removeEventListener("resize", placePopover);
+      if (node.matches(":popover-open")) node.hidePopover();
+    };
+  });
+
+  </script>
+
+<div class="relative {boxed ? 'w-full' : 'flex-1'}">
   {#if open && candidates.length > 0}
     <ul
-      class="absolute bottom-full left-0 z-10 mb-2 max-h-56 w-72 overflow-y-auto rounded-lg border border-edge bg-panel py-1 shadow-lg"
+      bind:this={listEl}
+      popover="manual"
+      class="max-h-56 overflow-y-auto rounded-lg border border-edge bg-panel px-0 py-1 shadow-lg"
     >
       {#each candidates as c, i (c.mention.kind + mentionToken(c.mention))}
         <li>
@@ -249,7 +314,8 @@
 
   {#if value === ""}
     <span
-      class="pointer-events-none absolute inset-y-0 left-0 flex items-center text-sm text-ink-dim"
+      class="pointer-events-none absolute flex text-sm text-ink-dim
+        {boxed ? 'inset-y-0 items-start px-2.5 pt-2' : 'inset-y-0 items-center'}"
     >
       {placeholder}
     </span>
@@ -267,6 +333,9 @@
     onkeyup={refresh}
     onclick={refresh}
     onblur={() => (open = false)}
-    class="max-h-32 min-h-[1.25rem] w-full overflow-y-auto whitespace-pre-wrap break-words text-sm text-ink focus:outline-none"
+    class="w-full overflow-y-auto whitespace-pre-wrap break-words text-sm text-ink focus:outline-none
+      {boxed
+        ? 'min-h-24 max-h-48 rounded-md border border-edge bg-neutral-800 px-2.5 py-2'
+        : 'max-h-32 min-h-[1.25rem]'}"
   ></div>
 </div>

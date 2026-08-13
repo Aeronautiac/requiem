@@ -4,8 +4,9 @@
 // A timestamp on the wire is GAME time: the sandbox counts up from 0, so a moment is how far into
 // the game it happened, not a point on the wall clock (see lawliet lib.rs, "sandboxed time"). The
 // raw duration of a game day can change mid-game, but these raw units never do -- so this renders
-// the raw elapsed game time with explicit units, and real-world wall time is offered only on hover
-// (see wallTimeOf).
+// the raw elapsed game time with explicit units. There is no real-world wall-time counterpart:
+// with time travel the game clock is untethered from the wall clock, so a wall date has no meaning
+// attached to a game moment.
 export function formatTime(gameMs: number): string {
 	const totalSec = Math.max(0, Math.floor(gameMs / 1000));
 	const d = Math.floor(totalSec / 86400);
@@ -14,27 +15,6 @@ export function formatTime(gameMs: number): string {
 	const s = totalSec % 60;
 	const days = d > 0 ? `${d}d:` : "";
 	return `${days}${h}h:${String(m).padStart(2, "0")}m:${String(s).padStart(2, "0")}s`;
-}
-
-// The game-clock anchor the client holds: the game's virtual time `time` as of real wall clock
-// `sent_at`. Game time advances one-for-one with real time between anchors, so given an anchor this
-// turns a GAME timestamp into the real wall-clock moment it happened at -- the "what does that mean
-// in my calendar" hover value. Undefined until the server has sent an anchor.
-//
-// `clock` is a view's game_clock (see GameView).
-export function wallTimeOf(
-	gameMs: number,
-	clock: { time: number; sent_at: number } | null | undefined,
-): string | undefined {
-	if (!clock) return undefined;
-	const wall = clock.sent_at + (gameMs - clock.time);
-	const d = new Date(wall);
-	// The game can span real days, so a bare time would silently read as "today". Prefix the date
-	// whenever the moment is not today; same-day moments stay just the time.
-	const date = d.toDateString() === new Date().toDateString()
-		? ""
-		: `${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}, `;
-	return `${date}${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 // Engine Time is unix ms, so durations like a notebook-write delay arrive in ms. Shows the largest

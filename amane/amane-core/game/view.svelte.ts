@@ -94,20 +94,55 @@ import type {
   channel_views = new SvelteMap<string, ChannelView>();
   events: GameEvent[] = $state([]); // world events: this view's news feed
 
-  // Push a run of world events on a wall-clock schedule keyed to their own timestamps: one whose
-  // time has already passed lands at once, a future one after the clock reaches it. Used to stagger
-  // a single command (a death) into timed reveals. The feed sorts by timestamp, so each part still
-  // lands in order.
+  // Push a run of world events keyed to their own timestamps: one whose time has already passed
+  // lands at once, a future one after the clock reaches it. Used to stagger a single command (a
+  // death) into timed reveals. The feed sorts by timestamp, so each part still lands in order.
   //
-  // The timestamps are GAME time, so the delay is measured against game time now (not the wall
-  // clock): game time advances one-for-one with real time, so a delay in game-milliseconds is the
-  // same wall-millisecond wait. A replayed command is "all there" already -- its parts are all in
-  // the past -- so it plays out at once, with no notion of "live" needed.
+  // The timestamps are GAME time, and the reveals are re-evaluated against the live game clock by a
+  // reaper rather than a one-shot setTimeout sized from the clock at staging time. That matters
+  // because a forward time skip (the server winding the clock ahead) hands a view its deaths from
+  // within the skip BEFORE the new clock anchor that follows them: if the delay were computed
+  // against that stale pre-skip clock, a death would schedule itself hours out and never surface
+  // even though the skip has already left it behind. Re-checked against the clock -- and flushed the
+  // moment a new anchor lands -- a death whose time the skip has passed arrives immediately. A
+  // replayed command is "all there" already -- its parts are all in the past -- so it plays out at
+  // once, with no notion of "live" needed.
   stage_world_events(parts: GameEvent[]) {
     for (const part of parts) {
-      const delay = part.timestamp - this.game_time_now();
-      if (delay <= 0) this.events.push(part);
-      else setTimeout(() => this.events.push(part), delay);
+      if (part.timestamp <= this.game_time_now()) this.events.push(part);
+      else this.#pending_events.push(part);
+    }
+    this.#ingest_pending();
+  }
+
+  // Events staged for a moment the game clock has not reached yet. Held until it does; this is what
+  // lets a delayed reveal survive the clock jumping under it (see stage_world_events).
+  #pending_events: GameEvent[] = [];
+  #reaper: ReturnType<typeof setInterval> | undefined;
+
+  // Start (or keep) the reaper while anything is pending, and opportunistically reap right away --
+  // so a clock anchor that just jumped the game forward drains the queue immediately rather than
+  // waiting for the next interval tick.
+  #ingest_pending() {
+    if (this.#pending_events.length > 0 && this.#reaper === undefined) {
+      this.#reaper = setInterval(() => this.#reap_pending(), 250);
+    }
+    this.#reap_pending();
+  }
+
+  // Reveal every pending event whose time has arrived. Order among the revealed ones is preserved
+  // (the feed re-sorts by timestamp anyway), and the reaper stops once the queue empties.
+  #reap_pending() {
+    const now = this.game_time_now();
+    const still_pending: GameEvent[] = [];
+    for (const part of this.#pending_events) {
+      if (part.timestamp <= now) this.events.push(part);
+      else still_pending.push(part);
+    }
+    this.#pending_events = still_pending;
+    if (this.#pending_events.length === 0 && this.#reaper !== undefined) {
+      clearInterval(this.#reaper);
+      this.#reaper = undefined;
     }
   }
 
@@ -407,6 +442,9 @@ import type {
 
   set_game_clock(sent_at: number, time: number) {
     this.game_clock = { sent_at, time };
+    // A new anchor can jump the game forward (a time skip); drain anything that staging scheduled
+    // against a stale clock the moment the corrected time is known.
+    this.#ingest_pending();
   }
 
   // ---- log records ----

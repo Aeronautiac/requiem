@@ -8,6 +8,7 @@
   import type { UiState } from "../../../ui_state.svelte.ts";
   import { Flash } from "../../../flash.svelte.ts";
   import FlashDisplay from "../../Flash.svelte";
+  import MentionInput from "../MentionInput.svelte";
   import { useAbilityRequest, type AbilityUiProps } from "./registry";
 
   let { abilityId, onDone, orgId }: AbilityUiProps = $props();
@@ -16,6 +17,7 @@
 
   const session = getContext<SessionState>(SESSION_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
+  const view = $derived(game.view_of(ui.viewer));
 
   let content = $state("");
   const flash = new Flash();
@@ -36,12 +38,16 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <textarea
+  <MentionInput
     bind:value={content}
-    rows="4"
+    players={view.players}
+    orgs={view.orgs}
+    newsAnchor={view.news_anchor}
+    pressConf={view.press_conf}
     placeholder="Announcement…"
-    class="w-full resize-none rounded-md bg-neutral-800 px-2 py-2 text-sm text-neutral-200"
-  ></textarea>
+    boxed
+    onsubmit={announce}
+  />
   <button
     class="rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-900 hover:bg-white"
     onclick={announce}

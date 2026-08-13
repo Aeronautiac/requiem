@@ -8,6 +8,7 @@
   import GcControls from "./GcControls.svelte";
   import RightControls from "./RightControls.svelte";
   import ViewSelect from "./ViewSelect.svelte";
+  import GameClock from "./GameClock.svelte";
   import AbilityMenu from "./abilities/AbilityMenu.svelte";
   import PassivesPanel from "./PassivesPanel.svelte";
   import StatusBadges from "./StatusBadges.svelte";
@@ -120,6 +121,7 @@
         <AdminPanel />
       {/if}
       <StatusBadges />
+      <GameClock />
     </div>
   </div>
 

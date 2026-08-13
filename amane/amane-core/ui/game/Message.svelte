@@ -68,7 +68,14 @@
       <TimeStamp {timestamp} {view} />
     </div>
   {/if}
-  <div class="whitespace-pre-wrap break-words text-sm text-neutral-300">
-    <MentionText {content} {view} />
+  <div class="flex items-baseline gap-2">
+    <div class="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm text-neutral-300">
+      <MentionText {content} {view} />
+    </div>
+    {#if grouped}
+      <!-- A grouped message drops the sender header, but every message still carries its own moment:
+           the timestamp stays beside the line so a continuation reads its own time. -->
+      <TimeStamp {timestamp} {view} />
+    {/if}
   </div>
 </div>

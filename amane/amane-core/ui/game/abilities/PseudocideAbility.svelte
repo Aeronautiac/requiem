@@ -12,6 +12,7 @@
   import { Flash } from "../../../flash.svelte.ts";
   import FlashDisplay from "../../Flash.svelte";
   import PlayerSelect from "./PlayerSelect.svelte";
+  import MentionInput from "../MentionInput.svelte";
   import { useAbilityRequest, type AbilityUiProps } from "./registry";
 
   let { abilityId, onDone, orgId }: AbilityUiProps = $props();
@@ -87,14 +88,19 @@
     />
   </label>
 
-  <label class="flex flex-col gap-1 text-xs text-neutral-500">
-    Death message
-    <input
+  <div class="flex flex-col gap-1 text-xs text-neutral-500">
+    <span class="w-full">Death message</span>
+    <MentionInput
       bind:value={death_message}
+      players={view.players}
+      orgs={view.orgs}
+      newsAnchor={view.news_anchor}
+      pressConf={view.press_conf}
       placeholder="Announced on death"
-      class="w-full rounded-md bg-neutral-800 px-2 py-2 text-sm text-neutral-200"
+      boxed
+      onsubmit={fake_death}
     />
-  </label>
+  </div>
 
   <label class="flex flex-col gap-1 text-xs text-neutral-500">
     Role revealed

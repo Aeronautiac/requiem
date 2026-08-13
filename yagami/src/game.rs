@@ -39,13 +39,6 @@ use crate::{
     },
 };
 
-// TODO:
-// persistence, and showing the current game time on the ui
-// role colours are not shown on displays on the player menu, and they should be
-
-// BUG:
-// - deaths are not rendered on the client across time jumps
-
 pub fn to_line<T: Serialize>(value: &T) -> String {
     match serde_json::to_string(value) {
         Ok(json) => json + "\n",
@@ -979,6 +972,7 @@ impl Game {
         self.discard_after(target);
         self.history.cut_to_time(target);
         self.boot().await;
+        self.append_game_clock();
 
         // every connection's view of the world was built on a timeline that no longer exists: reset
         // each one and replay the truncated history from the start.
