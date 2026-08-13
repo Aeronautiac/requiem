@@ -250,9 +250,6 @@ pub async fn game_connection(
         (conn_handle.cancel.clone(), game_state.inbox.clone())
     };
 
-    // ask for the sync replay before reading a single frame. it goes down the same channel as
-    // inputs, so FIFO guarantees this connection is caught up before anything it sends is executed --
-    // no window in which a reply could be ordered ahead of the log it depends on.
     if inbox
         .send(GameInput::GameCommand(GameCommand::Sync {
             ticket: ticket.clone(),
@@ -323,8 +320,6 @@ pub async fn game_connection(
         }
     });
 
-    // &mut so the handles survive the race; whichever arm wins, abort the other two tasks so the
-    // socket halves drop and the connection actually closes. abort on a finished task is a no-op.
     select! {
         _ = cancel_tok.cancelled() => {}
         _ = &mut inbound => {}
@@ -345,24 +340,17 @@ pub struct GameCreationPacket {
     admin_key: Key,
 }
 
-// who may create and tear down games at all. server-wide, and one level ABOVE per-game keys: a game
-// knows only its own keys, never this. kept a seam so swapping the placeholder for real accounts
-// never touches the key model.
+// a platform admin is not a game admin. this gives you access to PLATFORM CONTROLS like creating
+// and killing games.
 pub fn is_platform_admin(_platform_key: &str) -> bool {
     // TODO: back this with a gitignored allowlist file. open during testing.
     true
 }
 
-// need a REST endpoint for game creation
 // to create a game, you must have a platform key
 // returns the id of the game created and the admin key
 // must create the game entry in the REST endpoint, but cleanup can be handled outside of it (games
 // are guaranteed to be created after auth, so there is no failure case with a weird cleanup scenario).
-//
-// the engine child boots with the game task, but an empty engine is NOT a playable game: the admin
-// still has to send InitializeEngine and InitializeWorld as its first actions. creation deliberately
-// drives none of that -- it mints one credential and gets out of the way, so nothing here has to
-// await the engine.
 pub async fn create_game(
     State(state): State<WrappedServerState>,
     Json(body): Json<CreateGame>,

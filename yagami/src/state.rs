@@ -24,14 +24,16 @@ use crate::{
 
 pub type GameId = u64; // for now, strictly incrementing
 
+// TODO:
+// there is a potential race between the outbox opening, and the initial attachment
+// during a broadcast, a connection may be sent something that is NOT their initial batch before
+// receiving their sync batch, but this doesn't really matter, because sync wipes client state
+// anyway.
+// potentially clean this up. right now it sort of works by coincidence.
 pub struct ConnHandle {
     pub cancel: CancellationToken,
     pub outbox: mpsc::Sender<Batch>,
-    // set when the game task cuts this connection; the connection task hasn't torn down yet. fan-out
-    // skips a dropped entry in the window between the cancel and the ClaimGuard actually removing it.
     pub dropped: bool,
-    // how far this connection has been delivered, per viewport, and which actors still grant access.
-    // filled by History's delivery as it walks the log for this connection.
     pub delivery: DeliveryData,
 }
 

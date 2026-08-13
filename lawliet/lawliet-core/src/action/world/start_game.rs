@@ -41,9 +41,10 @@ impl ActionInterface for StartGame {
         // Before the delegation below, which is what everything downstream of it checks.
         if mutate {
             eng.world.phase = WorldPhase::Running;
-        }
 
-        Action::NextIteration(NextIteration {}).handle(eng, ctx, actor, version, mutate)?;
+            // only in the mutate pass because it refuses if not in a running state
+            Action::NextIteration(NextIteration {}).handle(eng, ctx, actor, version, mutate)?;
+        }
 
         Ok(ActionResponse::StartGame(StartGameResponse {}))
     }

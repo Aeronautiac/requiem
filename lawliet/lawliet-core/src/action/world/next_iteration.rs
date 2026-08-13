@@ -7,6 +7,7 @@ use lawliet_types::{
     bug::BugSource,
     command::Command,
     common::BugKey,
+    world::WorldPhase,
 };
 use smallvec::SmallVec;
 
@@ -23,8 +24,8 @@ impl ActionInterface for NextIteration {
     ) -> crate::action::ActionResult {
         actor.admin_or_system()?;
 
-        if actor.is_admin() && !eng.initialized {
-            return Err(ActionError::EngineNotInitialized);
+        if eng.world.phase != WorldPhase::Running {
+            return Err(ActionError::GameNotStarted);
         }
 
         if mutate {

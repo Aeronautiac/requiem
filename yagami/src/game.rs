@@ -45,7 +45,6 @@ use crate::{
 
 // BUG:
 // - deaths are not rendered on the client across time jumps
-// - the admin cannot see their own key on the key roster until they create another key
 
 pub fn to_line<T: Serialize>(value: &T) -> String {
     match serde_json::to_string(value) {
