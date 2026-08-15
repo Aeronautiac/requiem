@@ -5,7 +5,7 @@
 // is what makes it impossible for one view to render something addressed to another.
 import { SvelteMap } from "svelte/reactivity";
 import { outputCommand } from "../bindings";
-import type { ServerOutput } from "../bindings";
+import type { Output } from "../bindings";
 import { slotKeyToString } from "../bindings";
 import { applyCommand } from "./commands";
 import type { WireCommand } from "../bindings";
@@ -69,7 +69,7 @@ export class GameState {
   // through ONE handler table — engine command, log dump, roster: the client does not distinguish,
   // it obeys what it receives. Command ordering within a batch is significant
   // (create-before-reference, last-write-wins perms), so never reorder.
-  apply_output(out: ServerOutput): number {
+  apply_output(out: Output): number {
     const cmd = outputCommand(out);
     const pos = this.#history.append(out);
     const deliveries = this.#recipients(out);
@@ -109,39 +109,40 @@ export class GameState {
     );
   }
 
-  // Which views an output lands in, and the context each is delivered with, decided from its view
-  // gates. The server already decided this CONNECTION may see the output; the gates say who within
-  // the connection it concerns and what it is about for each of them.
-  #recipients(out: ServerOutput): Delivery[] {
+  // Which views an output lands in, and the context each is delivered with, decided from its
+  // recipients. The server already decided this CONNECTION may see the output; the recipients say
+  // who within the connection it concerns and what it is about for each of them. (`Log` never
+  // reaches a client — it is a server index key — so it is ignored here.)
+  #recipients(out: Output): Delivery[] {
     const result: Delivery[] = [];
     const seen = new Set<GameView>();
     const command_viewports = gateViewports(out);
     const command_actors = gateActors(out);
 
-    for (const gate of out.view_gates) {
-      if (gate === "Admin") {
+    for (const recipient of out.recipients) {
+      if (recipient === "Admin") {
         // System has no viewport or actor of its own — it reads everything. For a command that
-        // also names a viewport (every viewport command carries an Admin gate), the viewport the
-        // content rides is still what a handler needs to record where objects live.
+        // also names a viewport (every viewport command carries an Admin recipient), the viewport
+        // the content rides is still what a handler needs to record where objects live.
         const view = this.system_view();
         if (!seen.has(view)) {
           seen.add(view);
           result.push({ view, viewport: command_viewports[0], actor: command_actors[0] });
         }
-      } else if (typeof gate !== "string" && "Player" in gate) {
-        const key = slotKeyToString(gate.Player);
+      } else if (typeof recipient !== "string" && "Player" in recipient) {
+        const key = slotKeyToString(recipient.Player);
         const view = this.view_for(key);
         if (!seen.has(view)) {
           seen.add(view);
           result.push({ view, viewport: command_viewports[0], actor: key });
         }
-      } else if (typeof gate !== "string" && "Viewport" in gate) {
-        const viewport = slotKeyToString(gate.Viewport);
+      } else if (typeof recipient !== "string" && "Viewport" in recipient) {
+        const viewport = slotKeyToString(recipient.Viewport);
         for (const [key, view] of this.views) {
-          // System reads every viewport — the server sends it everything (an Admin gate rides
-          // alongside every Viewport gate), and it holds no actors of its own to enter with. That
-          // is what lets admin watch a deception: they see the fiction through the same viewport
-          // the players do.
+          // System reads every viewport — the server sends it everything (an Admin recipient rides
+          // alongside every Viewport recipient), and it holds no actors of its own to enter with.
+          // That is what lets admin watch a deception: they see the fiction through the same
+          // viewport the players do.
           if (key !== "System" && view.viewports.has(viewport)) {
             if (!seen.has(view)) {
               seen.add(view);

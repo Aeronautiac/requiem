@@ -15,9 +15,9 @@ import type {
   Batch,
   ControlResponse,
   ExecOutcome,
+  Output,
   PrivilegeSet,
   ServerInput,
-  ServerOutput,
 } from "./bindings";
 import { GameState } from "./game/state.svelte";
 import { UiState } from "./ui_state.svelte";
@@ -124,9 +124,9 @@ export class SessionState {
     }
   }
 
-  #apply_output(out: ServerOutput) {
+  #apply_output(out: Output) {
     // This connection's own privileges are a connection-wide fact, read here before the command
-    // flows on through the single dispatch path (its Connection gate routes it to no view).
+    // flows on through the single dispatch path (its Connection recipient routes it to no view).
     const data = out.data;
     if ("Server" in data && "Privileges" in data.Server) {
       this.privileges = data.Server.Privileges;
@@ -136,8 +136,8 @@ export class SessionState {
       console.log(
         "[diag] engine cmd routed to 0 views:",
         Object.keys(data.Engine)[0],
-        "gates:",
-        JSON.stringify(out.view_gates),
+        "recipients:",
+        JSON.stringify(out.recipients),
       );
     }
   }

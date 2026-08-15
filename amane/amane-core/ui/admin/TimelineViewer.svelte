@@ -71,23 +71,48 @@
     );
   }
 
-  function fmtArg(v: unknown): string {
+  // Action payload fields whose slot key is a PLAYER, resolving to a name in view.players. Every
+  // other slot key (channel_id, bug_id, lounge_id, notebook_id, poll_id, prosecution_id, a bare
+  // `id`, ...) is a different object and must NOT be shown as a player name.
+  const PLAYER_KEY_FIELDS = new Set([
+    "target",
+    "target_id",
+    "actor_id",
+    "player_id",
+    "creator_id",
+    "contactor_id",
+    "contacted_id",
+    "performer",
+    "sacrifice",
+    "name_target",
+    "kidnapper",
+    "victim_id",
+    "accuser_id",
+    "user",
+    "prosecutor",
+    "defendant",
+  ]);
+
+  function fmtArg(key: string, v: unknown): string {
     if (v === null || v === undefined) return "—";
-    if (isSlotKey(v)) return playerLabel(slotKeyToString(v), view.players);
+    if (isSlotKey(v)) {
+      const k = slotKeyToString(v);
+      return PLAYER_KEY_FIELDS.has(key) ? playerLabel(k, view.players) : k;
+    }
     if (typeof v === "string") return v;
     if (typeof v === "boolean") return String(v);
     if (typeof v === "number") return isFinite(v) ? String(v) : `${v}`;
     if (Array.isArray(v)) {
-      const s = v.map(fmtArg);
+      const s = v.map((x) => fmtArg(key, x));
       return s.length > 3 ? `${s.slice(0, 3).join(", ")} +${s.length - 3}` : s.join(", ");
     }
     if (typeof v === "object") {
       const obj = v as Record<string, unknown>;
-      if ("Some" in obj) return fmtArg(obj.Some);
+      if ("Some" in obj) return fmtArg(key, obj.Some);
       if ("None" in obj) return "—";
       const entries = Object.entries(obj);
       if (entries.length === 0) return "∅";
-      return entries.map(([k, x]) => `${prettyArg(k)}: ${fmtArg(x)}`).join(", ");
+      return entries.map(([k, x]) => `${prettyArg(k)}: ${fmtArg(k, x)}`).join(", ");
     }
     return String(v);
   }
@@ -98,7 +123,7 @@
     if (!data || typeof data !== "object") return [];
     return Object.entries(data as Record<string, unknown>).map(([k, v]) => ({
       key: prettyArg(k),
-      value: fmtArg(v),
+      value: fmtArg(k, v),
     }));
   }
 

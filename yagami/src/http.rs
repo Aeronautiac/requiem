@@ -4,7 +4,7 @@
 // its traffic belongs to the game task, and this module only shuttles bytes between the two.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     env,
     net::SocketAddr,
     time::Duration,
@@ -29,14 +29,14 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    auth::{ActorScope, Capability, Key, KeyData, Privileges, Ticket},
+    auth::{ActorScope, Capability, Key, KeyHandle, Ticket},
     constants::{
         HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, OUTBOX_BUF_SIZE, TICKET_LIMIT, TICKET_TIMEOUT,
     },
     delivery::DeliveryData,
     game::{GameCommand, GameInput, InputEnvelope, game},
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
-    wire::{Batch, ServerInput},
+    wire::{Batch, ControlOutcome, ControlResponse, ServerInput, SimControl, SimControlData},
 };
 
 pub fn req(key: &str) -> Result<String, String> {
@@ -98,16 +98,19 @@ pub async fn get_ticket(
     };
 
     let key = body.key;
-    let Some(key_data) = game_state.keys.get_mut(&key) else {
+    if !game_state.keys.contains_key(&key) {
+        return Err(ServerError::InvalidKey);
+    }
+    let Some(key_handle) = game_state.key_handles.get_mut(&key) else {
         return Err(ServerError::InvalidKey);
     };
 
-    if key_data.tickets.len() == TICKET_LIMIT {
+    if key_handle.tickets.len() == TICKET_LIMIT {
         return Err(ServerError::TicketLimitReached);
     }
 
     let ticket = Ticket::generate();
-    key_data.tickets.insert(ticket.clone());
+    key_handle.tickets.insert(ticket.clone());
     game_state.tickets.insert(ticket.clone(), key.clone());
 
     let state_clone = state.clone();
@@ -119,8 +122,8 @@ pub async fn get_ticket(
             && !game_state.connections.contains_key(&ticket_clone)
         {
             game_state.tickets.remove(&ticket_clone);
-            if let Some(key_data) = game_state.keys.get_mut(&key) {
-                key_data.tickets.remove(&ticket_clone);
+            if let Some(key_handle) = game_state.key_handles.get_mut(&key) {
+                key_handle.tickets.remove(&ticket_clone);
             }
         }
     });
@@ -159,9 +162,9 @@ impl Drop for ClaimGuard {
 
         // single use: the ticket dies with the connection it was claimed for
         if let Some(key) = game_state.tickets.remove(&self.ticket)
-            && let Some(key_data) = game_state.keys.get_mut(&key)
+            && let Some(key_handle) = game_state.key_handles.get_mut(&key)
         {
-            key_data.tickets.remove(&self.ticket);
+            key_handle.tickets.remove(&self.ticket);
         }
     }
 }
@@ -194,7 +197,7 @@ pub async fn establish_ws_connection(
         return Err(ServerError::InvalidTicket);
     }
 
-    let Some(KeyData { cancel, .. }) = game_state.keys.get(&key) else {
+    let Some(KeyHandle { cancel, .. }) = game_state.key_handles.get(&key) else {
         // the server is broken if this happens
         // a key removal should remove all tickets associated with that key as well
         unreachable!();
@@ -359,9 +362,18 @@ pub async fn create_game(
         return Err(ServerError::InvalidKey);
     }
 
-    let admin_key = Key::generate();
+    let seed = crate::generate_seed();
     let (inbox, events) = mpsc::unbounded_channel();
     let cancel = CancellationToken::new();
+
+    // the initial accepted stream is just engine init; the admin key is minted by the runtime
+    // (deterministic) via a bootstrap control once the game task is running.
+    use lawliet_types::action::{Action, ActionActor, ActionRequest, InitializeEngine};
+    let initial_accepted = vec![ServerInput::Action(ActionRequest {
+        actor: ActionActor::System,
+        timestamp: 0,
+        payload: Action::InitializeEngine(InitializeEngine { seed }),
+    })];
 
     let game_id = {
         let mut server_state = lock_state(&state);
@@ -376,31 +388,8 @@ pub async fn create_game(
                 inbox,
                 tickets: HashMap::new(),
                 connections: HashMap::new(),
-                profiles: HashMap::new(),
-                actor_created: HashMap::new(),
-                // the host key is minted at game creation, i.e. game time 0, so a rewind (which can
-                // only ever go to a time >= 0) must keep it -- see discard_after, which prunes keys
-                // by mint time. forgetting this entry looks like "never minted" and strands the
-                // host (and every later key under Supervise) on any backward jump.
-                key_created: HashMap::from([(admin_key.clone(), 0)]),
-                profile_created: HashMap::new(),
-                data_viewport: None,
-                keys: HashMap::from([(
-                    admin_key.clone(),
-                    // child of the game token, so tearing the game down takes this key's
-                    // connections with it.
-                    KeyData {
-                        cancel: cancel.child_token(),
-                        tickets: HashSet::new(),
-                        // the maximal set, and the only place Supervise originates -- the host holds
-                        // authority over any admin key it later hands out. `All` rather than an
-                        // enumerated set so players created later need no re-grant.
-                        privileges: Privileges {
-                            actors: ActorScope::All,
-                            capabilities: Capability::Administer | Capability::Supervise,
-                        },
-                    },
-                )]),
+                keys: HashMap::new(),
+                key_handles: HashMap::new(),
             },
         );
 
@@ -409,9 +398,42 @@ pub async fn create_game(
 
     // registered before the task is spawned, so a get_ticket that races the spawn still finds the
     // game -- its events just queue on the unbounded inbox until the task starts draining.
-    tokio::spawn(game(state, game_id, events, cancel));
+    tokio::spawn(game(state.clone(), game_id, events, cancel, initial_accepted));
+
+    // mint the admin key: send a CreateKey through the game task and await the KeyCreated reply.
+    // the runtime generates the key from its sim RNG (deterministic); no key on the wire.
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    let control = SimControl {
+        time: 0,
+        data: SimControlData::CreateKey {
+            actors: ActorScope::All,
+            capabilities: vec![Capability::Administer, Capability::Supervise],
+        },
+    };
+    let _ = state_clone_send(&state, game_id, GameInput::GameCommand(GameCommand::BootstrapControl {
+        control,
+        reply: reply_tx,
+    }));
+
+    let admin_key = match reply_rx.await {
+        Ok(ControlOutcome::Ok(ControlResponse::KeyCreated { key })) => key,
+        _ => return Err(ServerError::InvalidKey),
+    };
 
     Ok(Json(GameCreationPacket { game_id, admin_key }))
+}
+
+// helper to send a GameInput to a game's inbox by looking it up in shared state.
+fn state_clone_send(
+    state: &WrappedServerState,
+    game_id: GameId,
+    input: GameInput,
+) -> Result<(), ()> {
+    let server_state = lock_state(state);
+    let Some(game) = server_state.games.get(&game_id) else {
+        return Err(());
+    };
+    game.inbox.send(input).map_err(|_| ())
 }
 
 #[derive(Deserialize)]

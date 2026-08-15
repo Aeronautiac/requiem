@@ -5,4 +5,6 @@ members = [
   "lawliet/lawliet-runtime",
   "lawliet/lawliet-core",
   "yagami",
+  "yagami/yagami-wire",
+  "yagami/yagami-runtime",
 ]

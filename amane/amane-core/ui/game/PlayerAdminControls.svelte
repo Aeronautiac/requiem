@@ -78,7 +78,10 @@
       return;
     }
     const reply = await session.submit_control({
-      SetProfile: { actor: target, profile: { display_name: name } },
+      Sim: {
+        time: 0,
+        data: { SetProfile: { actor: target, profile: { display_name: name } } },
+      },
     });
     if (!reply.ok) flash.set_error(execErrorText(reply.error));
     else flash.set_success("Profile updated.");

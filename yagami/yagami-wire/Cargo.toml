@@ -1,0 +1,10 @@
+[package]
+name = "yagami-wire"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lawliet-types = { path = "../../lawliet/lawliet-types" }
+serde = { version = "1", features = ["derive"] }
+enumflags2 = { version = "0.7.12", features = ["serde"] }
+getrandom = "0.4.3"

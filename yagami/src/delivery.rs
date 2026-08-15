@@ -2,28 +2,29 @@ use std::collections::{HashMap, HashSet};
 
 use lawliet_types::{
     action::ActionRequest,
-    command::{Command, CommandPayload, CommandRecipient, TapInOutcome},
+    command::{Command, TapInOutcome},
     common::{ActorKey, LogID, Time, ViewportKey},
 };
 
 use crate::{
-    auth::{Capability, Key, KeyData, Privileges, Ticket},
+    auth::{Capability, Privileges, Ticket},
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
     wire::{
-        ActionOutcome, Batch, BatchKind, LogCommand, LogType, OutputData, Profile, ResponsePair,
-        ServerCmd, ServerOutput, ViewGate,
+        ActionOutcome, Batch, BatchKind, LogCommand, LogType, Output, OutputData, Recipient,
+        ResponsePair, ServerCmd,
     },
 };
 
-// An action request and its output. Sent to admin so they can see a timeline.
+// An action request and its output. Sent to admin so they can see a timeline. yagami-level (the
+// runtime never sees denied/crashed inputs, and the "what was asked" framing is yagami's).
 pub fn log_action_output(
     action: &ActionRequest,
     outcome: ActionOutcome,
     time: Time,
-) -> ServerOutput {
-    ServerOutput {
+) -> Output {
+    Output {
         time,
-        view_gates: vec![ViewGate::Admin],
+        recipients: vec![Recipient::Admin],
         data: OutputData::Server(ServerCmd::LogAction {
             action: action.clone(),
             outcome,
@@ -31,30 +32,12 @@ pub fn log_action_output(
     }
 }
 
-// convert an engine payload to its stored server output
-pub fn engine_to_server_cmd(cmd: &CommandPayload) -> ServerOutput {
-    let view_gates = match &cmd.recipient {
-        CommandRecipient::System => vec![ViewGate::Admin],
-        CommandRecipient::Viewport(viewport) => {
-            vec![ViewGate::Viewport(*viewport), ViewGate::Admin]
-        }
-        CommandRecipient::Actor(id) => vec![ViewGate::Player(*id)],
-        // a record is nobody: kept for later queries, delivered to no client.
-        CommandRecipient::Log(_) => Vec::new(),
-    };
-
-    ServerOutput {
-        time: cmd.timestamp,
-        view_gates,
-        data: OutputData::Engine(cmd.cmd.clone()),
-    }
-}
-
-// The connection's own privilege set, sent DIRECTLY to it as the first output of every sync
-fn privilege_output(privileges: &Privileges, time: Time) -> ServerOutput {
-    ServerOutput {
+// The connection's own privilege set, sent DIRECTLY to it as the first output of every sync. empty
+// recipients = "this connection's own concern", not "delivers to nobody".
+fn privilege_output(privileges: &Privileges, time: Time) -> Output {
+    Output {
         time,
-        view_gates: vec![],
+        recipients: vec![],
         data: OutputData::Server(ServerCmd::Privileges(crate::wire::privileges_to_wire(
             privileges,
         ))),
@@ -62,49 +45,12 @@ fn privilege_output(privileges: &Privileges, time: Time) -> ServerOutput {
 }
 
 // the game's clock anchor, riding the world-data viewport like every other piece of server-computed
-// world state (the ProfileRoster). It is game wide.
-pub fn game_clock_output(data_viewport: ViewportKey, time: Time, sent_at: u128) -> ServerOutput {
-    ServerOutput {
+// world state. It is game wide. yagami-level (the runtime has no notion of wall-clock anchoring).
+pub fn game_clock_output(data_viewport: ViewportKey, time: Time, sent_at: u128) -> Output {
+    Output {
         time,
-        view_gates: vec![ViewGate::Viewport(data_viewport), ViewGate::Admin],
+        recipients: vec![Recipient::Viewport(data_viewport), Recipient::Admin],
         data: OutputData::Server(ServerCmd::GameClock { sent_at }),
-    }
-}
-
-// The whole key set
-pub fn key_roster_output(keys: &HashMap<Key, KeyData>, time: Time) -> ServerOutput {
-    let keys: Vec<(Key, crate::wire::PrivilegeSet)> = keys
-        .iter()
-        .map(|(key, data)| {
-            (
-                key.clone(),
-                crate::wire::privileges_to_wire(&data.privileges),
-            )
-        })
-        .collect();
-    ServerOutput {
-        view_gates: vec![ViewGate::Admin],
-        data: OutputData::Server(ServerCmd::KeyRoster { keys }),
-        time,
-    }
-}
-
-// What the SERVER knows about who occupies the slots, aimed at the DATA viewport -- the same one
-// actor existence (MapActor) rides. The gate pair matches the engine's own for viewport-addressed
-// commands (Viewport + Admin), and the shared viewport is the whole correctness argument: anyone
-// who can read this roster has already been walked the actor mappings it names, by design, so a
-// client never learns a name for a slot it does not hold. Delivered whole on every change.
-pub fn profile_roster_output(
-    data_viewport: ViewportKey,
-    profiles: &HashMap<ActorKey, Profile>,
-    time: Time,
-) -> ServerOutput {
-    let profiles: Vec<(ActorKey, Profile)> =
-        profiles.iter().map(|(k, v)| (*k, v.clone())).collect();
-    ServerOutput {
-        view_gates: vec![ViewGate::Viewport(data_viewport), ViewGate::Admin],
-        data: OutputData::Server(ServerCmd::ProfileRoster { profiles }),
-        time,
     }
 }
 
@@ -133,16 +79,17 @@ pub struct DeliveryData {
 }
 
 impl DeliveryData {
-    // does one gate pass for this connection? reach is the key's privileges plus the viewport
-    // membership held here.
-    fn gate_passes(&self, privileges: &Privileges, gate: &ViewGate) -> bool {
-        match gate {
-            ViewGate::Admin => privileges.capabilities.contains(Capability::Administer),
-            ViewGate::Viewport(viewport) => self
+    // does one recipient pass for this connection? reach is the key's privileges plus the viewport
+    // membership held here. `Log` never passes -- it is an index key, not an audience.
+    fn recipient_passes(&self, privileges: &Privileges, recipient: &Recipient) -> bool {
+        match recipient {
+            Recipient::Admin => privileges.capabilities.contains(Capability::Administer),
+            Recipient::Viewport(viewport) => self
                 .viewports
                 .get(viewport)
                 .is_some_and(ViewportData::player_may_view),
-            ViewGate::Player(actor) => privileges.actors.contains(actor),
+            Recipient::Player(actor) => privileges.actors.contains(actor),
+            Recipient::Log(_) => false,
         }
     }
 }
@@ -154,11 +101,11 @@ impl DeliveryData {
 // - as you go, keep constructing the batch
 // - attempt to send the batch to the connection. if full, cut the connection.
 
-// a log of server outputs/individual packets, viewport indices, and log indices
+// a log of Outputs, viewport indices, and log indices
 pub struct History {
     // the game this history belongs to
     pub game_id: GameId,
-    pub cmds: Vec<ServerOutput>,
+    pub cmds: Vec<Output>,
     // indices into cmds
     pub viewports: HashMap<ViewportKey, Vec<usize>>,
     pub logs: HashMap<LogID, Vec<usize>>,
@@ -174,58 +121,25 @@ impl History {
         }
     }
 
-    // cut off the tail of history up to a certain point in time (not inclusive).
-    // filter any removed index out of viewports and logs.
-    pub fn cut_to_time(&mut self, time: Time) {
-        let mut to_remove_vp = vec![];
-        for (key, entries) in self.viewports.iter_mut() {
-            entries.retain(|i| {
-                let out = &self.cmds[*i];
-                out.time <= time
-            });
-            if entries.is_empty() {
-                to_remove_vp.push(*key);
-            }
-        }
-        for key in to_remove_vp {
-            self.viewports.remove(&key);
-        }
-
-        let mut to_remove_logs = vec![];
-        for (id, entries) in self.logs.iter_mut() {
-            entries.retain(|i| {
-                let out = &self.cmds[*i];
-                out.time <= time
-            });
-            if entries.is_empty() {
-                to_remove_logs.push(*id);
-            }
-        }
-        for key in to_remove_logs {
-            self.logs.remove(&key);
-        }
-
-        self.cmds.retain(|output| output.time <= time);
-    }
-
-    // append to history and return the next start position (inclusive). records the viewport/log
-    // each output belongs to (from its engine recipient) so a later entry, or a log dump, can pull
-    // exactly what it is owed without scanning the whole log.
-    pub fn append_engine(&mut self, cmds: Vec<CommandPayload>) -> usize {
+    // append Outputs to history and return the next start position (inclusive). indexes each by
+    // the viewport/log recipients it carries, so a later late-arrival backfill or a dump query can
+    // pull exactly what it is owed without scanning the whole log. engine commands, sim rosters,
+    // and yagami's own server outputs all flow through here -- one type, one index.
+    pub fn append(&mut self, outputs: Vec<Output>) -> usize {
         let start = self.cmds.len();
-        for (offset, payload) in cmds.iter().enumerate() {
-            match &payload.recipient {
-                CommandRecipient::Viewport(viewport) => self
-                    .viewports
-                    .entry(*viewport)
-                    .or_default()
-                    .push(start + offset),
-                CommandRecipient::Log(log) => {
-                    self.logs.entry(*log).or_default().push(start + offset)
+        for (offset, output) in outputs.iter().enumerate() {
+            for recipient in &output.recipients {
+                match recipient {
+                    Recipient::Viewport(viewport) => {
+                        self.viewports.entry(*viewport).or_default().push(start + offset)
+                    }
+                    Recipient::Log(log) => {
+                        self.logs.entry(*log).or_default().push(start + offset)
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
-            self.cmds.push(engine_to_server_cmd(payload));
+            self.cmds.push(output.clone());
         }
         start
     }
@@ -233,15 +147,6 @@ impl History {
     // the current log length: where a deliver that added nothing must begin and end.
     pub fn head(&self) -> usize {
         self.cmds.len()
-    }
-
-    // append server outputs that did not come from the engine -- snapshots like rosters -- to the
-    // log. they already carry their gates and need no viewport/log indexing (there is nothing to
-    // backfill or dump): a later replay reconstructs the exact state each change was made in.
-    pub fn append_server(&mut self, outputs: Vec<ServerOutput>) -> usize {
-        let at = self.cmds.len();
-        self.cmds.extend(outputs);
-        at
     }
 
     // the `data` for one filtered log, as of `pos` -- everything logged to it up to and including that
@@ -267,28 +172,28 @@ impl History {
 
     // a stored output, shaped for THIS connection at THIS point: a log dump is filled with
     // everything its log held up to here. the raw reveal command is never handed to a client.
-    fn transform(&self, output: &ServerOutput, pos: usize) -> ServerOutput {
+    fn transform(&self, output: &Output, pos: usize) -> Output {
         let t = output.time;
         match &output.data {
             OutputData::Engine(Command::RevealAutopsyMessages {
                 log,
                 range,
                 // TODO:
-                // ai integration
-                redact_names,
+                // ai integration (redact_names intentionally ignored)
+                ..
             }) => {
                 let lowest = t.saturating_sub(*range);
                 let actor = output
-                    .view_gates
+                    .recipients
                     .iter()
-                    .find_map(|g| match g {
-                        ViewGate::Player(actor) => Some(*actor),
+                    .find_map(|r| match r {
+                        Recipient::Player(actor) => Some(*actor),
                         _ => None,
                     })
                     .expect("autopsy is always addressed to a player");
-                ServerOutput {
+                Output {
                     time: output.time,
-                    view_gates: output.view_gates.clone(),
+                    recipients: output.recipients.clone(),
                     data: OutputData::Server(ServerCmd::LogDump {
                         log_type: LogType::Autopsy(actor),
                         data: self.log_commands(*log, pos, |cmd| cmd.time >= lowest),
@@ -304,9 +209,9 @@ impl History {
                 } else {
                     0
                 };
-                ServerOutput {
+                Output {
                     time: output.time,
-                    view_gates: output.view_gates.clone(),
+                    recipients: output.recipients.clone(),
                     data: OutputData::Server(ServerCmd::LogDump {
                         log_type: LogType::TapIn(*contact_id),
                         data: self.log_commands(*log, pos, |cmd| cmd.time >= lowest),
@@ -319,29 +224,29 @@ impl History {
     }
 
     // walk history from `start`, building the batch of everything this connection is entitled to
-    // (any gate passing), advancing its delivery data as it goes. access changes (enter/exit) are
-    // seen by exactly the connection they concern and are applied here, splicing a late entry's
+    // (any recipient passing), advancing its delivery data as it goes. access changes (enter/exit)
+    // are seen by exactly the connection they concern and are applied here, splicing a late entry's
     // backfilled history in at the right place.
     fn build_batch(
         &self,
         data: &mut DeliveryData,
         privileges: &Privileges,
         start: usize,
-    ) -> Vec<ServerOutput> {
+    ) -> Vec<Output> {
         let mut out = Vec::new();
 
         for pos in start..self.cmds.len() {
             let output = &self.cmds[pos];
 
             if output
-                .view_gates
+                .recipients
                 .iter()
-                .any(|gate| data.gate_passes(privileges, gate))
+                .any(|r| data.recipient_passes(privileges, r))
             {
-                // reading a viewport (by either gate) advances its watermark, so a later entry of
-                // this connection's own actor redelivers nothing.
-                for gate in &output.view_gates {
-                    if let ViewGate::Viewport(viewport) = gate {
+                // reading a viewport advances its watermark, so a later entry of this connection's
+                // own actor redelivers nothing.
+                for r in &output.recipients {
+                    if let Recipient::Viewport(viewport) = r {
                         let entry = data.viewports.entry(*viewport).or_default();
                         entry.delivered_to = entry.delivered_to.max(pos + 1);
                     }
@@ -421,7 +326,7 @@ impl History {
         let Some(key) = tickets.get(&ticket) else {
             return;
         };
-        let Some(privileges) = keys.get(key).map(|kd| &kd.privileges) else {
+        let Some(privileges) = keys.get(key) else {
             return;
         };
         let Some(conn) = connections.get_mut(&ticket) else {
@@ -511,7 +416,7 @@ impl History {
             let Some(key) = tickets.get(ticket) else {
                 continue;
             };
-            let Some(privileges) = keys.get(key).map(|kd| &kd.privileges) else {
+            let Some(privileges) = keys.get(key) else {
                 continue;
             };
 
@@ -555,7 +460,9 @@ mod tests {
     use slotmap::KeyData;
 
     use super::*;
-    use crate::auth::ActorScope as Scope;
+    use crate::auth::{ActorScope as Scope, Key};
+    use crate::wire::SimOutput;
+    use yagami_wire::{PrivilegeSet, Profile};
 
     fn actor(n: u64) -> ActorKey {
         KeyData::from_ffi(n | (1 << 32)).into()
@@ -580,35 +487,55 @@ mod tests {
         }
     }
 
-    fn payload(recipient: CommandRecipient, cmd: Command) -> CommandPayload {
-        CommandPayload {
-            timestamp: 0,
-            recipient,
-            cmd,
+    // ===== Output builders. history holds Outputs; these mirror what the runtime emits. ===== //
+
+    fn engine(recipients: Vec<Recipient>, cmd: Command) -> Output {
+        Output {
+            time: 0,
+            recipients,
+            data: OutputData::Engine(cmd),
         }
     }
 
-    fn payload_at(time: Time, recipient: CommandRecipient, cmd: Command) -> CommandPayload {
-        CommandPayload {
-            timestamp: time,
-            recipient,
-            cmd,
+    fn engine_at(time: Time, recipients: Vec<Recipient>, cmd: Command) -> Output {
+        Output {
+            time,
+            recipients,
+            data: OutputData::Engine(cmd),
         }
+    }
+
+    // system recipient -> admin-only.
+    fn admin(cmd: Command) -> Output {
+        engine(vec![Recipient::Admin], cmd)
+    }
+
+    // actor recipient -> addressed to that player.
+    fn player(who: ActorKey, cmd: Command) -> Output {
+        engine(vec![Recipient::Player(who)], cmd)
+    }
+    fn player_at(time: Time, who: ActorKey, cmd: Command) -> Output {
+        engine_at(time, vec![Recipient::Player(who)], cmd)
     }
 
     // viewport-addressed filler, tagged so assertions can identify which one came back.
-    fn content(vp: ViewportKey, tag: &str) -> CommandPayload {
-        payload(
-            CommandRecipient::Viewport(vp),
+    fn content(vp: ViewportKey, tag: &str) -> Output {
+        engine(
+            vec![Recipient::Viewport(vp), Recipient::Admin],
             Command::AnonymousAnnouncement {
                 content: tag.into(),
             },
         )
     }
 
-    fn enter(vp: ViewportKey, who: ActorKey) -> CommandPayload {
-        payload(
-            CommandRecipient::Actor(who),
+    // a log-recipient record: kept for later dump queries, delivered to nobody live.
+    fn record_at(time: Time, log: LogID, cmd: Command) -> Output {
+        engine_at(time, vec![Recipient::Log(log)], cmd)
+    }
+
+    fn enter(vp: ViewportKey, who: ActorKey) -> Output {
+        engine(
+            vec![Recipient::Player(who)],
             Command::EnterViewport {
                 viewport: vp,
                 actor: who,
@@ -616,9 +543,9 @@ mod tests {
         )
     }
 
-    fn exit(vp: ViewportKey, who: ActorKey) -> CommandPayload {
-        payload(
-            CommandRecipient::Actor(who),
+    fn exit(vp: ViewportKey, who: ActorKey) -> Output {
+        engine(
+            vec![Recipient::Player(who)],
             Command::ExitViewport {
                 viewport: vp,
                 actor: who,
@@ -626,13 +553,13 @@ mod tests {
         )
     }
 
-    fn history(log: &[CommandPayload]) -> History {
+    fn history(log: &[Output]) -> History {
         let mut history = History::new(0);
-        history.append_engine(log.to_vec());
+        history.append(log.to_vec());
         history
     }
 
-    fn tags(outputs: &[ServerOutput]) -> Vec<String> {
+    fn tags(outputs: &[Output]) -> Vec<String> {
         outputs
             .iter()
             .filter_map(|out| match &out.data {
@@ -645,7 +572,7 @@ mod tests {
     }
 
     // the tags of everything inside every LogDump, in delivery order, flattened per dump.
-    fn dump_contents(outputs: &[ServerOutput]) -> Vec<Vec<String>> {
+    fn dump_contents(outputs: &[Output]) -> Vec<Vec<String>> {
         outputs
             .iter()
             .filter_map(|out| match &out.data {
@@ -662,7 +589,7 @@ mod tests {
             .collect()
     }
 
-    fn replay(privileges: &Privileges, log: &[CommandPayload]) -> Vec<String> {
+    fn replay(privileges: &Privileges, log: &[Output]) -> Vec<String> {
         let history = history(log);
         let outputs = history.build_batch(&mut DeliveryData::default(), privileges, 0);
         tags(&outputs)
@@ -670,12 +597,9 @@ mod tests {
 
     #[test]
     fn system_is_admin_only() {
-        let log = vec![payload(
-            CommandRecipient::System,
-            Command::AnonymousAnnouncement {
-                content: "mirror".into(),
-            },
-        )];
+        let log = vec![admin(Command::AnonymousAnnouncement {
+            content: "mirror".into(),
+        })];
         assert_eq!(replay(&privileges(&[], true), &log), ["mirror"]);
         assert!(replay(&privileges(&[], false), &log).is_empty());
     }
@@ -683,8 +607,8 @@ mod tests {
     #[test]
     fn actor_commands_follow_scope() {
         let (a, b) = (actor(1), actor(2));
-        let log = vec![payload(
-            CommandRecipient::Actor(a),
+        let log = vec![player(
+            a,
             Command::AnonymousAnnouncement {
                 content: "for-a".into(),
             },
@@ -835,7 +759,7 @@ mod tests {
         let mut growing = History::new(0);
         let mut live = Vec::new();
         for payload in &log {
-            let at = growing.append_engine(vec![payload.clone()]);
+            let at = growing.append(vec![payload.clone()]);
             let outputs = growing.build_batch(&mut data, &privs, at);
             live.extend(tags(&outputs));
         }
@@ -872,18 +796,18 @@ mod tests {
         let (performer, stranger) = (actor(1), actor(2));
 
         let record = |log: u16, time: Time, tag: &str| {
-            payload_at(
+            record_at(
                 time,
-                CommandRecipient::Log(log),
+                log,
                 Command::AnonymousAnnouncement {
                     content: tag.into(),
                 },
             )
         };
         let autopsy = |time: Time| {
-            payload_at(
+            player_at(
                 time,
-                CommandRecipient::Actor(performer),
+                performer,
                 Command::RevealAutopsyMessages {
                     log: target_log,
                     range: 50,
@@ -932,18 +856,18 @@ mod tests {
         let guess = actor(1);
 
         let record = |time: Time, tag: &str| {
-            payload_at(
+            record_at(
                 time,
-                CommandRecipient::Log(log_id),
+                log_id,
                 Command::AnonymousAnnouncement {
                     content: tag.into(),
                 },
             )
         };
         let tap_in = |time: Time, range: Option<Time>| {
-            payload_at(
+            player_at(
                 time,
-                CommandRecipient::Actor(guess),
+                guess,
                 Command::TapInResult {
                     contact_id: 5,
                     outcome: TapInOutcome::Found { log: log_id, range },
@@ -980,16 +904,17 @@ mod tests {
         let guess = actor(1);
 
         let record = |tag: &str| {
-            payload(
-                CommandRecipient::Log(log_id),
+            record_at(
+                0,
+                log_id,
                 Command::AnonymousAnnouncement {
                     content: tag.into(),
                 },
             )
         };
         let tap_in = |outcome: TapInOutcome| {
-            payload(
-                CommandRecipient::Actor(guess),
+            player(
+                guess,
                 Command::TapInResult {
                     contact_id: 5,
                     outcome,
@@ -1025,16 +950,17 @@ mod tests {
         let guess = actor(1);
 
         let record = |log: u16, tag: &str| {
-            payload(
-                CommandRecipient::Log(log),
+            record_at(
+                0,
+                log,
                 Command::AnonymousAnnouncement {
                     content: tag.into(),
                 },
             )
         };
         let tap_in = || {
-            payload(
-                CommandRecipient::Actor(guess),
+            player(
+                guess,
                 Command::TapInResult {
                     contact_id: 5,
                     outcome: TapInOutcome::Found {
@@ -1069,16 +995,17 @@ mod tests {
         let (guess, other) = (actor(1), actor(2));
 
         let record = |tag: &str| {
-            payload(
-                CommandRecipient::Log(log_id),
+            record_at(
+                0,
+                log_id,
                 Command::AnonymousAnnouncement {
                     content: tag.into(),
                 },
             )
         };
         let tap_in = |who: ActorKey| {
-            payload(
-                CommandRecipient::Actor(who),
+            player(
+                who,
                 Command::TapInResult {
                     contact_id: 5,
                     outcome: TapInOutcome::Found {
@@ -1111,13 +1038,13 @@ mod tests {
                 .any(|t| t == "a" || t == "b" || t == "c")
         );
 
-        let dumps: Vec<&ServerOutput> = outputs
+        let dumps: Vec<&Output> = outputs
             .iter()
             .filter(|out| matches!(&out.data, OutputData::Server(ServerCmd::LogDump { .. })))
             .collect();
         assert_eq!(dumps.len(), 2);
 
-        let dump = |out: &ServerOutput| -> Vec<String> {
+        let dump = |out: &Output| -> Vec<String> {
             match &out.data {
                 OutputData::Server(ServerCmd::LogDump { data, .. }) => data
                     .iter()
@@ -1145,42 +1072,42 @@ mod tests {
     #[test]
     fn key_roster_is_admin_gated_and_carries_every_set() {
         let mut ledger = HashMap::new();
-        let admin = Key::generate();
-        let player = Key::generate();
+        let admin = Key::from_token("admin-token".into());
+        let player = Key::from_token("player-token".into());
         ledger.insert(
             admin.clone(),
-            crate::auth::KeyData {
-                cancel: tokio_util::sync::CancellationToken::new(),
-                tickets: HashSet::new(),
-                privileges: Privileges {
-                    actors: Scope::All,
-                    capabilities: Capability::Administer.into(),
-                },
+            Privileges {
+                actors: Scope::All,
+                capabilities: Capability::Administer.into(),
             },
         );
         ledger.insert(
             player.clone(),
-            crate::auth::KeyData {
-                cancel: tokio_util::sync::CancellationToken::new(),
-                tickets: HashSet::new(),
-                privileges: Privileges {
-                    actors: Scope::Only(HashSet::from([actor(1)])),
-                    capabilities: BitFlags::empty(),
-                },
+            Privileges {
+                actors: Scope::Only(HashSet::from([actor(1)])),
+                capabilities: BitFlags::empty(),
             },
         );
 
-        let out = key_roster_output(&ledger, 0);
-        assert!(out.view_gates.contains(&ViewGate::Admin));
+        let keys: Vec<(Key, PrivilegeSet)> = ledger
+            .iter()
+            .map(|(k, p)| (k.clone(), crate::wire::privileges_to_wire(p)))
+            .collect();
+        let out = Output {
+            time: 0,
+            recipients: vec![Recipient::Admin],
+            data: OutputData::Sim(SimOutput::KeyRoster { keys }),
+        };
+        assert!(out.recipients.contains(&Recipient::Admin));
 
-        // an administrator passes the Admin gate; a plain player is not entrusted with it.
+        // an administrator passes the Admin recipient; a plain player is not entrusted with it.
         let admin_data = DeliveryData::default();
-        assert!(admin_data.gate_passes(&privileges(&[], true), &ViewGate::Admin));
+        assert!(admin_data.recipient_passes(&privileges(&[], true), &Recipient::Admin));
         let player_data = DeliveryData::default();
-        assert!(!player_data.gate_passes(&privileges(&[], false), &ViewGate::Admin));
+        assert!(!player_data.recipient_passes(&privileges(&[], false), &Recipient::Admin));
 
         let keys = match &out.data {
-            OutputData::Server(ServerCmd::KeyRoster { keys }) => keys,
+            OutputData::Sim(SimOutput::KeyRoster { keys }) => keys,
             _ => panic!("expected a key roster"),
         };
         assert_eq!(keys.len(), 2);
@@ -1195,16 +1122,18 @@ mod tests {
     #[test]
     fn profile_roster_rides_the_data_viewport_and_follows_its_access() {
         let vp = viewport(1);
-        let mut profiles = HashMap::new();
-        profiles.insert(
+        let profiles = vec![(
             actor(1),
             Profile {
                 display_name: Some("Robyn".into()),
             },
-        );
-
-        let out = profile_roster_output(vp, &profiles, 0);
-        assert!(out.view_gates.contains(&ViewGate::Viewport(vp)));
+        )];
+        let out = Output {
+            time: 0,
+            recipients: vec![Recipient::Viewport(vp), Recipient::Admin],
+            data: OutputData::Sim(SimOutput::ProfileRoster { profiles }),
+        };
+        assert!(out.recipients.contains(&Recipient::Viewport(vp)));
 
         // someone who has been walked the actor mappings (holds the data viewport) sees the roster;
         let mut seen = DeliveryData::default();
@@ -1216,26 +1145,25 @@ mod tests {
             },
         );
         assert!(
-            out.view_gates
+            out.recipients
                 .iter()
-                .any(|g| seen.gate_passes(&privileges(&[actor(1)], false), g))
+                .any(|r| seen.recipient_passes(&privileges(&[actor(1)], false), r))
         );
 
-        // someone outside the viewport sees nothing -- an admin still sees everything (System reads
-        // every viewport, matching the engine's own gate pair), but a plain player who has not been
-        // walked the mappings is not handed names for slots it does not hold.
+        // someone outside the viewport sees nothing -- an admin still sees everything, but a plain
+        // player who has not been walked the mappings is not handed names for slots it does not hold.
         let stranger = DeliveryData::default();
         assert!(
-            !out.view_gates
+            !out.recipients
                 .iter()
-                .any(|g| stranger.gate_passes(&privileges(&[actor(2)], false), g))
+                .any(|r| stranger.recipient_passes(&privileges(&[actor(2)], false), r))
         );
 
-        let keys = match &out.data {
-            OutputData::Server(ServerCmd::ProfileRoster { profiles }) => profiles,
+        let profiles = match &out.data {
+            OutputData::Sim(SimOutput::ProfileRoster { profiles }) => profiles,
             _ => panic!("expected a profile roster"),
         };
-        assert_eq!(keys.len(), 1);
-        assert_eq!(keys[0].1.display_name.as_deref(), Some("Robyn"));
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].1.display_name.as_deref(), Some("Robyn"));
     }
 }

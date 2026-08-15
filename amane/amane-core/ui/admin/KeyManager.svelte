@@ -118,7 +118,7 @@
 
     busy = true;
     const reply = await session.submit_control({
-      CreateKey: { actors: scope(), capabilities: CAPABILITIES[grant] },
+      Sim: { time: 0, data: { CreateKey: { actors: scope(), capabilities: CAPABILITIES[grant] } } },
     });
     busy = false;
 
@@ -191,7 +191,7 @@
     if (!key) return;
     saving = true;
     const set_caps = await session.submit_control({
-      SetCapabilities: { key, capabilities: CAPABILITIES[edit_grant] },
+      Sim: { time: 0, data: { SetCapabilities: { key, capabilities: CAPABILITIES[edit_grant] } } },
     });
     if (!set_caps.ok) {
       flash.set_error(execErrorText(set_caps.error));
@@ -199,7 +199,7 @@
       return;
     }
     const set_scope = await session.submit_control({
-      SetActorScope: { key, actors: edit_scope() },
+      Sim: { time: 0, data: { SetActorScope: { key, actors: edit_scope() } } },
     });
     saving = false;
     if (!set_scope.ok) {
@@ -212,7 +212,9 @@
 
   async function revoke(key: string) {
     if (!confirm("Revoke this key? Its holder is disconnected immediately.")) return;
-    const reply = await session.submit_control({ RevokeKey: { key } });
+    const reply = await session.submit_control({
+      Sim: { time: 0, data: { RevokeKey: { key } } },
+    });
     if (!reply.ok) flash.set_error(execErrorText(reply.error));
     else {
       flash.set_success("Key revoked.");

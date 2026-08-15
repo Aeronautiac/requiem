@@ -1061,6 +1061,30 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tower-http",
+ "yagami-runtime",
+ "yagami-wire",
+]
+
+[[package]]
+name = "yagami-runtime"
+version = "0.1.0"
+dependencies = [
+ "lawliet",
+ "lawliet-types",
+ "rand_pcg",
+ "serde",
+ "serde_json",
+ "yagami-wire",
+]
+
+[[package]]
+name = "yagami-wire"
+version = "0.1.0"
+dependencies = [
+ "enumflags2",
+ "getrandom 0.4.3",
+ "lawliet-types",
+ "serde",
 ]
 
 [[package]]

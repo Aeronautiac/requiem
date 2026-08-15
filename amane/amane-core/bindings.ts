@@ -1268,14 +1268,21 @@ export type Capability = "Administer" | "Supervise";
 export type ActorScope = "All" | { Only: ActorKey[] };
 
 // Admin controls, as yagami's game task presents them: they act ON the game, not in the fiction,
-// and every one requires Administer. GoToTime is the game task's own time-travel mechanic.
-export type AdminControl =
+// and every one requires Administer. They split into SIM controls (mutating the keys/profiles
+// ledger, part of the accepted stream) and META controls (time travel, handled by the game task
+// itself). A sim control carries its game `time`; the server overrides it, so the client sends 0.
+export type AdminControl = { Sim: SimControl } | { Meta: MetaControl };
+
+export type SimControl = { time: number; data: SimControlData };
+
+export type SimControlData =
   | { CreateKey: { actors: ActorScope; capabilities: Capability[] } }
   | { RevokeKey: { key: string } }
   | { SetCapabilities: { key: string; capabilities: Capability[] } }
   | { SetActorScope: { key: string; actors: ActorScope } }
-  | { SetProfile: { actor: ActorKey; profile: Profile } }
-  | { GoToTime: { time: number } };
+  | { SetProfile: { actor: ActorKey; profile: Profile } };
+
+export type MetaControl = { GoToTime: { time: number } };
 
 export type ControlResponse =
   | { KeyCreated: { key: string } }
@@ -1313,53 +1320,67 @@ export type ResponsePair = {
 
 // ---- the server -> client wire (yagami) ----
 
-// A single server output, delivered to a connection. `view_gates` is how the server says WHO may
-// see it — the engine's recipient has already been resolved into one or more gates, the server
-// filtered them against this connection's privileges, and the client uses them to route the
-// command into the right per-actor view(s). Connection-level context (this connection's own
-// privileges) arrives with an EMPTY gate list — its own concern, addressed to the connection, read
-// directly rather than routed to any view.
-export type ViewGate = "Admin" | { Viewport: ViewportKey } | { Player: ActorKey };
+// A single server output, delivered to a connection. `recipients` is how the server says WHO may
+// see it — the engine's recipient has already been resolved into one or more recipients, the server
+// filtered them against this connection's privileges, and the client uses them to route the command
+// into the right per-actor view(s). Connection-level context (this connection's own privileges)
+// arrives with an EMPTY recipient list — its own concern, addressed to the connection, read directly
+// rather than routed to any view. `Log` is an index key, never delivered to a client live.
+export type Recipient =
+  | "Admin"
+  | { Viewport: ViewportKey }
+  | { Player: ActorKey }
+  | { Log: number };
 
-// An engine command is routed like any other command. A server command is server-computed state
-// that could not live on the engine — a filtered log dump, a profile roster, a key roster.
+// An engine command is routed like any other command. A sim output is server-computed sim state
+// (a profile roster, a key roster); a server command is a yagami-level concern (a filtered log dump,
+// the admin timeline, per-connection sync, the clock anchor).
 export type LogCommand = { time: number; data: Command };
 
 export type LogType = { Autopsy: ActorKey } | { TapIn: number };
 
+// a sim-level projection of server state, emitted by the runtime when sim state changes.
+export type SimOutput =
+  | { ProfileRoster: { profiles: [ActorKey, Profile][] } }
+  | { KeyRoster: { keys: [string, PrivilegeSet][] } };
+
+// yagami-level concerns the runtime never produces.
 export type ServerCmd =
   | { LogDump: { data: LogCommand[]; log_type: LogType } }
-  | { ProfileRoster: { profiles: [ActorKey, Profile][] } }
-  | { KeyRoster: { keys: [string, PrivilegeSet][] } }
-  // The host's record of one action REQUEST a connection submitted and its outcome, gated Admin so
-  // it lands in the System view only. Appended after the request's own engine commands (or in place
-  // of them for a denied or crashed request), so the host's timeline reconstructs exactly what was
-  // asked and how it went.
+  // The host's record of one action REQUEST a connection submitted and its outcome, addressed Admin
+  // so it lands in the System view only. Appended after the request's own engine commands (or in
+  // place of them for a denied or crashed request), so the host's timeline reconstructs exactly
+  // what was asked and how it went.
   | { LogAction: { action: ActionRequest; outcome: ActionOutcome } }
   // This connection's own privileges. Sent directly to it as the first output of every sync (fresh
-  // attach or a resync after a privilege change), addressed to the connection with an empty gate
-  // list, and read connection-wide by the session.
+  // attach or a resync after a privilege change), addressed to the connection with an empty
+  // recipient list, and read connection-wide by the session.
   | { Privileges: PrivilegeSet }
   // The game's clock anchor, riding the world-data viewport like the ProfileRoster. Anchors the
   // game's virtual time (`sent_at` real wall time at delivery) so a client can derive current game
-  // time. `time` on the enclosing ServerOutput is the game time it anchors.
+  // time. `time` on the enclosing Output is the game time it anchors.
   | { GameClock: { sent_at: number } };
 
-export type OutputData = { Engine: Command } | { Server: ServerCmd };
+export type OutputData =
+  | { Engine: Command }
+  | { Sim: SimOutput }
+  | { Server: ServerCmd };
 
-// Server commands are written as single-key variants just like engine commands, so every output
-// normalizes to ONE uniform command type and flows through a single dispatch path — the client
-// does not distinguish engine from server; it obeys whatever it received.
-export type WireCommand = Command | ServerCmd;
+// Server commands and sim outputs are written as single-key variants just like engine commands, so
+// every output normalizes to ONE uniform command type and flows through a single dispatch path —
+// the client does not distinguish engine from sim from server; it obeys whatever it received.
+export type WireCommand = Command | SimOutput | ServerCmd;
 
 // The command an output carries, whatever its origin.
-export function outputCommand(out: ServerOutput): WireCommand {
-  return "Engine" in out.data ? out.data.Engine : out.data.Server;
+export function outputCommand(out: Output): WireCommand {
+  if ("Engine" in out.data) return out.data.Engine;
+  if ("Sim" in out.data) return out.data.Sim;
+  return out.data.Server;
 }
 
-export type ServerOutput = {
+export type Output = {
   time: number;
-  view_gates: ViewGate[];
+  recipients: Recipient[];
   data: OutputData;
 };
 
@@ -1370,7 +1391,7 @@ export type BatchKind = "Initialize" | { Live: ResponsePair | null };
 
 export type Batch = {
   kind: BatchKind;
-  outputs: ServerOutput[];
+  outputs: Output[];
 };
 
 export type Profile = {
@@ -1378,7 +1399,7 @@ export type Profile = {
 };
 
 // What this connection's own key permits. UX only — the server checks every action and control
-// against the ledger regardless. Delivered inside a Server(KeyRoster); the client picks its own
+// against the ledger regardless. Delivered inside a Sim(KeyRoster); the client picks its own
 // entry by matching the key it joined with.
 export type PrivilegeSet = {
   actors: ActorScope;

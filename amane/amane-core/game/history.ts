@@ -1,4 +1,4 @@
-import type { ServerOutput } from "../bindings";
+import type { Output } from "../bindings";
 import { gateViewports } from "./helpers.svelte";
 
 // Every command this client has received, in order, plus an index over the viewport-addressed
@@ -8,17 +8,17 @@ import { gateViewports } from "./helpers.svelte";
 // The one thing shared by every view. Not reactive: nothing renders from the log, only from the
 // state applying it produces.
 export class History {
-  #log: ServerOutput[] = [];
+  #log: Output[] = [];
   // viewport key -> its positions in #log, ascending. Positions, not payloads: there is exactly
   // one copy of every command.
   #index = new Map<string, number[]>();
 
   // Returns the position, which is what watermarks are measured in.
   //
-  // Everything that travels the per-command wire enters the log, engine commands and server
+  // Everything that travels the per-command wire enters the log, engine commands and sim/server
   // commands alike — a log dump is delivered through the same per-view path as a command, so it
   // has to be replayable the same way.
-  append(out: ServerOutput): number {
+  append(out: Output): number {
     const pos = this.#log.length;
     this.#log.push(out);
     for (const viewport of gateViewports(out)) {
@@ -37,7 +37,7 @@ export class History {
   // Note what CANNOT come back from here: EnterViewport and ExitViewport are addressed to the
   // actor they concern, never to a viewport, so replaying a viewport's history can never contain
   // another access change. That is what keeps backfill from recursing.
-  *range(viewport: string, from: number, until: number): Generator<[number, ServerOutput]> {
+  *range(viewport: string, from: number, until: number): Generator<[number, Output]> {
     for (const pos of this.#index.get(viewport) ?? []) {
       if (pos < from) continue;
       if (pos >= until) return;

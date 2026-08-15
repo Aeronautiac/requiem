@@ -16,7 +16,6 @@ mod auth;
 mod delivery;
 mod game;
 mod http;
-mod names;
 mod state;
 mod wire;
 

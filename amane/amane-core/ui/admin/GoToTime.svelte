@@ -58,7 +58,7 @@
     if (target_ms === null) return;
     confirming = false;
     busy = true;
-    const reply = await session.submit_control({ GoToTime: { time: target_ms } });
+    const reply = await session.submit_control({ Meta: { GoToTime: { time: target_ms } } });
     busy = false;
     if (!reply.ok) flash.set_error("Set time was refused.");
     else flash.set_success("Clock moved.");
