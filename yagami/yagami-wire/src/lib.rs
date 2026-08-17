@@ -298,6 +298,7 @@ pub enum LogType {
 pub enum SimOutput {
     ProfileRoster { profiles: Vec<(ActorKey, Profile)> },
     KeyRoster { keys: Vec<(Key, PrivilegeSet)> },
+    LogAction { action: ActionRequest },
 }
 
 // yagami-level concerns the runtime never produces: LogAction (admin timeline), LogDump (the
@@ -305,15 +306,6 @@ pub enum SimOutput {
 // GameClock (time anchor).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ServerCmd {
-    // A server-side record of every action REQUEST a connection submitted and how it came out,
-    // addressed Admin so only the host ever sees it. Appended to history alongside (or, for a denied
-    // or crashed request, in place of) its engine commands, so a host's timeline reconstructs exactly
-    // what was asked and what happened. This is the action REQUEST (who acted, as what, and what
-    // they did) plus its outcome — "what was asked, and how it went".
-    LogAction {
-        action: ActionRequest,
-        outcome: ActionOutcome,
-    },
     LogDump {
         data: Vec<LogCommand>,
         log_type: LogType,

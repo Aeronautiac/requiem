@@ -16,6 +16,7 @@
 *
 * Voting phase:
 *   if defendant is dead → TerminateProsecution
+*   if poll has closed → TerminateProsecution
 */
 
 use crate::{
@@ -26,7 +27,7 @@ use crate::{
     actor::{ActorType, modifier::Modifier, state::State},
     common::{ProsecutionKey, Version},
     engine::Engine,
-    helpers::get_actor,
+    helpers::{get_actor, get_poll},
     prosecution::{ProsecutionPhase, ProsecutionSource},
 };
 
@@ -43,58 +44,59 @@ impl ActionInterface for CullProsecutions {
     ) -> ActionResult {
         actor.admin_or_system()?;
 
-        let to_terminate: Vec<ProsecutionKey> =
-            eng.world
-                .prosecutions
-                .iter()
-                .filter_map(|(key, prosecution)| {
-                    let prosecutor = get_actor(eng, prosecution.prosecution.prosecutor)
-                        .expect("prosecutor must be a valid actor");
-                    let defendant = get_actor(eng, prosecution.defense.defendant)
-                        .expect("defendant must be a valid actor");
+        let to_terminate: Vec<ProsecutionKey> = eng
+            .world
+            .prosecutions
+            .iter()
+            .filter_map(|(key, prosecution)| {
+                let prosecutor = get_actor(eng, prosecution.prosecution.prosecutor)
+                    .expect("prosecutor must be a valid actor");
+                let defendant = get_actor(eng, prosecution.defense.defendant)
+                    .expect("defendant must be a valid actor");
 
-                    let should_terminate = 'check: {
-                        // All phases: source ability destroyed
-                        if let ProsecutionSource::Ability(ab) = prosecution.source {
-                            if eng.world.get_ability(ab).is_none() {
+                let should_terminate = 'check: {
+                    // All phases: source ability destroyed
+                    if let ProsecutionSource::Ability(ab) = prosecution.source
+                        && eng.world.get_ability(ab).is_none()
+                    {
+                        break 'check true;
+                    }
+
+                    match &prosecution.phase {
+                        ProsecutionPhase::Custody { .. } | ProsecutionPhase::Trial { .. } => {
+                            if prosecutor.has_modifier(Modifier::NoPresence)
+                                || defendant.has_modifier(Modifier::NoPresence)
+                            {
                                 break 'check true;
                             }
-                        }
 
-                        match &prosecution.phase {
-                            ProsecutionPhase::Custody { .. } | ProsecutionPhase::Trial { .. } => {
-                                if prosecutor.has_modifier(Modifier::NoPresence)
-                                    || defendant.has_modifier(Modifier::NoPresence)
+                            // Source ability owned by org but prosecutor left that org
+                            if let ProsecutionSource::Ability(ab) = prosecution.source
+                                && let Some(ability) = eng.world.get_ability(ab)
+                                && let Some(owner_id) = ability.ownership_struct.owner
+                            {
+                                let owner = get_actor(eng, owner_id)
+                                    .expect("ability owner must be a valid actor");
+                                if let ActorType::Org(org) = &owner.actor_type
+                                    && !org
+                                        .members
+                                        .contains_key(&prosecution.prosecution.prosecutor)
                                 {
                                     break 'check true;
                                 }
-
-                                // Source ability owned by org but prosecutor left that org
-                                if let ProsecutionSource::Ability(ab) = prosecution.source {
-                                    if let Some(ability) = eng.world.get_ability(ab) {
-                                        if let Some(owner_id) = ability.ownership_struct.owner {
-                                            let owner = get_actor(eng, owner_id)
-                                                .expect("ability owner must be a valid actor");
-                                            if let ActorType::Org(org) = &owner.actor_type {
-                                                if !org.members.contains_key(
-                                                    &prosecution.prosecution.prosecutor,
-                                                ) {
-                                                    break 'check true;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                false
                             }
-                            ProsecutionPhase::Voting { .. } => defendant.has_state(State::Dead),
-                        }
-                    };
 
-                    should_terminate.then_some(key)
-                })
-                .collect();
+                            false
+                        }
+                        ProsecutionPhase::Voting { poll_id, .. } => {
+                            defendant.has_state(State::Dead) || get_poll(eng, *poll_id).is_err()
+                        }
+                    }
+                };
+
+                should_terminate.then_some(key)
+            })
+            .collect();
 
         for prosecution_id in to_terminate {
             // A broken invariant is not a verdict — the trial never finished.

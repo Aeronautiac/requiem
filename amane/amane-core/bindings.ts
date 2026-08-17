@@ -1342,16 +1342,17 @@ export type LogType = { Autopsy: ActorKey } | { TapIn: number };
 // a sim-level projection of server state, emitted by the runtime when sim state changes.
 export type SimOutput =
   | { ProfileRoster: { profiles: [ActorKey, Profile][] } }
-  | { KeyRoster: { keys: [string, PrivilegeSet][] } };
-
-// yagami-level concerns the runtime never produces.
-export type ServerCmd =
-  | { LogDump: { data: LogCommand[]; log_type: LogType } }
+  | { KeyRoster: { keys: [string, PrivilegeSet][] } }
   // The host's record of one action REQUEST a connection submitted and its outcome, addressed Admin
   // so it lands in the System view only. Appended after the request's own engine commands (or in
   // place of them for a denied or crashed request), so the host's timeline reconstructs exactly
   // what was asked and how it went.
-  | { LogAction: { action: ActionRequest; outcome: ActionOutcome } }
+  | { LogAction: { action: ActionRequest; } };
+
+
+// yagami-level concerns the runtime never produces.
+export type ServerCmd =
+  | { LogDump: { data: LogCommand[]; log_type: LogType } }
   // This connection's own privileges. Sent directly to it as the first output of every sync (fresh
   // attach or a resync after a privilege change), addressed to the connection with an empty
   // recipient list, and read connection-wide by the session.

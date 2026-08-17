@@ -218,9 +218,10 @@ pub use common::{
 // yet, but eventually needs to get done
 //
 // BUG:
-// - prosecutions do not end on their own (timeout)
 // - tapping into a fake lounge doesnt punish you yet
-// - timeline viewer breaks on rewind
+// - prosecution history is not immediately shown on the client after time travel. it takes about 3
+// ticks. (need to update prosecutions until no prosections can keep updating on ticks rather than
+// just a single time.)
 
 // TODO:
 // - Need to pass in version numbers alongside inputs so old actions can be replayed without

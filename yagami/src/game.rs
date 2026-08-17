@@ -31,7 +31,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     auth::{Key, KeyHandle, Privileges, Ticket, to_flags},
     constants::{BOOT_MAX_RETRIES, BOOT_RETRY_BASE_MS, ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
-    delivery::{History, game_clock_output, log_action_output},
+    delivery::{History, game_clock_output},
     state::{GameId, WrappedServerState, insert_handle, lock_state},
     store::{GameMeta, Store, wall_now},
     wire::{
@@ -63,9 +63,7 @@ pub struct InputEnvelope {
 // external server inputs. some other part of the server wants the game to do something.
 pub enum GameCommand {
     // synchronize the connection to the game state given its current privileges
-    Sync {
-        ticket: Ticket,
-    },
+    Sync { ticket: Ticket },
 }
 
 // why a fresh game could not be created (so the platform admin is told, not left hanging).
@@ -232,14 +230,28 @@ impl Game {
                 };
                 let mut accepted = vec![ServerInput::Action(init)];
                 accepted.extend(creation_pack);
-                (0, false, accepted, GameClock::new(), HashMap::new(), Some(creation_reply))
+                (
+                    0,
+                    false,
+                    accepted,
+                    GameClock::new(),
+                    HashMap::new(),
+                    Some(creation_reply),
+                )
             }
             GameStart::Resumed {
                 game_id,
                 inputs,
                 keys,
                 start_clock,
-            } => (game_id, true, inputs, GameClock::at(start_clock), keys, None),
+            } => (
+                game_id,
+                true,
+                inputs,
+                GameClock::at(start_clock),
+                keys,
+                None,
+            ),
         };
 
         Self {
@@ -395,10 +407,10 @@ impl Game {
                     Ok(output) => {
                         // the first boot of a fresh game also collects the responses to its
                         // creation pack (e.g. the minted admin key) to hand back to create_game.
-                        if !self.registered {
-                            if let Some(reply) = &output.reply {
-                                self.creation_responses.push(reply.outcome.clone());
-                            }
+                        if !self.registered
+                            && let Some(reply) = &output.reply
+                        {
+                            self.creation_responses.push(reply.outcome.clone());
                         }
                         for out in &output.outputs {
                             if out.time > last_time {
@@ -560,7 +572,7 @@ impl Game {
                 // and never reaches the runtime (and is not part of the accepted stream). the
                 // runtime's own auth is the real gate.
                 if !self.authorize_action(&ticket, &request) {
-                    let at = self.append_log_action(&request, ActionOutcome::Denied);
+                    let at = self.history.head();
                     let pair = ResponsePair {
                         response: ExecOutcome::Action(ActionOutcome::Denied),
                         input: ServerInput::Action(request),
@@ -586,7 +598,6 @@ impl Game {
                             },
                             None => ActionOutcome::EnginePanic,
                         };
-                        self.append_log_action_at(&request, outcome.clone(), at);
 
                         // this input ran and was accepted, so it is part of the engine's state and
                         // must be replayed on the next boot. write-ahead before acknowledging; the
@@ -605,9 +616,10 @@ impl Game {
                     Err(_) => {
                         // the runtime crashed mid-action: record the crash, reboot, then tell whoever
                         // sent it the engine panicked.
-                        self.record_crash(&ServerInput::Action(request.clone())).await;
+                        self.record_crash(&ServerInput::Action(request.clone()))
+                            .await;
                         self.reboot_after_crash().await;
-                        let at = self.append_log_action(&request, ActionOutcome::EnginePanic);
+                        let at = self.history.head();
                         let pair = ResponsePair {
                             response: ExecOutcome::Action(ActionOutcome::EnginePanic),
                             input: ServerInput::Action(request),
@@ -835,23 +847,23 @@ impl Game {
 
     // ===== HISTORY HELPERS ===== //
 
-    // append the admin-visible record of one action request and its outcome to history, and return
-    // where it landed.
-    fn append_log_action(&mut self, request: &ActionRequest, outcome: ActionOutcome) -> usize {
-        self.history
-            .append(vec![log_action_output(request, outcome, request.timestamp)])
-    }
-
-    // append a log action right after the engine commands of the action it describes (at `at`), so
-    // the record rides the same batch as the commands.
-    fn append_log_action_at(
-        &mut self,
-        request: &ActionRequest,
-        outcome: ActionOutcome,
-        _at: usize,
-    ) {
-        self.append_log_action(request, outcome);
-    }
+    // // append the admin-visible record of one action request and its outcome to history, and return
+    // // where it landed.
+    // fn append_log_action(&mut self, request: &ActionRequest, outcome: ActionOutcome) -> usize {
+    //     self.history
+    //         .append(vec![log_action_output(request, outcome, request.timestamp)])
+    // }
+    //
+    // // append a log action right after the engine commands of the action it describes (at `at`), so
+    // // the record rides the same batch as the commands.
+    // fn append_log_action_at(
+    //     &mut self,
+    //     request: &ActionRequest,
+    //     outcome: ActionOutcome,
+    //     _at: usize,
+    // ) {
+    //     self.append_log_action(request, outcome);
+    // }
 
     // snapshot the game's current clock into history as a live GameClock, aimed at the world-data
     // viewport (learned from the runtime's output stream). returns the position to walk from when
@@ -963,7 +975,10 @@ impl Game {
                 Ok(())
             }
             Err(e) => {
-                eprintln!("persist failed for game {} -- tearing down: {e}", self.game_id);
+                eprintln!(
+                    "persist failed for game {} -- tearing down: {e}",
+                    self.game_id
+                );
                 self.cancel.cancel();
                 Err(e)
             }

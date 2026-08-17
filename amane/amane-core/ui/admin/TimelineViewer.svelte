@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import type { Action, ActionActor, ActionOutcome } from "../../bindings";
+  import type { Action, ActionActor } from "../../bindings";
   import { slotKeyToString } from "../../bindings";
   import { playerLabel } from "../../game/helpers.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
@@ -35,7 +35,9 @@
   );
   const hidden_count = $derived(hidden.size);
 
-  const shown = $derived(entries.filter((e) => !hidden.has(actionName(e.action.payload))));
+  const shown = $derived(
+    entries.filter((e) => !hidden.has(actionName(e.action.payload))),
+  );
 
   // Like a chat: new entries land at the bottom, so keep the newest in view rather than forcing the
   // user to scroll down each time one arrives.
@@ -104,7 +106,9 @@
     if (typeof v === "number") return isFinite(v) ? String(v) : `${v}`;
     if (Array.isArray(v)) {
       const s = v.map((x) => fmtArg(key, x));
-      return s.length > 3 ? `${s.slice(0, 3).join(", ")} +${s.length - 3}` : s.join(", ");
+      return s.length > 3
+        ? `${s.slice(0, 3).join(", ")} +${s.length - 3}`
+        : s.join(", ");
     }
     if (typeof v === "object") {
       const obj = v as Record<string, unknown>;
@@ -112,7 +116,9 @@
       if ("None" in obj) return "—";
       const entries = Object.entries(obj);
       if (entries.length === 0) return "∅";
-      return entries.map(([k, x]) => `${prettyArg(k)}: ${fmtArg(k, x)}`).join(", ");
+      return entries
+        .map(([k, x]) => `${prettyArg(k)}: ${fmtArg(k, x)}`)
+        .join(", ");
     }
     return String(v);
   }
@@ -130,21 +136,10 @@
   function actorText(actor: ActionActor): string {
     if (actor === "Admin") return "Admin";
     if (actor === "System") return "System";
-    if ("Player" in actor) return playerLabel(slotKeyToString(actor.Player), view.players);
+    if ("Player" in actor)
+      return playerLabel(slotKeyToString(actor.Player), view.players);
     const o = actor.Organization;
     return `Org ${o.org_id}`;
-  }
-
-  function outcomeText(o: ActionOutcome): string {
-    if (o === "Denied") return "denied";
-    if (o === "EnginePanic") return "crash";
-    return "Ok" in o ? "ok" : "err";
-  }
-
-  function outcomeClass(o: ActionOutcome): string {
-    if (o === "Denied") return "bg-neutral-800 text-neutral-400";
-    if (o === "EnginePanic") return "bg-red-900/60 text-red-200";
-    return "Ok" in o ? "bg-emerald-900/60 text-emerald-200" : "bg-amber-900/60 text-amber-200";
   }
 
   // Game time in milliseconds since the sandbox's zero, rendered as HH:MM:SS.
@@ -157,25 +152,41 @@
   }
 </script>
 
-<Button variant="ghost" size="sm" onclick={() => (open = true)}>Timeline</Button>
+<Button variant="ghost" size="sm" onclick={() => (open = true)}>Timeline</Button
+>
 
-<Dialog open={open} onOpenChange={(v) => (open = v)} title="Action Timeline" width="42rem">
+<Dialog
+  {open}
+  onOpenChange={(v) => (open = v)}
+  title="Action Timeline"
+  width="42rem"
+>
   <p class="text-sm text-ink-dim">
-    Every action requested by a connection, and how it came out — newest at the bottom, like a chat.
-    Server-initiated work (ticks, time skips) is not shown.
+    Every action requested by a connection, and how it came out — newest at the
+    bottom, like a chat. Server-initiated work (ticks, time skips) is not shown.
   </p>
 
   <div class="flex items-center gap-2">
-    <Button variant="ghost" size="sm" onclick={() => (filter_open = !filter_open)}>
-      {filter_open ? "Close filter" : `Filter${hidden_count ? ` (${hidden_count})` : ""}`}
+    <Button
+      variant="ghost"
+      size="sm"
+      onclick={() => (filter_open = !filter_open)}
+    >
+      {filter_open
+        ? "Close filter"
+        : `Filter${hidden_count ? ` (${hidden_count})` : ""}`}
     </Button>
     {#if hidden_count > 0}
-      <Button variant="ghost" size="sm" onclick={() => (hidden = new Set())}>Show all</Button>
+      <Button variant="ghost" size="sm" onclick={() => (hidden = new Set())}
+        >Show all</Button
+      >
     {/if}
   </div>
 
   {#if filter_open}
-    <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 max-h-56 overflow-y-auto rounded border border-edge p-2">
+    <div
+      class="grid grid-cols-2 gap-x-3 gap-y-1.5 max-h-56 overflow-y-auto rounded border border-edge p-2"
+    >
       {#if variants.length === 0}
         <p class="text-sm text-ink-dim">No variants yet.</p>
       {:else}
@@ -196,24 +207,29 @@
   {#if shown.length === 0}
     <p class="text-sm text-ink-dim">No actions to show.</p>
   {:else}
-    <ol bind:this={list} class="max-h-[30rem] overflow-y-auto divide-y divide-edge">
+    <ol
+      bind:this={list}
+      class="max-h-[30rem] overflow-y-auto divide-y divide-edge"
+    >
       {#each shown as entry (entry.time + ":" + actionName(entry.action.payload))}
         <li class="flex items-start gap-3 py-1.5 text-[0.9375rem]">
-          <span class="shrink-0 font-mono text-[0.8125rem] text-ink-dim tabular-nums w-16 pt-0.5">
+          <span
+            class="shrink-0 font-mono text-[0.8125rem] text-ink-dim tabular-nums w-16 pt-0.5"
+          >
             {timeText(entry.time)}
           </span>
-          <span class="min-w-0 shrink-0 truncate text-ink-dim w-40 pt-0.5">{actorText(entry.action.actor)}</span>
+          <span class="min-w-0 shrink-0 truncate text-ink-dim w-40 pt-0.5"
+            >{actorText(entry.action.actor)}</span
+          >
           <div class="min-w-0 flex-1">
             <div class="font-medium">{actionName(entry.action.payload)}</div>
             {#each payloadArgs(entry.action.payload) as r (r.key)}
               <div class="text-xs text-neutral-500">
-                <span class="text-neutral-600">{r.key}:</span> {r.value}
+                <span class="text-neutral-600">{r.key}:</span>
+                {r.value}
               </div>
             {/each}
           </div>
-          <span class={`shrink-0 rounded px-1.5 text-[0.7rem] uppercase ${outcomeClass(entry.outcome)}`}>
-            {outcomeText(entry.outcome)}
-          </span>
         </li>
       {/each}
     </ol>

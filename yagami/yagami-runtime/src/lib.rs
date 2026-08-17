@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use lawliet::engine::Engine;
 use lawliet_types::{
     action::{Action, ActionActor, ActionRequest, AddPlayer, SetTrueName},
-    command::{Command, CommandRecipient, CommandPayload},
+    command::{Command, CommandPayload, CommandRecipient},
     common::{ActorKey, Time, ViewportKey},
 };
 use rand_pcg::Pcg64;
@@ -198,7 +198,19 @@ impl Simulation {
     // `reply` carries the outcome for the originating connection.
     pub fn process(&mut self, input: &RuntimeInput, caller: Option<&Key>) -> RuntimeOutput {
         match input {
-            RuntimeInput::Action(request) => self.process_action(request, caller),
+            RuntimeInput::Action(request) => {
+                let mut out = self.process_action(request, caller);
+                if request.actor != ActionActor::System {
+                    out.outputs.push(Output {
+                        time: self.engine.time,
+                        recipients: vec![Recipient::Admin],
+                        data: OutputData::Sim(SimOutput::LogAction {
+                            action: request.clone(),
+                        }),
+                    });
+                }
+                out
+            }
             RuntimeInput::Sim(control) => self.process_sim(control, caller),
         }
     }
@@ -237,16 +249,10 @@ impl Simulation {
         let profiles_changed = self.assign_display_names(&context.commands);
 
         // engine commands become addressed Outputs, in order.
-        let mut outputs: Vec<Output> = context
-            .commands
-            .iter()
-            .map(engine_to_output)
-            .collect();
+        let mut outputs: Vec<Output> = context.commands.iter().map(engine_to_output).collect();
 
-        if profiles_changed {
-            if let Some(out) = self.profile_roster_output(request.timestamp) {
-                outputs.push(out);
-            }
+        if profiles_changed && let Some(out) = self.profile_roster_output(request.timestamp) {
+            outputs.push(out);
         }
 
         RuntimeOutput {
@@ -293,10 +299,7 @@ impl Simulation {
                 self.keys.remove(key);
                 Ok(ControlResponse::KeyRevoked)
             }
-            SimControlData::SetCapabilities {
-                key,
-                capabilities,
-            } => {
+            SimControlData::SetCapabilities { key, capabilities } => {
                 if let Err(e) = self.may_manage(caller, key) {
                     return self.sim_denied(control, e, time);
                 }
@@ -367,10 +370,7 @@ impl Simulation {
             None => true,
             Some(c) => match actor {
                 ActionActor::System => true,
-                _ => self
-                    .keys
-                    .get(c)
-                    .is_some_and(|p| p.can_act_as(actor)),
+                _ => self.keys.get(c).is_some_and(|p| p.can_act_as(actor)),
             },
         }
     }
@@ -423,12 +423,7 @@ impl Simulation {
         Key::from_token(s)
     }
 
-    fn sim_denied(
-        &self,
-        control: &SimControl,
-        error: ControlError,
-        _time: Time,
-    ) -> RuntimeOutput {
+    fn sim_denied(&self, control: &SimControl, error: ControlError, _time: Time) -> RuntimeOutput {
         RuntimeOutput {
             outputs: vec![],
             reply: Some(Reply {
@@ -531,11 +526,8 @@ impl Simulation {
 
     fn profile_roster_output(&self, time: Time) -> Option<Output> {
         let viewport = self.data_viewport?;
-        let profiles: Vec<(ActorKey, Profile)> = self
-            .profiles
-            .iter()
-            .map(|(k, v)| (*k, v.clone()))
-            .collect();
+        let profiles: Vec<(ActorKey, Profile)> =
+            self.profiles.iter().map(|(k, v)| (*k, v.clone())).collect();
         Some(Output {
             recipients: vec![Recipient::Viewport(viewport), Recipient::Admin],
             data: OutputData::Sim(SimOutput::ProfileRoster { profiles }),
@@ -550,7 +542,9 @@ impl Simulation {
 fn engine_to_output(cmd: &CommandPayload) -> Output {
     let recipients = match &cmd.recipient {
         CommandRecipient::System => vec![Recipient::Admin],
-        CommandRecipient::Viewport(viewport) => vec![Recipient::Viewport(*viewport), Recipient::Admin],
+        CommandRecipient::Viewport(viewport) => {
+            vec![Recipient::Viewport(*viewport), Recipient::Admin]
+        }
         CommandRecipient::Actor(id) => vec![Recipient::Player(*id)],
         CommandRecipient::Log(log) => vec![Recipient::Log(*log)],
     };

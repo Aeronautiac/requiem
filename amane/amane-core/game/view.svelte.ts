@@ -43,16 +43,15 @@ import type {
   TrackedKidnapping,
 } from "./types";
 
-  // Exactly one entry on the host's action timeline: an action request a connection submitted and
-  // how it came out, as the server recorded them at the time it was asked. The request is "who did
-  // what, as whom"; the outcome is how the engine (or the gate in front of it) answered.
-  export interface ActionLogEntry {
-    time: number;
-    action: ActionRequest;
-    outcome: ActionOutcome;
-  }
+// Exactly one entry on the host's action timeline: an action request a connection submitted and
+// how it came out, as the server recorded them at the time it was asked. The request is "who did
+// what, as whom"; the outcome is how the engine (or the gate in front of it) answered.
+export interface ActionLogEntry {
+  time: number;
+  action: ActionRequest;
+}
 
-  export class GameView {
+export class GameView {
   // This view's own actor key ("System" for the admin view). What a mention tests itself against,
   // and how the view knows which orgs it belongs to (membership is org.members.has(own_key)).
   readonly own_key: string;
@@ -454,8 +453,8 @@ import type {
   // different question -- "what was asked, and how it went" -- rather than "what the world now is".
   action_log: ActionLogEntry[] = $state([]);
 
-  apply_log_action(action: ActionRequest, outcome: ActionOutcome, time: number) {
-    this.action_log.push({ time, action, outcome });
+  apply_log_action(action: ActionRequest, time: number) {
+    this.action_log.push({ time, action });
   }
 
   // A filtered channel record this view has been handed: an autopsy of a target's record, or a

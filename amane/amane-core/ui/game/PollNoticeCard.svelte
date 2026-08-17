@@ -13,17 +13,20 @@
   import type { GameState } from "../../game/state.svelte";
   import type { UiState } from "../../ui_state.svelte.ts";
   import type { PollOutcome, PollSubject } from "../../bindings";
+  import TimeStamp from "./TimeStamp.svelte";
 
   let {
     poll_id,
     subject,
     outcome,
     opener,
+    timestamp,
   }: {
     poll_id: string;
     subject: PollSubject;
     outcome: PollOutcome | null;
     opener: string | null;
+    timestamp: number;
   } = $props();
 
   const game = getContext<GameState>(GAME_STATE_KEY);
@@ -65,17 +68,20 @@
 
     <div class="relative flex flex-col gap-1.5">
       <div class="flex items-baseline justify-between gap-2">
-        <span
-          class="text-[0.8rem] font-semibold uppercase tracking-wide"
-          style="color: {status.color}"
-        >
-          {status.label}
-        </span>
-        {#if opener}
-          <span class="shrink-0 text-[0.65rem] text-neutral-500">
-            by {view.actor_name(opener)}
+        <span class="flex shrink-0 items-baseline gap-2">
+          <span
+            class="text-[0.8rem] font-semibold uppercase tracking-wide"
+            style="color: {status.color}"
+          >
+            {status.label}
           </span>
-        {/if}
+          {#if opener}
+            <span class="text-[0.65rem] text-neutral-500">
+              by {view.actor_name(opener)}
+            </span>
+          {/if}
+        </span>
+        <TimeStamp {timestamp} {view} />
       </div>
 
       <span class="text-sm text-neutral-200">{heading}</span>

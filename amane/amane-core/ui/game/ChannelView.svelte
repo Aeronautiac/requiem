@@ -705,6 +705,7 @@
                 subject={pn.subject}
                 outcome={pn.outcome}
                 opener={pn.opener}
+                timestamp={event.timestamp}
               />
             {/if}
           {:else if "PseudocideRevival" in event.data}

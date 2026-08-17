@@ -10,23 +10,10 @@ use crate::{
     auth::{Capability, Privileges, Ticket},
     state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
     wire::{
-        ActionOutcome, Batch, BatchKind, LogCommand, LogType, Output, OutputData, Recipient,
-        ResponsePair, ServerCmd,
+        Batch, BatchKind, LogCommand, LogType, Output, OutputData, Recipient, ResponsePair,
+        ServerCmd,
     },
 };
-
-// An action request and its output. Sent to admin so they can see a timeline. yagami-level (the
-// runtime never sees denied/crashed inputs, and the "what was asked" framing is yagami's).
-pub fn log_action_output(action: &ActionRequest, outcome: ActionOutcome, time: Time) -> Output {
-    Output {
-        time,
-        recipients: vec![Recipient::Admin],
-        data: OutputData::Server(ServerCmd::LogAction {
-            action: action.clone(),
-            outcome,
-        }),
-    }
-}
 
 // The connection's own privilege set, sent DIRECTLY to it as the first output of every sync. empty
 // recipients = "this connection's own concern", not "delivers to nobody".
