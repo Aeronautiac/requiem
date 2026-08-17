@@ -63,7 +63,7 @@ impl ActionInterface for UpdateProsecutions {
                 let advance = eng
                     .world
                     .get_prosecution(prosecution_id)
-                    .is_some_and(|p| p.both_signalled() && !p.pending_advance);
+                    .is_some_and(|p| p.both_signalled() && !p.pending_advance && !p.frozen(eng));
 
                 if advance {
                     one_advanced = true;
