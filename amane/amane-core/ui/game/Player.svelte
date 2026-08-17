@@ -2,7 +2,7 @@
   // One person row in the Players panel. The name is the trigger: clicking it opens the shared
   // profile menu (contact / conference / admin), so this row is just the name, its public statuses,
   // and the channel read/send hint — no inline dropdown of its own anymore.
-  import { permsLabel, statusLabels } from "../../game/helpers.svelte";
+  import { permsLabel, statusBadgeStyle, statusLabels } from "../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
@@ -31,7 +31,8 @@
     <Name {id} {view} />
     {#each statuses as s (s)}
       <span
-        class="rounded bg-neutral-800 px-1 py-px text-[0.6rem] uppercase tracking-wide text-neutral-400"
+        class="rounded px-1 py-px text-[0.6rem] uppercase tracking-wide"
+        style={statusBadgeStyle(s)}
       >
         {s}
       </span>

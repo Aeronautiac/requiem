@@ -18,10 +18,11 @@ use crate::{
     auth::{Key, KeyHandle, Privileges, Ticket},
     delivery::DeliveryData,
     game::GameInput,
+    store::Store,
     wire::Batch,
 };
 
-pub type GameId = u64; // for now, strictly incrementing
+pub type GameId = u64; // DB BIGSERIAL id, read back after insert. unique across restarts.
 
 // TODO:
 // there is a potential race between the outbox opening, and the initial attachment
@@ -62,12 +63,38 @@ impl GameHandle {
     }
 }
 
-#[derive(Default)]
 pub struct ServerState {
-    pub next_game_id: GameId,
+    pub store: Store, // set once at startup; both handlers and game tasks read it here
     pub games: HashMap<GameId, GameHandle>,
 }
 pub type WrappedServerState = Arc<Mutex<ServerState>>;
+
+// insert a GameHandle into the registry synchronously. used by boot-time resume (main), which
+// registers every active game before axum starts serving -- so there is no window where a
+// restarted game is in the DB but unreachable. a fresh game registers itself (via its task) after
+// its first boot succeeds. `keys` preloads the handle's key ledger so get_ticket can validate keys
+// before the task finishes its boot replay -- what makes on-demand (rather than immediate) boot
+// possible.
+pub fn insert_handle(
+    state: &WrappedServerState,
+    game_id: GameId,
+    inbox: mpsc::UnboundedSender<GameInput>,
+    cancel: CancellationToken,
+    keys: HashMap<Key, Privileges>,
+) {
+    let mut server_state = lock_state(state);
+    server_state.games.insert(
+        game_id,
+        GameHandle {
+            cancel,
+            inbox,
+            tickets: HashMap::new(),
+            connections: HashMap::new(),
+            keys,
+            key_handles: HashMap::new(),
+        },
+    );
+}
 
 // a poisoned lock means a thread panicked mid-mutation, so the maps can no longer be trusted. that
 // is a process-wide problem: take the process down and let the supervisor restart us.

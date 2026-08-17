@@ -11,13 +11,7 @@
 // accepted stream to a fresh child, which reconstructs engine + sim + outputs identically. Time
 // travel is yagami's -- the runtime knows nothing of rewind.
 
-use std::{
-    collections::HashMap,
-    env::current_exe,
-    io::ErrorKind,
-    process::Stdio,
-    time::Duration,
-};
+use std::{collections::HashMap, env::current_exe, io::ErrorKind, process::Stdio, time::Duration};
 
 use lawliet_types::{
     action::{Action, ActionActor, ActionRequest, Null},
@@ -29,19 +23,20 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
     process::{ChildStdin, ChildStdout},
     select,
-    sync::mpsc,
+    sync::{mpsc, oneshot},
     time::{Instant, Interval, MissedTickBehavior, interval, sleep},
 };
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth::{Key, KeyHandle, Privileges, Ticket, to_flags},
-    constants::{ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
+    constants::{BOOT_MAX_RETRIES, BOOT_RETRY_BASE_MS, ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
     delivery::{History, game_clock_output, log_action_output},
-    state::{GameId, WrappedServerState, lock_state},
+    state::{GameId, WrappedServerState, insert_handle, lock_state},
+    store::{GameMeta, Store, wall_now},
     wire::{
         ActionOutcome, AdminControl, ControlOutcome, ControlResponse, ExecOutcome, MetaControl,
-        Output, OutputData, ResponsePair, ServerInput, SimControl, SimControlData, SimOutput,
+        Output, OutputData, ResponsePair, ServerInput, SimControlData, SimOutput,
     },
 };
 
@@ -68,13 +63,35 @@ pub struct InputEnvelope {
 // external server inputs. some other part of the server wants the game to do something.
 pub enum GameCommand {
     // synchronize the connection to the game state given its current privileges
-    Sync { ticket: Ticket },
-    // run one sim control with no connection attached, and resolve the oneshot with the outcome.
-    // used by create_game to mint the admin key: the runtime generates it (deterministic), and the
-    // caller awaits the KeyCreated reply before responding.
-    BootstrapControl {
-        control: SimControl,
-        reply: tokio::sync::oneshot::Sender<ControlOutcome>,
+    Sync {
+        ticket: Ticket,
+    },
+}
+
+// why a fresh game could not be created (so the platform admin is told, not left hanging).
+#[derive(Debug, Clone, Copy)]
+pub enum InitError {
+    // the runtime could not be brought up / the initial replay never succeeded.
+    BootFailed,
+}
+
+// how a game task is started. a fresh game has no durable record yet: the task itself generates
+// the engine seed, builds InitializeEngine, prepends it to `creation_pack` (the admin-key minting
+// and any other creation inputs), boots, and only then writes itself to the DB -- so a game that
+// fails to boot is never written. `creation_reply` carries the result back to create_game: the
+// game id plus the RESPONSES to the creation pack's inputs (one per input that produced one), so
+// the caller can pull e.g. the minted admin key out of them. a resumed game already exists in the
+// DB.
+pub enum GameStart {
+    Fresh {
+        creation_pack: Vec<ServerInput>,
+        creation_reply: oneshot::Sender<Result<(GameId, Vec<ExecOutcome>), InitError>>,
+    },
+    Resumed {
+        game_id: GameId,
+        inputs: Vec<ServerInput>,
+        keys: HashMap<Key, Privileges>,
+        start_clock: Time,
     },
 }
 
@@ -121,6 +138,16 @@ impl GameClock {
         }
     }
 
+    // resume the clock at an initial virtual time: a fresh game starts at 0; a resumed game at its
+    // stored virtual time plus downtime (the caller computes it). since `start` resets each process,
+    // setting the anchor to the target makes now() == target here and keep tracking real time.
+    fn at(initial: Time) -> Self {
+        Self {
+            start: Instant::now(),
+            anchor: initial as i128,
+        }
+    }
+
     fn now(&self) -> Time {
         // it isnt possible for the anchor to cause overflow. the target time can only ever be >= 0.
         (self.start.elapsed().as_millis() as i128 + self.anchor) as Time
@@ -134,16 +161,28 @@ impl GameClock {
 
 struct Game {
     // identity / routing
-    game_id: GameId,
+    game_id: GameId, // sentinel 0 until a fresh game writes its durable row
     server_state: WrappedServerState,
+    store: Store,
+    inbox: mpsc::UnboundedSender<GameInput>,
     cancel: CancellationToken,
     events: mpsc::UnboundedReceiver<GameInput>,
+
+    // durability lifecycle: a fresh game is not durable until its first boot succeeds and it
+    // writes itself to the DB; a resumed game already is. until registered, boot() skips
+    // persisting progress (there is no row to update yet).
+    registered: bool,
+    // the create_game handshake (Fresh only): reports (id, the init responses) on success, or an
+    // InitError if boot never came up.
+    creation_reply: Option<oneshot::Sender<Result<(GameId, Vec<ExecOutcome>), InitError>>>,
+    // the responses the runtime produced for the creation pack's inputs during the first boot.
+    creation_responses: Vec<ExecOutcome>,
 
     // state
     last_reached: Time, // the latest timestamp executed by the engine, not necessarily
     // the highest ever executed. this distinction is important because time travel may change what
     // "the end of the timeline" is.
-    clock: GameClock,            // sandboxed source of action timestamps
+    clock: GameClock,           // sandboxed source of action timestamps
     accepted: Vec<ServerInput>, // the single durable source of truth; replayed on boot
     history: History,           // the in-memory command log every connection walks (a cache)
     // the sim's key set, intercepted from the runtime's KeyRoster outputs. the authoritative copy
@@ -166,25 +205,58 @@ struct Game {
 
 impl Game {
     fn new(
-        game_id: GameId,
         server_state: WrappedServerState,
-        cancel: CancellationToken,
+        start: GameStart,
         events: mpsc::UnboundedReceiver<GameInput>,
-        initial_accepted: Vec<ServerInput>,
+        inbox: mpsc::UnboundedSender<GameInput>,
+        cancel: CancellationToken,
     ) -> Self {
+        let store = lock_state(&server_state).store.clone();
         let mut tick = interval(Duration::from_secs(NULL_TICK_INTERVAL));
         tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+        // a fresh game's first accepted input is always InitializeEngine, built here with a seed
+        // the task generates itself -- the handler never sees the seed. the rest of the accepted
+        // stream is the creation pack the handler supplied (the admin-key minting, etc).
+        let (game_id, registered, accepted, clock, keys_cache, creation_reply) = match start {
+            GameStart::Fresh {
+                creation_pack,
+                creation_reply,
+            } => {
+                let init = ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::InitializeEngine(lawliet_types::action::InitializeEngine {
+                        seed: crate::generate_seed(),
+                    }),
+                };
+                let mut accepted = vec![ServerInput::Action(init)];
+                accepted.extend(creation_pack);
+                (0, false, accepted, GameClock::new(), HashMap::new(), Some(creation_reply))
+            }
+            GameStart::Resumed {
+                game_id,
+                inputs,
+                keys,
+                start_clock,
+            } => (game_id, true, inputs, GameClock::at(start_clock), keys, None),
+        };
 
         Self {
             game_id,
             server_state,
+            store,
+            inbox,
             cancel,
             events,
+            registered,
+            creation_reply,
+            creation_responses: Vec::new(),
             last_reached: 0,
-            clock: GameClock::new(),
-            accepted: initial_accepted,
+            clock,
+            accepted,
             history: History::new(game_id),
-            keys_cache: HashMap::new(),
+            keys_cache,
             data_viewport: None,
             child: None,
             stdin: None,
@@ -285,14 +357,17 @@ impl Game {
     //
     // `truncate_to` is set by a backward time-travel jump: the accepted stream is first truncated to
     // everything up to the target, so the replay reconstructs only the timeline that still exists.
-    async fn boot(&mut self, truncate_to: Option<Time>) {
-        // TODO:
-        // exponential backoff between retries, and eventual total game failure once retries exceed
-        // some bound, rather than retrying forever.
+    //
+    // Retries: on a failed spawn/replay the child is discarded and boot retries with exponential
+    // backoff, giving up entirely after BOOT_MAX_RETRIES -- a game that cannot boot is reported as
+    // failed rather than retrying forever. For a FRESH (not-yet-registered) game this is what stops
+    // a broken game from ever being written to the DB.
+    async fn boot(&mut self, truncate_to: Option<Time>) -> Result<(), ()> {
         if let Some(target) = truncate_to {
-            self.truncate_accepted(target);
+            self.truncate_accepted(target).await;
         }
 
+        let mut attempts: u32 = 0;
         loop {
             let (stdin, stdout, child) = self.spawn_runtime();
             self.child = Some(child);
@@ -301,6 +376,8 @@ impl Game {
 
             // history is a cache: discard it and rebuild from the replay's outputs.
             self.history = History::new(self.game_id);
+            // a fresh boot re-collects the creation pack's responses from scratch.
+            self.creation_responses.clear();
 
             let mut ok = true;
             let mut last_time: Time = 0;
@@ -316,6 +393,13 @@ impl Game {
                 };
                 match self.dispatch(&runtime_input, None).await {
                     Ok(output) => {
+                        // the first boot of a fresh game also collects the responses to its
+                        // creation pack (e.g. the minted admin key) to hand back to create_game.
+                        if !self.registered {
+                            if let Some(reply) = &output.reply {
+                                self.creation_responses.push(reply.outcome.clone());
+                            }
+                        }
                         for out in &output.outputs {
                             if out.time > last_time {
                                 last_time = out.time;
@@ -338,13 +422,24 @@ impl Game {
                 // anchor every client's game time on the rebuilt timeline.
                 let at = self.append_game_clock();
                 self.history.broadcast(&self.server_state, at, None);
-                break;
+                // once durable, keep the games row's progress current with the replay.
+                if self.registered {
+                    self.persist_progress().await;
+                }
+                return Ok(());
             }
 
-            // the fresh child failed right out of the gate. discard it and try again.
+            // the fresh child failed right out of the gate. discard it, back off, give up at a bound.
             self.child = None;
             self.stdin = None;
             self.stdout = None;
+            attempts += 1;
+            if attempts >= BOOT_MAX_RETRIES {
+                return Err(());
+            }
+            // exponential: 500ms, 1s, 2s, ... (capped).
+            let delay = BOOT_RETRY_BASE_MS.saturating_mul(1u64 << attempts.min(30));
+            sleep(Duration::from_millis(delay)).await;
         }
     }
 
@@ -355,10 +450,6 @@ impl Game {
             GameInput::GameCommand(GameCommand::Sync { ticket }) => {
                 self.handle_sync(ticket);
             }
-            GameInput::GameCommand(GameCommand::BootstrapControl { control, reply }) => {
-                let outcome = self.process_bootstrap_control(control).await;
-                let _ = reply.send(outcome);
-            }
             GameInput::ServerInput(envelope) => self.handle_server_input(envelope).await,
         }
     }
@@ -367,39 +458,6 @@ impl Game {
     fn handle_sync(&mut self, ticket: Ticket) {
         self.history
             .deliver_sync(&self.server_state, ticket, self.clock.now());
-    }
-
-    // run one sim control with no connection attached, and return the outcome. used by create_game
-    // to mint the admin key before any connection exists: dispatch, append, save, return.
-    //
-    // the bootstrap control's time is left exactly as sent (0) -- it is part of the game's creation
-    // and MUST survive any rewind (which can only ever go to a time >= 0), so it is never re-stamped
-    // with the live clock.
-    async fn process_bootstrap_control(&mut self, mut control: SimControl) -> ControlOutcome {
-        control.time = 0;
-        let runtime_input = RuntimeInput::Sim(control.clone());
-        match self.dispatch(&runtime_input, None).await {
-            Ok(output) => {
-                self.update_server_projections(&output.outputs);
-                self.history.append(output.outputs);
-                self.accepted
-                    .push(ServerInput::Control(AdminControl::Sim(control)));
-                // the minted key must reach the shell (keys + key_handles) before the caller's
-                // get_ticket can resolve it.
-                self.reconcile_key_handles();
-                match output.reply {
-                    Some(r) => match r.outcome {
-                        ExecOutcome::Control(o) => o,
-                        _ => ControlOutcome::Denied,
-                    },
-                    None => ControlOutcome::Denied,
-                }
-            }
-            Err(_) => {
-                self.boot(None).await;
-                ControlOutcome::Denied
-            }
-        }
     }
 
     async fn handle_server_input(&mut self, envelope: InputEnvelope) {
@@ -430,8 +488,11 @@ impl Game {
                     response: ExecOutcome::Control(outcome),
                     input: ServerInput::Control(AdminControl::Meta(MetaControl::GoToTime { time })),
                 };
-                self.history
-                    .broadcast(&self.server_state, self.history.head(), Some((ticket, pair)));
+                self.history.broadcast(
+                    &self.server_state,
+                    self.history.head(),
+                    Some((ticket, pair)),
+                );
             }
             ServerInput::Control(AdminControl::Sim(mut control)) => {
                 // override the sim time at read time, as we do for engine actions.
@@ -459,23 +520,34 @@ impl Game {
                             self.resync_key(key);
                         }
                         // this sim control was accepted, so it is part of the sim's state and must
-                        // be replayed on the next boot.
-                        self.accepted
-                            .push(ServerInput::Control(AdminControl::Sim(control)));
+                        // be replayed on the next boot. write-ahead before acknowledging; the game
+                        // tears itself down if the write fails.
+                        let sim_input = ServerInput::Control(AdminControl::Sim(control));
+                        if self.persist_accepted(&sim_input).await.is_err() {
+                            return;
+                        }
 
                         let pair = output.reply.expect("runtime always replies to a sim input");
-                        self.history
-                            .broadcast(&self.server_state, at, Some((ticket, pair.into_pair())));
+                        self.history.broadcast(
+                            &self.server_state,
+                            at,
+                            Some((ticket, pair.into_pair())),
+                        );
                     }
                     Err(_) => {
-                        // the runtime crashed mid-control: reboot, then settle the caller.
-                        self.boot(None).await;
+                        // the runtime crashed mid-control: record the crash, reboot, settle the caller.
+                        let sim_input = ServerInput::Control(AdminControl::Sim(control));
+                        self.record_crash(&sim_input).await;
+                        self.reboot_after_crash().await;
                         let pair = ResponsePair {
                             response: ExecOutcome::Control(ControlOutcome::Denied),
-                            input: ServerInput::Control(AdminControl::Sim(control)),
+                            input: sim_input,
                         };
-                        self.history
-                            .broadcast(&self.server_state, self.history.head(), Some((ticket, pair)));
+                        self.history.broadcast(
+                            &self.server_state,
+                            self.history.head(),
+                            Some((ticket, pair)),
+                        );
                     }
                 }
             }
@@ -517,8 +589,11 @@ impl Game {
                         self.append_log_action_at(&request, outcome.clone(), at);
 
                         // this input ran and was accepted, so it is part of the engine's state and
-                        // must be replayed on the next boot.
-                        self.accepted.push(reply_input.clone());
+                        // must be replayed on the next boot. write-ahead before acknowledging; the
+                        // game tears itself down if the write fails.
+                        if self.persist_accepted(&reply_input).await.is_err() {
+                            return;
+                        }
 
                         let pair = ResponsePair {
                             response: ExecOutcome::Action(outcome),
@@ -528,9 +603,10 @@ impl Game {
                             .broadcast(&self.server_state, at, Some((ticket, pair)));
                     }
                     Err(_) => {
-                        // the runtime crashed mid-action: reboot, then tell whoever sent it the
-                        // engine panicked and record the crash for the host.
-                        self.boot(None).await;
+                        // the runtime crashed mid-action: record the crash, reboot, then tell whoever
+                        // sent it the engine panicked.
+                        self.record_crash(&ServerInput::Action(request.clone())).await;
+                        self.reboot_after_crash().await;
                         let at = self.append_log_action(&request, ActionOutcome::EnginePanic);
                         let pair = ResponsePair {
                             response: ExecOutcome::Action(ActionOutcome::EnginePanic),
@@ -567,9 +643,7 @@ impl Game {
         let Some(key) = game.tickets.get(ticket) else {
             return false;
         };
-        self.keys_cache
-            .get(key)
-            .is_some_and(|p| p.administers())
+        self.keys_cache.get(key).is_some_and(|p| p.administers())
     }
 
     // intercept the sim-derived facts riding the runtime's outputs: the key set (from KeyRoster,
@@ -647,7 +721,11 @@ impl Game {
 
         // backward jump: truncate the accepted stream to the target and rebuild from there.
         self.last_reached = target;
-        self.boot(Some(target)).await;
+        if self.boot(Some(target)).await.is_err() {
+            // the rebuild never came up; the game cannot serve this timeline.
+            self.cancel.cancel();
+            return;
+        }
         // every connection's view of the world was built on a timeline that no longer exists: reset
         // each one and replay the rebuilt history from the start.
         self.history
@@ -657,13 +735,26 @@ impl Game {
     // ===== REWIND HELPERS ===== //
 
     // truncate the accepted stream to everything up to `target` (inclusive). sim controls carry
-    // their own time; engine actions carry their timestamp. meta controls are never stored.
-    fn truncate_accepted(&mut self, target: Time) {
-        self.accepted.retain(|input| match input {
+    // their own time; engine actions carry their timestamp. meta controls are never stored. the
+    // durable half -- rows at seq >= the new length -- is deleted from the DB too; crash records
+    // are untouched (separate table).
+    async fn truncate_accepted(&mut self, target: Time) {
+        let keep = |input: &ServerInput| match input {
             ServerInput::Action(request) => request.timestamp <= target,
             ServerInput::Control(AdminControl::Sim(control)) => control.time <= target,
             ServerInput::Control(AdminControl::Meta(_)) => false,
-        });
+        };
+        let retained_len = self.accepted.iter().filter(|i| keep(i)).count();
+        if self.registered {
+            if let Err(e) = self
+                .store
+                .delete_inputs_from(self.game_id, retained_len as i64)
+                .await
+            {
+                eprintln!("failed to truncate inputs for game {}: {e}", self.game_id);
+            }
+        }
+        self.accepted.retain(keep);
     }
 
     // reconcile the live key handles + privilege cache against the rebuilt key set. keys that no
@@ -798,10 +889,133 @@ impl Game {
         }
     }
 
+    // ===== DURABILITY / REGISTRATION ===== //
+
+    // write the current progress (last_reached, clock, keys) into the games row. called after a
+    // boot of a durable game so the metadata the row caches (for on-demand boot) stays current.
+    async fn persist_progress(&self) {
+        let meta = GameMeta {
+            last_reached: self.last_reached,
+            clock: self.clock.now(),
+            clock_wall: wall_now(),
+            keys: self.keys_cache.clone(),
+        };
+        if let Err(e) = self.store.persist_progress(self.game_id, &meta).await {
+            eprintln!("failed to persist progress for game {}: {e}", self.game_id);
+        }
+    }
+
+    // register this game's GameHandle in the shared registry. a fresh game calls this after its
+    // first boot succeeds and its row is written; a resumed game is registered by main() before
+    // its task is spawned.
+    fn insert_handle(&self, keys: HashMap<Key, Privileges>) {
+        insert_handle(
+            &self.server_state,
+            self.game_id,
+            self.inbox.clone(),
+            self.cancel.clone(),
+            keys,
+        );
+    }
+
+    // make a fresh game durable and report success: write the row + the whole accepted stream (the
+    // task-generated InitializeEngine + the creation pack) as a group, then hand back the game id
+    // and the creation pack's responses.
+    async fn register_fresh(&mut self) {
+        let id = self
+            .store
+            .create_game(&self.accepted)
+            .await
+            .expect("failed to write fresh game to the db");
+        self.game_id = id;
+        self.registered = true;
+        self.history.game_id = id;
+        self.insert_handle(self.keys_cache.clone());
+        // mint the live key handles (cancel token + tickets) for the rebuilt key set -- get_ticket
+        // needs a handle for the admin key before any connection can form.
+        self.reconcile_key_handles();
+        if let Some(reply) = self.creation_reply.take() {
+            let responses = std::mem::take(&mut self.creation_responses);
+            let _ = reply.send(Ok((id, responses)));
+        }
+    }
+
+    // WRITE-AHEAD append: persist one accepted input (and the game's latest progress) before the
+    // caller acknowledges it. only pushed to the in-memory `accepted` after the write succeeds, so
+    // RAM and DB never diverge. on ANY write failure the game tears itself down -- it cannot stay
+    // durable, so it must not keep serving (callers get an Err and return; the cancel removes the
+    // game, closes its connections, and drops the runtime).
+    async fn persist_accepted(&mut self, input: &ServerInput) -> Result<(), sqlx::Error> {
+        let seq = self.accepted.len() as i64;
+        let meta = GameMeta {
+            last_reached: self.last_reached,
+            clock: self.clock.now(),
+            clock_wall: wall_now(),
+            keys: self.keys_cache.clone(),
+        };
+        match self
+            .store
+            .append_input(self.game_id, seq, input, &meta)
+            .await
+        {
+            Ok(()) => {
+                self.accepted.push(input.clone());
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("persist failed for game {} -- tearing down: {e}", self.game_id);
+                self.cancel.cancel();
+                Err(e)
+            }
+        }
+    }
+
+    // record a crash (the accepted stream up to and including the crashing input) for later
+    // debugging. inert -- never replayed, and survives rewind.
+    async fn record_crash(&self, crashing: &ServerInput) {
+        let mut sequence = self.accepted.clone();
+        sequence.push(crashing.clone());
+        if let Err(e) = self.store.record_crash(self.game_id, &sequence).await {
+            eprintln!("failed to record crash for game {}: {e}", self.game_id);
+        }
+    }
+
+    // reboot after an engine crash; if the fresh child cannot be brought up within the retry
+    // bound, the game tears itself down (it cannot serve).
+    async fn reboot_after_crash(&mut self) {
+        if self.boot(None).await.is_err() {
+            eprintln!(
+                "game {} failed to reboot after crash -- tearing down",
+                self.game_id
+            );
+            self.cancel.cancel();
+        }
+    }
+
     // ===== LOOP ===== //
 
     async fn run(mut self) {
-        self.boot(None).await;
+        // FRESH: the first boot both proves the engine can run and collects the creation pack's
+        // responses. it is only written to the DB if it succeeds -- a game that fails to boot is
+        // reported as failed and never written. RESUMED: the game is already durable.
+        match self.boot(None).await {
+            Ok(()) => {
+                if self.creation_reply.is_some() {
+                    self.register_fresh().await;
+                }
+            }
+            Err(()) => {
+                if let Some(reply) = self.creation_reply.take() {
+                    let _ = reply.send(Err(InitError::BootFailed));
+                } else {
+                    eprintln!(
+                        "game {} failed to boot after max retries -- giving up",
+                        self.game_id
+                    );
+                }
+                return;
+            }
+        }
 
         loop {
             select! {
@@ -837,12 +1051,12 @@ impl Drop for Game {
 // permission enforcement, input executions, live client updates, and runtime process management.
 pub async fn game(
     state: WrappedServerState,
-    game_id: GameId,
+    start: GameStart,
     events: mpsc::UnboundedReceiver<GameInput>,
+    inbox: mpsc::UnboundedSender<GameInput>,
     cancel: CancellationToken,
-    initial_accepted: Vec<ServerInput>,
 ) {
-    Game::new(game_id, state, cancel, events, initial_accepted).run().await;
+    Game::new(state, start, events, inbox, cancel).run().await;
 }
 
 // convert a ServerInput into the RuntimeInput the runtime actually processes, if it is one the

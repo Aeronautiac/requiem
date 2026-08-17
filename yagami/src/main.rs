@@ -17,22 +17,26 @@ mod delivery;
 mod game;
 mod http;
 mod state;
+mod store;
 mod wire;
 
-use std::sync::{Arc, Mutex};
+use std::{collections::HashMap, sync::{Arc, Mutex}};
 
 use axum::{
     Router,
     http::{Method, header},
     routing::{any, post},
 };
-use lawliet_types::common::Seed;
-use tokio::net::TcpListener;
+use lawliet_types::common::{Seed, Time};
+use tokio::{net::TcpListener, sync::mpsc};
+use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
 
 use crate::{
+    game::{GameStart, game},
     http::{Config, create_game, end_game, establish_ws_connection, get_ticket},
-    state::ServerState,
+    state::{ServerState, insert_handle},
+    store::{Store, wall_now},
 };
 
 // Server-wide primitives, kept at the root because they belong to no one module: the game task
@@ -48,7 +52,45 @@ async fn main() {
     let _ = dotenvy::dotenv();
     let config = Config::from_env().expect("config");
 
-    let server_state = Arc::new(Mutex::new(ServerState::default()));
+    let store = Store::connect(&config.database_url)
+        .await
+        .expect("failed to connect to postgres");
+
+    let server_state = Arc::new(Mutex::new(ServerState {
+        store: store.clone(),
+        games: HashMap::new(),
+    }));
+
+    // resume every active game after a restart. each handle is registered synchronously -- before
+    // axum starts serving -- so no connection can race a just-restarted game. the resumed clock
+    // continues at the stored virtual time plus downtime, so game time keeps tracking real time
+    // across the restart.
+    for record in store.resume().await.expect("failed to load active games") {
+        let (inbox, events) = mpsc::unbounded_channel();
+        let cancel = CancellationToken::new();
+        let start_clock =
+            (record.meta.clock as i64 + (wall_now() - record.meta.clock_wall)).max(0) as Time;
+
+        insert_handle(
+            &server_state,
+            record.id,
+            inbox.clone(),
+            cancel.clone(),
+            record.meta.keys.clone(),
+        );
+        tokio::spawn(game(
+            server_state.clone(),
+            GameStart::Resumed {
+                game_id: record.id,
+                inputs: record.inputs,
+                keys: record.meta.keys,
+                start_clock,
+            },
+            events,
+            inbox,
+            cancel,
+        ));
+    }
 
     // REST is cross-origin (client on a different subdomain), so the JSON POST triggers a preflight
     // the browser blocks on until we answer. the WS route is exempt -- same-origin policy doesn't

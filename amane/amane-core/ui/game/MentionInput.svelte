@@ -7,6 +7,7 @@
   // re-parses back into chips.
   import { ROLES } from "../../constants";
   import type { Mention } from "../../game/helpers.svelte";
+  import type { Statuses } from "../../bindings";
   import {
     chipStyle,
     mentionChipColorVar,
@@ -26,6 +27,7 @@
     // Public status so a player candidate's chip is coloured like their name is everywhere else.
     newsAnchor: string | null;
     pressConf: ReadonlySet<string>;
+    statuses: ReadonlyMap<string, Statuses>;
     placeholder?: string;
     // A standalone prose box (announcement, death message) rather than the cramped composer field:
     // visibly bordered, taller, and full width so it reads as a real text box.
@@ -38,6 +40,7 @@
     orgs,
     newsAnchor,
     pressConf,
+    statuses,
     placeholder,
     boxed = false,
     onsubmit,
@@ -46,7 +49,7 @@
   type Candidate = { mention: Mention; label: string };
 
   const chipColor = (m: Mention) =>
-    mentionChipColorVar(m, { news_anchor: newsAnchor, press_conf: pressConf });
+    mentionChipColorVar(m, { news_anchor: newsAnchor, press_conf: pressConf, actor_statuses: statuses });
 
   let el = $state<HTMLDivElement>();
   let open = $state(false);

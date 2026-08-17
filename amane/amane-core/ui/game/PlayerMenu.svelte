@@ -15,7 +15,7 @@
   import type { UiState } from "../../ui_state.svelte.ts";
   import type { Action, ActionRequest } from "../../bindings";
   import { slotKeyFromString } from "../../bindings";
-  import { execErrorText, statusLabels } from "../../game/helpers.svelte";
+  import { execErrorText, statusBadgeStyle, statusLabels } from "../../game/helpers.svelte";
   import { viewerToActor } from "../../types";
   import { now } from "../../time.svelte.ts";
   import { Flash } from "../../flash.svelte.ts";
@@ -98,7 +98,8 @@
     {#if id}<Name {id} {view} chip menu={false} />{/if}
     {#each statuses as s (s)}
       <span
-        class="rounded bg-neutral-800 px-1 py-px text-[0.6rem] uppercase tracking-wide text-neutral-400"
+        class="rounded px-1 py-px text-[0.6rem] uppercase tracking-wide"
+        style={statusBadgeStyle(s)}
       >
         {s}
       </span>

@@ -246,6 +246,36 @@ export function statusLabels(status: Statuses): string[] {
   return labels;
 }
 
+// The accent a public-status badge renders in, by its label. Dead rides the death colour; the rest
+// are the greys/red named in theme.css, and anything unlisted keeps the neutral default.
+export function statusAccent(status: string): string {
+  switch (status) {
+    case "dead":
+      return "var(--color-status-dead)";
+    case "missing":
+      return "var(--color-status-missing)";
+    case "custody":
+      return "var(--color-status-custody)";
+    case "incarcerated":
+      return "var(--color-status-incarcerated)";
+    case "kidnapped":
+      return "var(--color-status-kidnapped)";
+    case "bugged":
+      return "var(--color-status-bugged)";
+    case "ipp":
+      return "var(--color-status-ipp)";
+    default:
+      return "var(--color-status-default)";
+  }
+}
+
+// The inline style for a status badge: text in the accent, background the same accent at low
+// opacity, mirroring how chips tint themselves so every badge reads the same way.
+export function statusBadgeStyle(status: string): string {
+  const accent = statusAccent(status);
+  return `color:${accent};background-color:color-mix(in srgb, ${accent} 16%, transparent)`;
+}
+
 export function ownPerms(own: ChannelProfileView[]): ChannelPerms {
   const all = own.reduce((acc, profile) => acc | profile.perms, 0);
   return {
@@ -418,16 +448,40 @@ export function mentionColorVar(mention: Mention): string {
   }
 }
 
-// The colour an actor's NAME renders in, by their public position: System reads System-red, the news
-// anchor and press-conference members take their post's accent, and everyone else reads as an
-// ordinary civilian. Anchor outranks conference outranks base. This is public status only — nothing
-// gated feeds it. Takes the structural subset of a view (like ViewerIdentity) so it stays out of the
-// GameView import cycle; a GameView satisfies it directly.
-export function nameColorVar(
-  key: string,
-  status: { news_anchor: string | null; press_conf: ReadonlySet<string> },
-): string {
+// The structural subset of a view that name/mention/display colour resolve against. A GameView
+// satisfies it directly, so callers may pass either the whole view or an explicit subset.
+type NameStatus = {
+  news_anchor: string | null;
+  press_conf: ReadonlySet<string>;
+  actor_statuses: ReadonlyMap<string, Statuses>;
+};
+
+// The accent a player's NAME renders in when they carry one of the presence statuses that change
+// how a name should read (Dead, Kidnapped, Custody, Incarcerated, Missing), or null to keep the
+// ordinary name colour. Dead > Kidnapped > Custody > Incarcerated > Missing, worst-first like the
+// badges, since only one colour can win.
+export function statusNameColor(status: Statuses): string | null {
+  if (status & StatusFlag.Dead) return "var(--color-status-dead)";
+  if (status & StatusFlag.Kidnapped) return "var(--color-status-kidnapped)";
+  if (status & StatusFlag.Custody) return "var(--color-status-custody)";
+  if (status & StatusFlag.Incarcerated) return "var(--color-status-incarcerated)";
+  if (status & StatusFlag.Missing) return "var(--color-status-missing)";
+  return null;
+}
+
+// The colour an actor's NAME renders in: the presence statuses (Dead, Kidnapped, Custody,
+// Incarcerated, Missing) colour it first, then System reads System-red, the news anchor and
+// press-conference members take their post's accent, and everyone else reads as an ordinary
+// civilian. Anchor outranks conference outranks base. This is public status only — nothing
+// gated feeds it. Takes the structural subset of a view (like ViewerIdentity) so it stays out of
+// the GameView import cycle; a GameView satisfies it directly.
+export function nameColorVar(key: string, status: NameStatus): string {
   if (key === "System") return "var(--color-mention-system)";
+  const statusColor = status.actor_statuses.get(key);
+  if (statusColor !== undefined) {
+    const c = statusNameColor(statusColor);
+    if (c) return c;
+  }
   if (status.news_anchor !== null && key === status.news_anchor)
     return "var(--color-news-anchor)";
   if (status.press_conf.has(key)) return "var(--color-press-conference)";
@@ -437,10 +491,7 @@ export function nameColorVar(
 // A mention chip's colour. A player mention IS that player's name, so it follows nameColorVar and
 // stays in step with how the name renders everywhere else; every other kind keeps its fixed entity
 // accent. The one place mention colour and name colour are reconciled.
-export function mentionChipColorVar(
-  mention: Mention,
-  status: { news_anchor: string | null; press_conf: ReadonlySet<string> },
-): string {
+export function mentionChipColorVar(mention: Mention, status: NameStatus): string {
   return mention.kind === "player"
     ? nameColorVar(mention.id, status)
     : mentionColorVar(mention);
@@ -450,10 +501,7 @@ export function mentionChipColorVar(
 // player follows nameColorVar so the header matches their name everywhere else; a role or org keeps
 // its entity accent; System is System-red; Mysterious reads as the anonymous accent. Pairs with
 // actorLabel, which resolves the text.
-export function displayColorVar(
-  display: ActorDisplay,
-  status: { news_anchor: string | null; press_conf: ReadonlySet<string> },
-): string {
+export function displayColorVar(display: ActorDisplay, status: NameStatus): string {
   if (display === "System") return "var(--color-mention-system)";
   if (display === "Mysterious") return "var(--color-event-anonymous)";
   if ("Raw" in display) return nameColorVar(slotKeyToString(display.Raw), status);
@@ -573,10 +621,7 @@ export function actorDisplayLabel(d: ActorDisplay, view: GameView): string {
 }
 
 export function actorDisplayColor(d: ActorDisplay, view: GameView): string {
-  return displayColorVar(d, {
-    news_anchor: view.news_anchor,
-    press_conf: view.press_conf,
-  });
+  return displayColorVar(d, view);
 }
 
 // ---- prosecution phase ----

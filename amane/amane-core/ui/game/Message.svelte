@@ -5,7 +5,7 @@
   //
   // `grouped` only drops the sender header for a continuation of an uninterrupted run from the
   // same sender. Every row stays its own hover target and carries its own time.
-  import { actorLabel, displayColorVar } from "../../game/helpers.svelte";
+  import { actorLabel, displayColorVar, statusBadgeStyle, statusLabels } from "../../game/helpers.svelte";
   import type { GameView } from "../../game/view.svelte";
   import type { ActorDisplay } from "../../bindings";
   import { slotKeyToString } from "../../bindings";
@@ -47,6 +47,10 @@
       ? slotKeyToString(senderDisplay.Raw)
       : null,
   );
+  // The sender's public status, shown beside their name in the header. Only a player has one.
+  const senderStatuses = $derived(
+    senderPlayer ? statusLabels(view.actor_statuses.get(senderPlayer) ?? 0) : [],
+  );
 </script>
 
 <div
@@ -64,6 +68,12 @@
         {:else}
           <span class="font-medium" style="color: {senderColor}">{senderLabel}</span>
         {/if}
+        {#each senderStatuses as s (s)}
+          <span
+            class="rounded px-1 py-px text-[0.6rem] uppercase tracking-wide"
+            style={statusBadgeStyle(s)}
+          >{s}</span>
+        {/each}
       </div>
       <TimeStamp {timestamp} {view} />
     </div>

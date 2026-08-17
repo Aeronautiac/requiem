@@ -17,11 +17,7 @@ use crate::{
 
 // An action request and its output. Sent to admin so they can see a timeline. yagami-level (the
 // runtime never sees denied/crashed inputs, and the "what was asked" framing is yagami's).
-pub fn log_action_output(
-    action: &ActionRequest,
-    outcome: ActionOutcome,
-    time: Time,
-) -> Output {
+pub fn log_action_output(action: &ActionRequest, outcome: ActionOutcome, time: Time) -> Output {
     Output {
         time,
         recipients: vec![Recipient::Admin],
@@ -130,12 +126,12 @@ impl History {
         for (offset, output) in outputs.iter().enumerate() {
             for recipient in &output.recipients {
                 match recipient {
-                    Recipient::Viewport(viewport) => {
-                        self.viewports.entry(*viewport).or_default().push(start + offset)
-                    }
-                    Recipient::Log(log) => {
-                        self.logs.entry(*log).or_default().push(start + offset)
-                    }
+                    Recipient::Viewport(viewport) => self
+                        .viewports
+                        .entry(*viewport)
+                        .or_default()
+                        .push(start + offset),
+                    Recipient::Log(log) => self.logs.entry(*log).or_default().push(start + offset),
                     _ => {}
                 }
             }

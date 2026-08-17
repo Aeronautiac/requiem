@@ -212,11 +212,14 @@ pub use common::{
 // it here.
 
 // CURRENT PROJECT ISSUES:
-// - you cannot edit the game's config as an admin.
+// - you cannot edit the game's config as an admin
+// - no way to give random abilities as an admin
 // - you cannot see the list of running games on the platform layer of the client. not important
-// yet, but eventually needs to get done.
-// - the server has no persistence layer yet. everything is held in RAM, which is fine for testing,
-// but needs to get done for actual long-running games.
+// yet, but eventually needs to get done
+//
+// BUG:
+// - prosecutions do not end on their own (timeout)
+// - tapping into a fake lounge doesnt punish you yet
 
 // TODO:
 // - Rulesets & live config editing

@@ -25,6 +25,13 @@ serde = "1.0.229"
 getrandom = "0.4.3"
 tower-http = { version = "0.7.0", features = ["cors"] }
 enumflags2 = "0.7.12"
+sqlx = { version = "0.9", features = [
+  "runtime-tokio",
+  "postgres",
+  "migrate",
+  "json",
+  "macros",
+] }
 
 [dev-dependencies]
 # tests need to mint distinct ActorKey/ViewportKey values by hand; the engine is the only thing

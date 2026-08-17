@@ -154,7 +154,7 @@ pub fn privileges_to_wire(privileges: &Privileges) -> PrivilegeSet {
 
 // ===== WIRE: controls, inputs, outcomes ===== //
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum ControlError {
     KeyNotFound,
     CannotActOnSelf,
@@ -162,7 +162,7 @@ pub enum ControlError {
     CannotGrantSupervise,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum ControlResponse {
     KeyCreated { key: Key },
     KeyRevoked,
@@ -180,7 +180,7 @@ pub enum ActionOutcome {
     EnginePanic,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum ControlOutcome {
     Ok(ControlResponse),
     Err(ControlError),
@@ -188,7 +188,7 @@ pub enum ControlOutcome {
 }
 
 // either a response or an error
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum ExecOutcome {
     Action(ActionOutcome),
     Control(ControlOutcome),

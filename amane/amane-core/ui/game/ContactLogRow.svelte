@@ -2,13 +2,14 @@
   // Deliberately not an Announcement — a log is read by scanning dozens of these, so the row
   // carries no label of its own and leans on the accent colour instead. Pure presentation: the
   // parent resolves both ends to display strings.
-  import type { ContactEvent } from "../../bindings";
+  import type { ActorDisplay, ContactEvent } from "../../bindings";
   import type { GameView } from "../../game/view.svelte";
+  import ActorDisplayChip from "./ActorDisplay.svelte";
   import TimeStamp from "./TimeStamp.svelte";
 
   interface Props {
-    from: string;
-    to: string;
+    from: ActorDisplay;
+    to: ActorDisplay;
     event: ContactEvent;
     timestamp: number;
     view: GameView;
@@ -33,9 +34,9 @@
   >
     <TimeStamp {timestamp} {view} mono />
     <span class="min-w-0 flex-1 text-neutral-300">
-      {from}
+      <ActorDisplayChip display={from} {view} />
       <span style="color: {phrase.color}">{phrase.verb}</span>
-      {to}{#if phrase.suffix}<span class="text-neutral-500">&nbsp;{phrase.suffix}</span>{/if}
+      <ActorDisplayChip display={to} {view} />{#if phrase.suffix}<span class="text-neutral-500">&nbsp;{phrase.suffix}</span>{/if}
     </span>
   </div>
 </div>

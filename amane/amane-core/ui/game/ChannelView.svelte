@@ -5,9 +5,8 @@
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import {
     PERM_SEND,
-    actorLabel,
+    actorDisplayLabel,
     channelLabel,
-    displayColorVar,
     displayKey,
     isReadOnlyKind,
     mentionsViewer,
@@ -15,7 +14,6 @@
     orgColorVar,
     orgDisplayName,
     ownPerms,
-    phaseAnnouncement,
     roleColorVar,
     roleLabel,
     t,
@@ -28,7 +26,6 @@
   import type { UiState } from "../../ui_state.svelte.ts";
   import type {
     ActionRequest,
-    ActorDisplay,
     PollOutcome,
     PollSubject,
     ProfileKey,
@@ -43,6 +40,7 @@
   import Announcement from "./Announcement.svelte";
   import Chip from "./Chip.svelte";
   import Name from "./Name.svelte";
+  import ActorDisplay from "./ActorDisplay.svelte";
   import ContactLogRow from "./ContactLogRow.svelte";
   import TopPanel from "./TopPanel.svelte";
   import PollCard from "./PollCard.svelte";
@@ -192,17 +190,6 @@
     );
   }
 
-  function display_string(display: ActorDisplay): string {
-    return actorLabel(display, view.players);
-  }
-
-  function display_color(display: ActorDisplay): string {
-    return displayColorVar(display, {
-      news_anchor: view.news_anchor,
-      press_conf: view.press_conf,
-    });
-  }
-
   // Discord-style chunking: only the sender header is dropped, and any non-message event in
   // between breaks the chain — the run must be uninterrupted.
   const GROUP_WINDOW_MS = 45_000;
@@ -279,22 +266,6 @@
       return "their notebook and their power have";
     }
     return tr.notebook_transferred ? "their notebook has" : "their power has";
-  }
-
-  function prosecution_event_text(pe: {
-    prosecutor_display: ActorDisplay;
-    defendant_display: ActorDisplay;
-    phase: ProsecutionPhaseView;
-    ended: boolean;
-    verdict: boolean | null;
-  }): string {
-    return phaseAnnouncement(
-      pe.phase,
-      display_string(pe.prosecutor_display),
-      display_string(pe.defendant_display),
-      pe.ended,
-      pe.verdict,
-    );
   }
 
   // A poll's start notice rides its home channel's stream, so its position in the log IS where the
@@ -565,7 +536,7 @@
           {:else if "EyeDealTaken" in event.data}
             {@const u = event.data.EyeDealTaken.user}
             <Announcement {view} timestamp={event.timestamp} color="var(--color-event-reveal)" description="The Eye Deal">
-              <Chip label={display_string(u)} colorVar={display_color(u)} /> has taken the shinigami eye
+              <ActorDisplay display={u} {view} /> has taken the shinigami eye
               deal.
             </Announcement>
           {:else if "NewsAnchor" in event.data}
@@ -786,19 +757,48 @@
           {:else if "ContactLogEntry" in event.data}
             {@const log = event.data.ContactLogEntry}
             <ContactLogRow
-              from={display_string(log.contactor)}
-              to={display_string(log.contacted)}
+              from={log.contactor}
+              to={log.contacted}
               event={log.event}
               timestamp={event.timestamp}
               {view}
             />
           {:else if "ProsecutionEvent" in event.data}
             {@const pe = event.data.ProsecutionEvent}
+            {#snippet defendant()}<ActorDisplay display={pe.defendant_display} {view} />{/snippet}
+            {#snippet prosecutor()}<ActorDisplay display={pe.prosecutor_display} {view} />{/snippet}
             <Announcement {view} timestamp={event.timestamp}
               color="var(--color-event-prosecution)"
               description={pe.ended ? "Prosecution Ended" : "Prosecution"}
-              content={prosecution_event_text(pe)}
-            />
+            >
+              {#if pe.ended}
+                {#if pe.verdict === true}
+                  {@render defendant()} has been found guilty.
+                {:else if pe.verdict === false}
+                  {@render defendant()} has been acquitted.
+                {:else}
+                  The prosecution of {@render defendant()} has ended.
+                {/if}
+              {:else if pe.phase === "Voting"}
+                The trial vote for {@render defendant()} has begun.
+              {:else if "Custody" in pe.phase}
+                {@render prosecutor()} is prosecuting {@render defendant()}.
+              {:else if "Debate" in pe.phase.Trial}
+                The trial of {@render defendant()} has entered debate.
+              {:else if "Prosecutor" in pe.phase.Trial}
+                {#if pe.phase.Trial.Prosecutor === "Grace"}
+                  The trial of {@render defendant()} has begun, the prosecution has the floor.
+                {:else}
+                  In the trial of {@render defendant()}, the prosecution presents.
+                {/if}
+              {:else}
+                {#if pe.phase.Trial.Defense === "Grace"}
+                  In the trial of {@render defendant()}, the defense has the floor.
+                {:else}
+                  In the trial of {@render defendant()}, the defense presents.
+                {/if}
+              {/if}
+            </Announcement>
           {/if}
         {/each}
 
@@ -838,7 +838,7 @@
             >
               {#each sendable_profiles as p (slotKeyToString(p.profile_id))}
                 <option value={slotKeyToString(p.profile_id)}>
-                  {display_string(p.display)}
+                  {actorDisplayLabel(p.display, view)}
                 </option>
               {/each}
             </select>
@@ -853,6 +853,7 @@
                   orgs={view.orgs}
                   newsAnchor={view.news_anchor}
                   pressConf={view.press_conf}
+                  statuses={view.actor_statuses}
                   placeholder={`Message ${channel_name ?? ""}`}
                   onsubmit={send_message}
                 />

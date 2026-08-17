@@ -4,7 +4,6 @@
 // its traffic belongs to the game task, and this module only shuttles bytes between the two.
 
 use std::{
-    collections::HashMap,
     env,
     net::SocketAddr,
     time::Duration,
@@ -34,9 +33,13 @@ use crate::{
         HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, OUTBOX_BUF_SIZE, TICKET_LIMIT, TICKET_TIMEOUT,
     },
     delivery::DeliveryData,
-    game::{GameCommand, GameInput, InputEnvelope, game},
-    state::{ConnHandle, GameHandle, GameId, WrappedServerState, lock_state},
-    wire::{Batch, ControlOutcome, ControlResponse, ServerInput, SimControl, SimControlData},
+    game::{GameCommand, GameInput, GameStart, InputEnvelope, game},
+    state::{ConnHandle, GameId, WrappedServerState, lock_state},
+    store::Store,
+    wire::{
+        AdminControl, Batch, ControlOutcome, ControlResponse, ExecOutcome, ServerInput, SimControl,
+        SimControlData,
+    },
 };
 
 pub fn req(key: &str) -> Result<String, String> {
@@ -46,6 +49,7 @@ pub fn req(key: &str) -> Result<String, String> {
 pub struct Config {
     pub bind_addr: SocketAddr,
     pub allowed_origin: HeaderValue,
+    pub database_url: String,
 }
 
 impl Config {
@@ -57,6 +61,7 @@ impl Config {
             allowed_origin: req("YAGAMI_ALLOWED_ORIGIN")?
                 .parse()
                 .map_err(|e| format!("YAGAMI_ALLOWED_ORIGIN: {e}"))?,
+            database_url: req("DATABASE_URL")?,
         })
     }
 }
@@ -67,6 +72,7 @@ pub enum ServerError {
     InvalidKey,
     InvalidTicket,
     TicketLimitReached,
+    GameBootFailed,
 }
 
 impl IntoResponse for ServerError {
@@ -76,6 +82,7 @@ impl IntoResponse for ServerError {
             Self::InvalidKey => StatusCode::NOT_FOUND,
             Self::TicketLimitReached => StatusCode::FORBIDDEN,
             Self::InvalidTicket => StatusCode::NOT_FOUND,
+            Self::GameBootFailed => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, Json(self)).into_response()
     }
@@ -344,10 +351,12 @@ pub struct GameCreationPacket {
 }
 
 // a platform admin is not a game admin. this gives you access to PLATFORM CONTROLS like creating
-// and killing games.
-pub fn is_platform_admin(_platform_key: &str) -> bool {
-    // TODO: back this with a gitignored allowlist file. open during testing.
-    true
+// and killing games. the allowlist lives in the `platform_keys` table, editable in the DB UI.
+async fn is_platform_admin(store: &Store, platform_key: &str) -> Result<bool, ServerError> {
+    store
+        .is_platform_admin(platform_key)
+        .await
+        .map_err(|_| ServerError::InvalidKey)
 }
 
 // to create a game, you must have a platform key
@@ -358,82 +367,51 @@ pub async fn create_game(
     State(state): State<WrappedServerState>,
     Json(body): Json<CreateGame>,
 ) -> Result<Json<GameCreationPacket>, ServerError> {
-    if !is_platform_admin(&body.platform_key) {
+    let store = lock_state(&state).store.clone();
+    if !is_platform_admin(&store, &body.platform_key).await? {
         return Err(ServerError::InvalidKey);
     }
 
-    let seed = crate::generate_seed();
-    let (inbox, events) = mpsc::unbounded_channel();
-    let cancel = CancellationToken::new();
-
-    // the initial accepted stream is just engine init; the admin key is minted by the runtime
-    // (deterministic) via a bootstrap control once the game task is running.
-    use lawliet_types::action::{Action, ActionActor, ActionRequest, InitializeEngine};
-    let initial_accepted = vec![ServerInput::Action(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: 0,
-        payload: Action::InitializeEngine(InitializeEngine { seed }),
-    })];
-
-    let game_id = {
-        let mut server_state = lock_state(&state);
-
-        let game_id = server_state.next_game_id;
-        server_state.next_game_id += 1;
-
-        server_state.games.insert(
-            game_id,
-            GameHandle {
-                cancel: cancel.clone(),
-                inbox,
-                tickets: HashMap::new(),
-                connections: HashMap::new(),
-                keys: HashMap::new(),
-                key_handles: HashMap::new(),
-            },
-        );
-
-        game_id
-    };
-
-    // registered before the task is spawned, so a get_ticket that races the spawn still finds the
-    // game -- its events just queue on the unbounded inbox until the task starts draining.
-    tokio::spawn(game(state.clone(), game_id, events, cancel, initial_accepted));
-
-    // mint the admin key: send a CreateKey through the game task and await the KeyCreated reply.
-    // the runtime generates the key from its sim RNG (deterministic); no key on the wire.
-    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-    let control = SimControl {
+    let creation_pack = vec![ServerInput::Control(AdminControl::Sim(SimControl {
         time: 0,
         data: SimControlData::CreateKey {
             actors: ActorScope::All,
             capabilities: vec![Capability::Administer, Capability::Supervise],
         },
-    };
-    let _ = state_clone_send(&state, game_id, GameInput::GameCommand(GameCommand::BootstrapControl {
-        control,
-        reply: reply_tx,
-    }));
+    }))];
 
-    let admin_key = match reply_rx.await {
-        Ok(ControlOutcome::Ok(ControlResponse::KeyCreated { key })) => key,
-        _ => return Err(ServerError::InvalidKey),
+    let (inbox, events) = mpsc::unbounded_channel();
+    let cancel = CancellationToken::new();
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+
+    // the task boots, writes itself to the DB, and replies with the game id + the creation pack's
+    // responses (incl. the minted admin key). a game that fails to boot replies Err and is never
+    // written, so nothing to clean up here.
+    tokio::spawn(game(
+        state.clone(),
+        GameStart::Fresh {
+            creation_pack,
+            creation_reply: reply_tx,
+        },
+        events,
+        inbox,
+        cancel,
+    ));
+
+    let (game_id, responses) = match reply_rx.await {
+        Ok(Ok(ok)) => ok,
+        _ => return Err(ServerError::GameBootFailed),
     };
 
-    Ok(Json(GameCreationPacket { game_id, admin_key }))
-}
+    let admin_key = responses.into_iter().find_map(|outcome| match outcome {
+        ExecOutcome::Control(ControlOutcome::Ok(ControlResponse::KeyCreated { key })) => Some(key),
+        _ => None,
+    });
 
-// helper to send a GameInput to a game's inbox by looking it up in shared state.
-fn state_clone_send(
-    state: &WrappedServerState,
-    game_id: GameId,
-    input: GameInput,
-) -> Result<(), ()> {
-    let server_state = lock_state(state);
-    let Some(game) = server_state.games.get(&game_id) else {
-        return Err(());
-    };
-    game.inbox.send(input).map_err(|_| ())
+    match admin_key {
+        Some(admin_key) => Ok(Json(GameCreationPacket { game_id, admin_key })),
+        None => Err(ServerError::GameBootFailed),
+    }
 }
 
 #[derive(Deserialize)]
@@ -452,16 +430,25 @@ pub async fn end_game(
     Path(game_id): Path<GameId>,
     Json(body): Json<EndGameRequest>,
 ) -> Result<(), ServerError> {
-    if !is_platform_admin(&body.platform_key) {
+    let store = lock_state(&state).store.clone();
+    if !is_platform_admin(&store, &body.platform_key).await? {
         return Err(ServerError::InvalidKey);
     }
 
-    let server_state = lock_state(&state);
-    let Some(game) = server_state.games.get(&game_id) else {
-        return Err(ServerError::InvalidGameId);
+    let cancel = {
+        let server_state = lock_state(&state);
+        let Some(game) = server_state.games.get(&game_id) else {
+            return Err(ServerError::InvalidGameId);
+        };
+        game.cancel.clone()
     };
 
-    game.cancel.cancel();
+    // mark it ended so a restart does not try to resume it.
+    if let Err(e) = store.end_game(game_id).await {
+        eprintln!("failed to mark game {game_id} ended: {e}");
+    }
+
+    cancel.cancel();
 
     Ok(())
 }

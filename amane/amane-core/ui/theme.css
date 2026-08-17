@@ -84,6 +84,18 @@
   --color-event-blackout: #1e1b4b; /* the world stopped telling you things */
   --color-event-news: #0ea5e9; /* who runs the news, and who may speak on it */
 
+  /* Public-status accents, one per badge next to a name. Dead rides the death colour so a dead name
+   * reads the same everywhere it appears; the rest are plain greys plus a red for kidnapping.
+   * `default` covers the statuses nobody recoloured (ipp, bugged). */
+  --color-status-dead: var(--color-event-death); /* same as the death colour */
+  --color-status-missing: #565662; /* dark grey */
+  --color-status-custody: #ffffff; /* white */
+  --color-status-incarcerated: #b4b4be; /* light grey */
+  --color-status-kidnapped: #f87171; /* red */
+  --color-status-bugged: #f59e0b; /* orange — stands out: you are being listened to */
+  --color-status-ipp: #38bdf8; /* blue — signals protection */
+  --color-status-default: #8a8a96; /* the old neutral-400 */
+
   /* Entity colours: one accent per role and per org, plus the two fixed mention kinds. This is the
    * single place to recolour anything identity-related — the ping chips in messages, the composer's
    * live chips, and the role-reveal on a death all read these. A role or org with no entry of its

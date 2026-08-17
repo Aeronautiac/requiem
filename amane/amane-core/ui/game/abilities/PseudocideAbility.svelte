@@ -96,6 +96,7 @@
       orgs={view.orgs}
       newsAnchor={view.news_anchor}
       pressConf={view.press_conf}
+      statuses={view.actor_statuses}
       placeholder="Announced on death"
       boxed
       onsubmit={fake_death}
