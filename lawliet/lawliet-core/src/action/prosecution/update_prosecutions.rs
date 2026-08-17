@@ -43,37 +43,45 @@ impl ActionInterface for UpdateProsecutions {
     ) -> ActionResult {
         actor.admin_or_system()?;
 
-        // Cull first so terminated prosecutions are gone before we refresh the survivors.
-        Action::CullProsecutions(CullProsecutions {}).handle(
-            eng,
-            ctx,
-            &ActionActor::System,
-            version,
-            mutate,
-        )?;
+        loop {
+            // Cull first so terminated prosecutions are gone before we refresh the survivors.
+            Action::CullProsecutions(CullProsecutions {}).handle(
+                eng,
+                ctx,
+                &ActionActor::System,
+                version,
+                mutate,
+            )?;
 
-        let ids: SmallVec<[ProsecutionKey; 8]> = eng.world.prosecutions.keys().collect();
-        for prosecution_id in ids {
-            // Held prosecutions are skipped rather than refused: a hold is already recorded, and
-            // asking again every sweep would only rewrite it. A frozen one is not skipped here —
-            // AdvanceProsecution refuses it, and that refusal leaves nothing behind, so the sweep
-            // after the freeze lifts is the one that carries.
-            let advance = eng
-                .world
-                .get_prosecution(prosecution_id)
-                .is_some_and(|p| p.both_signalled() && !p.pending_advance);
+            let mut one_advanced = false;
+            let ids: SmallVec<[ProsecutionKey; 8]> = eng.world.prosecutions.keys().collect();
+            for prosecution_id in ids {
+                // Held prosecutions are skipped rather than refused: a hold is already recorded, and
+                // asking again every sweep would only rewrite it. A frozen one is not skipped here —
+                // AdvanceProsecution refuses it, and that refusal leaves nothing behind, so the sweep
+                // after the freeze lifts is the one that carries.
+                let advance = eng
+                    .world
+                    .get_prosecution(prosecution_id)
+                    .is_some_and(|p| p.both_signalled() && !p.pending_advance);
 
-            if advance {
-                Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }).handle(
-                    eng,
-                    ctx,
-                    &ActionActor::System,
-                    version,
-                    mutate,
-                )?;
+                if advance {
+                    one_advanced = true;
+                    Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }).handle(
+                        eng,
+                        ctx,
+                        &ActionActor::System,
+                        version,
+                        mutate,
+                    )?;
+                }
+
+                broadcast_prosecution(eng, ctx, prosecution_id, mutate);
             }
 
-            broadcast_prosecution(eng, ctx, prosecution_id, mutate);
+            if !one_advanced {
+                break;
+            }
         }
 
         Ok(ActionResponse::UpdateProsecutions(
