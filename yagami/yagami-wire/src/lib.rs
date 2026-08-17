@@ -169,6 +169,7 @@ pub enum ControlResponse {
     CapabilitiesSet,
     ActorScopeSet,
     ProfileSet,
+    ReSeed,
     TimeSet,
 }
 
@@ -228,6 +229,13 @@ pub enum SimControlData {
     SetProfile {
         actor: ActorKey,
         profile: Profile,
+    },
+    // rotate the simulation RNG to a fresh seed. server-issued: the game task injects one after a
+    // name leaves the server's secrecy (a true name is revealed or a display roster is broadcast),
+    // so a name learned now cannot predict the ones drawn after it -- each epoch is independent.
+    // part of the accepted stream, so a rebuild replays the same rotations and reproduces the names.
+    ReSeed {
+        seed: u64,
     },
 }
 

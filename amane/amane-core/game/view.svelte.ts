@@ -24,7 +24,7 @@ import type {
   Statuses,
 } from "../bindings";
 import { slotKeyToString } from "../bindings";
-import { NOTIF_CHANNEL, logDumpKey, logDumpLabel, new_channel, orgDisplayName, playerLabel, t } from "./helpers.svelte";
+import { NOTIF_CHANNEL, logDumpKey, logDumpLabel, new_channel, orgDisplayName, playerLabel, roleLabel, t } from "./helpers.svelte";
 import { commandToEvent } from "./commands/events";
 import type {
   AbilityView,
@@ -485,12 +485,12 @@ export class GameView {
   }
 
   // A display to the name to show. Raw looks up a player; the rest are self-describing or
-  // intentionally opaque.
+  // intentionally opaque. A Role display reads by its display name, not the raw variant.
   resolve_display(display: ActorDisplay): string {
     if (display === "Mysterious") return t("display_mysterious");
     if (display === "System") return t("display_system");
     if ("Raw" in display) return playerLabel(slotKeyToString(display.Raw), this.players);
-    if ("Role" in display) return display.Role;
+    if ("Role" in display) return roleLabel(display.Role);
     const org = this.orgs.get(slotKeyToString(display.Org));
     return org ? orgDisplayName(org.name) : t("display_org_unknown");
   }

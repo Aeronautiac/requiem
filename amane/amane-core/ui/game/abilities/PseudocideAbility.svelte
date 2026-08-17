@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { execErrorText, orgDisplayName } from "../../../game/helpers.svelte";
+  import { execErrorText, orgDisplayName, roleLabel } from "../../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../../game/state.svelte";
   import { SESSION_KEY, type SessionState } from "../../../session.svelte.ts";
@@ -110,7 +110,7 @@
       class="w-full rounded-md bg-neutral-800 px-2 py-2 text-sm text-neutral-200"
     >
       {#each ROLES as r (r)}
-        <option value={r}>{r}</option>
+        <option value={r}>{roleLabel(r)}</option>
       {/each}
     </select>
   </label>

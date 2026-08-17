@@ -158,9 +158,10 @@ pub struct Simulation {
     keys: HashMap<Key, Privileges>,
     profiles: HashMap<ActorKey, Profile>,
     data_viewport: Option<ViewportKey>,
-    // the simulation's single seeded RNG: drives true-name draws, display-name draws, and key
+    // the simulation's seeded RNG: drives true-name draws, display-name draws, and key
     // generation. one stream, consumed in stream order, so a rebuild that re-feeds the same inputs
-    // in the same order reproduces every draw and every key.
+    // in the same order reproduces every draw and every key. the game task rotates it (a ReSeed
+    // control) after any name leaks, so names drawn after a leak are independent of those before.
     sim_rng: Pcg64,
     display_names: NamePool,
     true_names: NamePool,
@@ -191,6 +192,13 @@ impl Simulation {
         self.sim_rng = Pcg64::seed_from_u64(seed);
         self.display_names.reset();
         self.true_names.reset();
+    }
+
+    // rotate the simulation RNG to a fresh seed, on a ReSeed control. the taken sets are left
+    // alone: rotations happen mid-game and must keep avoiding names already in play, and on a
+    // rebuild replay they are repopulated from the replayed draws.
+    pub fn reseed_rng(&mut self, seed: u64) {
+        self.sim_rng = Pcg64::seed_from_u64(seed);
     }
 
     // process one input. `caller` is the connection's key (None for a server-issued input or a
@@ -327,6 +335,10 @@ impl Simulation {
             SimControlData::SetProfile { actor, profile } => {
                 self.profiles.insert(*actor, profile.clone());
                 Ok(ControlResponse::ProfileSet)
+            }
+            SimControlData::ReSeed { seed } => {
+                self.reseed_rng(*seed);
+                Ok(ControlResponse::ReSeed)
             }
         };
 

@@ -228,6 +228,12 @@ export type InfoEvent = {
   EyeCount: {
     count: number,
   }
+} | {
+  // A tap landed on a lounge you fabricated, and you are told who read it. The tapper is never told
+  // their identity was handed over.
+  FakeLoungeTapped: {
+    display: ActorDisplay,
+  }
 }
 
 // A poll started (outcome null) or ended, rendered inline in the poll's scoped channel. Distinct

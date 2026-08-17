@@ -327,7 +327,8 @@ export function orgDisplayName(name: OrganizationName): string {
 }
 
 // Same fallback shape as orgDisplayName: a role with no copy yet renders as its raw config name
-// rather than blank. Roles have no display strings today, so every role currently reads raw.
+// rather than blank. Most roles have a display string (config/strings.ts, role_name_*); the raw
+// name is only the fallback until one is written.
 export function roleLabel(role: Role): string {
   const key = `role_name_${role}` as StringKey;
   return key in STRINGS ? t(key) : role;
@@ -608,7 +609,7 @@ export function actorLabel(d: ActorDisplay, players: ReadonlyMap<string, Player>
   if (d === "Mysterious") return t("display_mysterious");
   if (d === "System") return t("display_system");
   if ("Raw" in d) return playerLabel(slotKeyToString(d.Raw), players);
-  if ("Role" in d) return d.Role;
+  if ("Role" in d) return roleLabel(d.Role);
   if ("Org" in d) return t("display_org_unknown");
   return t("display_unknown");
 }

@@ -4,7 +4,7 @@
   // the ability's own configuration UI (see AbilityMenu / the registry).
   import type { AbilityName, OrgAbility } from "../../../bindings";
   import { OrgAbilityPolicyFlag } from "../../../bindings";
-  import { abilityDescription, abilityWarning } from "../../../game/helpers.svelte";
+  import { abilityDescription, abilityWarning, roleLabel } from "../../../game/helpers.svelte";
   import { prettyAbility } from "./registry";
 
   let {
@@ -51,7 +51,7 @@
     if (requirements.require_members > 0) {
       out.push(`${requirements.require_members} members`);
     }
-    for (const role of requirements.require_roles) out.push(`needs ${role}`);
+    for (const role of requirements.require_roles) out.push(`needs ${roleLabel(role)}`);
     if (requirements.usage_policies & OrgAbilityPolicyFlag.RequireLeader) out.push("leader only");
     if (requirements.usage_policies & OrgAbilityPolicyFlag.RequireVote) out.push("vote");
     return out;

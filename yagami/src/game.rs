@@ -36,7 +36,7 @@ use crate::{
     store::{GameMeta, Store, wall_now},
     wire::{
         ActionOutcome, AdminControl, ControlOutcome, ControlResponse, ExecOutcome, MetaControl,
-        Output, OutputData, ResponsePair, ServerInput, SimControlData, SimOutput,
+        Output, OutputData, ResponsePair, ServerInput, SimControl, SimControlData, SimOutput,
     },
 };
 
@@ -589,6 +589,10 @@ impl Game {
                 match self.dispatch(&runtime_input, caller_key.as_ref()).await {
                     Ok(output) => {
                         self.update_server_projections(&output.outputs);
+                        // a name left the server's secrecy in this action's outputs; rotate the
+                        // simulation RNG before anything else draws, so the leaked name cannot
+                        // predict the next epoch's.
+                        let leak = emits_leak(&output.outputs);
                         let at = self.history.append(output.outputs);
                         // record the accepted action for the admin timeline.
                         let outcome = match &output.reply {
@@ -612,6 +616,9 @@ impl Game {
                         };
                         self.history
                             .broadcast(&self.server_state, at, Some((ticket, pair)));
+                        if leak {
+                            self.inject_reseed().await;
+                        }
                     }
                     Err(_) => {
                         // the runtime crashed mid-action: record the crash, reboot, then tell whoever
@@ -687,6 +694,32 @@ impl Game {
                 }
                 _ => {}
             }
+        }
+    }
+
+    // ===== SEED ROTATION ===== //
+
+    // rotate the simulation RNG after a name leaked (see emits_leak): a fresh seed for the next
+    // epoch so a name learned now cannot predict later ones. server-issued -- it is part of the
+    // accepted stream and replays identically, and its reply reaches nobody.
+    async fn inject_reseed(&mut self) {
+        // the sim-time override applies to server-issued reseeds exactly as to client controls.
+        let control = SimControl {
+            time: self.clock.now(),
+            data: SimControlData::ReSeed {
+                seed: crate::generate_seed() as u64,
+            },
+        };
+        let runtime_input = RuntimeInput::Sim(control.clone());
+        if self.dispatch(&runtime_input, None).await.is_err() {
+            // the runtime crashed mid-reseed: reboot, which replays it from the stream below.
+            self.reboot_after_crash().await;
+            return;
+        }
+        // write-ahead: the reseed is part of the sim's state and must be replayed on reboot.
+        let sim_input = ServerInput::Control(AdminControl::Sim(control));
+        if self.persist_accepted(&sim_input).await.is_err() {
+            return;
         }
     }
 
@@ -1082,4 +1115,17 @@ fn to_runtime_input(input: &ServerInput) -> Option<RuntimeInput> {
         ServerInput::Control(AdminControl::Sim(sim)) => Some(RuntimeInput::Sim(sim.clone())),
         ServerInput::Control(AdminControl::Meta(_)) => None,
     }
+}
+
+// does an action's output put a name into someone's hands? a true name is revealed or sent
+// (RevealTrueName, TrueNameUpdate) or a display roster is broadcast (ProfileRoster). any of these
+// is a "leak": the receiver could use it as an oracle against the deterministic RNG, so the
+// simulation RNG must rotate before the next name is drawn.
+fn emits_leak(outputs: &[Output]) -> bool {
+    outputs.iter().any(|output| match &output.data {
+        OutputData::Engine(Command::RevealTrueName { .. })
+        | OutputData::Engine(Command::TrueNameUpdate { .. })
+        | OutputData::Sim(SimOutput::ProfileRoster { .. }) => true,
+        _ => false,
+    })
 }

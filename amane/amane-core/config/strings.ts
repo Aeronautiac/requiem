@@ -109,6 +109,10 @@ export const STRINGS = {
   toast_tap_in_found: "Successfully tapped into contact {id}.",
   toast_tap_in_no_contact: "Contact {id} does not exist.",
   toast_tap_in_not_loggable: "Contact {id} has logging off. Nothing happened.",
+  toast_fake_lounge_title: "Fake Lounge Read",
+  toast_fake_lounge_body: "Your fabricated lounge was read by {who}.",
+  toast_fake_lounge_admin_title: "Fake Lounge Read",
+  toast_fake_lounge_admin_body: "A fabricated lounge was read by {who}.",
 
   // ---- blackout, which is the only world event that announces its own silence ----
   blackout_begun_label: "Blackout",

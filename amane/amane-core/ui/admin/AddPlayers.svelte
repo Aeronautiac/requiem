@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { execErrorText } from "../../game/helpers.svelte";
+  import { execErrorText, roleLabel } from "../../game/helpers.svelte";
   import Dialog from "../kit/Dialog.svelte";
   import Input from "../kit/Input.svelte";
   import Select from "../kit/Select.svelte";
@@ -35,7 +35,7 @@
 
   <Select
     bind:value={role}
-    options={ROLES.map((r) => ({ value: r, label: r }))}
+    options={ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
   />
 
   <Button

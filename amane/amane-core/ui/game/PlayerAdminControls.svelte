@@ -1,6 +1,6 @@
 <script lang="ts">
   // Everything here dispatches as the Admin actor, which the engine accepts for these.
-  import { execErrorText, nameLabel } from "../../game/helpers.svelte";
+  import { execErrorText, nameLabel, roleLabel } from "../../game/helpers.svelte";
   import { getContext } from "svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
@@ -55,7 +55,7 @@
   }
 
   function set_role() {
-    run({ GiveRole: { target_id: target, role } }, `Role set to ${role}.`);
+    run({ GiveRole: { target_id: target, role } }, `Role set to ${roleLabel(role)}.`);
   }
   function set_true_name() {
     const name = true_name.trim();
@@ -119,7 +119,7 @@
 
 <div class="flex flex-col gap-2 py-1 text-sm">
   <div class="text-neutral-500">
-    <div><span class="text-neutral-600">Role:</span> {info?.role ?? "—"}</div>
+    <div><span class="text-neutral-600">Role:</span> {info?.role ? roleLabel(info.role) : "—"}</div>
     <div>
       <span class="text-neutral-600">True name:</span>
       {info?.true_name ? nameLabel(info.true_name) : "—"}
@@ -132,7 +132,7 @@
       class="min-w-0 flex-1 rounded bg-neutral-800 px-2 py-1.5 text-neutral-200"
     >
       {#each ROLES as r (r)}
-        <option value={r}>{r}</option>
+        <option value={r}>{roleLabel(r)}</option>
       {/each}
     </select>
     <button

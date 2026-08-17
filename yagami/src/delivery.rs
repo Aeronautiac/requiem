@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use lawliet_types::{
-    action::ActionRequest,
     command::{Command, TapInOutcome},
     common::{ActorKey, LogID, Time, ViewportKey},
 };

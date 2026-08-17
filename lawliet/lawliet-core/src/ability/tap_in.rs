@@ -17,7 +17,8 @@
 
 use lawliet_types::{
     ability::{AbilityName, TapIn},
-    command::{Command, TapInOutcome},
+    actor::ActorDisplay,
+    command::{Command, CommandRecipient, TapInOutcome},
 };
 
 use crate::{
@@ -25,6 +26,7 @@ use crate::{
     helpers::{
         actor_id, cmd_channel, get_ability, get_channel, get_gc, get_lounge, owner_view_recipient,
     },
+    lounge::LoungeVariant,
     world::ContactChannel,
 };
 
@@ -50,6 +52,17 @@ impl AbilityInterface for TapIn {
         let range = match get_ability(eng, ability)?.variant {
             0 => None,
             _ => Some(eng.config.defaults.tap_in_window),
+        };
+
+        // The lounge a fake was fabricated into is not the tapper's to see through: resolving the
+        // contact id also tells us whether the room is fake, so the creator can be told who read
+        // it without the tapper ever knowing their identity was handed over.
+        let fake_creator = match eng.world.contact_channels.get(&self.contact_id) {
+            Some(ContactChannel::Lounge(id)) => match get_lounge(eng, *id)?.variant {
+                LoungeVariant::Fake { creator_id, .. } => Some(creator_id),
+                _ => None,
+            },
+            _ => None,
         };
 
         let channel_id = match eng.world.contact_channels.get(&self.contact_id) {
@@ -94,6 +107,24 @@ impl AbilityInterface for TapIn {
             Some(user_id),
         );
 
+        // A tap on a fabricated lounge hands its creator who read it -- and admin, via the System
+        // mirror -- while the tapper stays none the wiser (to them it was an ordinary anonymous
+        // ChannelTapped). The tapper's display is the raw actor, which the client renders by name.
+        if let Some(creator_id) = fake_creator {
+            for recipient in [
+                CommandRecipient::Actor(creator_id),
+                CommandRecipient::System,
+            ] {
+                ctx.push_cmd(
+                    Command::FakeLoungeTapped {
+                        display: ActorDisplay::Raw(user_id),
+                    },
+                    recipient,
+                    eng.time,
+                );
+            }
+        }
+
         let log = get_channel(eng, channel_id)?.log;
         ctx.push_cmd(
             Command::TapInResult {
@@ -113,6 +144,7 @@ mod tests {
     use lawliet_types::{
         ability::{AbilityBehaviour, AbilityName, TapIn},
         action::CreateAndGiveAbility,
+        actor::ActorDisplay,
         command::{Command, CommandRecipient, TapInOutcome},
     };
 
@@ -323,6 +355,98 @@ mod tests {
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Log(log)
                 && matches!(&p.cmd, Command::AddMessage { .. })
+        }));
+    }
+
+    // A tapper, a fabricator, and the two players a fake lounge is attributed to. The lounge is
+    // fabricated by `creator` and masquerades as a contact between alice and bob.
+    fn fake_world(eng: &mut Engine) -> (ActorKey, crate::AbilityKey, ID, ActorKey) {
+        init_engine(eng);
+        let tapper = add_player(eng, 0, Role::Civilian, "tapper");
+        let creator = add_player(eng, 0, Role::Civilian, "creator");
+        let alice = add_player(eng, 0, Role::Civilian, "alice");
+        let bob = add_player(eng, 0, Role::Civilian, "bob");
+
+        eng.execute(ActionRequest {
+            actor: ActionActor::System,
+            timestamp: 0,
+            payload: Action::CreateLounge(CreateLounge {
+                variant: LoungeVariant::Fake {
+                    creator_id: creator,
+                    contacted_id: bob,
+                    contactor_id: alice,
+                },
+            }),
+        })
+        .unwrap();
+
+        let ability = quick_ability(
+            eng,
+            0,
+            CreateAndGiveAbility {
+                ability_name: AbilityName::TapIn,
+                variant: 0,
+                actor_id: tapper,
+                volatile: false,
+                transferrable: false,
+            },
+        );
+        let contact_id = *eng.world.contact_channels.keys().next().unwrap();
+        (tapper, ability, contact_id, creator)
+    }
+
+    // Tapping a fabricated lounge hands its creator (and admin, via System) the tapper's display,
+    // while the tapper is told only the anonymous ChannelTapped.
+    #[test]
+    fn tapping_a_fake_lounge_reveals_the_tapper_to_its_creator() {
+        let mut eng = Engine::new();
+        let (tapper, ability, contact_id, creator) = fake_world(&mut eng);
+
+        let ctx = tap(&mut eng, 1, tapper, ability, contact_id);
+
+        // the creator is told who tapped, privately.
+        assert!(ctx.commands.iter().any(|p| {
+            p.recipient == CommandRecipient::Actor(creator)
+                && matches!(
+                    &p.cmd,
+                    Command::FakeLoungeTapped {
+                        display: ActorDisplay::Raw(id)
+                    } if *id == tapper
+                )
+        }));
+        // admin sees it through the System mirror.
+        assert!(ctx.commands.iter().any(|p| {
+            p.recipient == CommandRecipient::System
+                && matches!(
+                    &p.cmd,
+                    Command::FakeLoungeTapped {
+                        display: ActorDisplay::Raw(id)
+                    } if *id == tapper
+                )
+        }));
+        // the tapper still only learns the anonymous tap: no FakeLoungeTapped reaches them.
+        assert!(!ctx.commands.iter().any(|p| {
+            p.recipient == CommandRecipient::Actor(tapper)
+                && matches!(&p.cmd, Command::FakeLoungeTapped { .. })
+        }));
+    }
+
+    // A fake lounge is not special to the tapper: they still get an ordinary tap result and the
+    // room is still told it was read, anonymously.
+    #[test]
+    fn a_fake_lounge_tap_reads_and_announces_like_any_other() {
+        let mut eng = Engine::new();
+        let (tapper, ability, contact_id, _) = fake_world(&mut eng);
+        let channel_id = channel_of(&eng, contact_id);
+        let viewport = get_channel(&eng, channel_id).unwrap().viewport;
+
+        let ctx = tap(&mut eng, 1, tapper, ability, contact_id);
+
+        let log = get_channel(&eng, channel_id).unwrap().log;
+        assert_eq!(outcome(&ctx), TapInOutcome::Found { log, range: None });
+        assert!(ctx.commands.iter().any(|p| {
+            p.recipient == CommandRecipient::Viewport(viewport)
+                && matches!(&p.cmd, Command::ChannelTapped { .. })
         }));
     }
 }

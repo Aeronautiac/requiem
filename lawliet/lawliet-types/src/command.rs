@@ -616,6 +616,14 @@ pub enum Command {
         channel_id: ChannelKey,
     },
 
+    // a tap-in landed on a fabricated (fake) lounge. addressed privately to the lounge's creator
+    // (and mirrored to System, so admin can see it too): the room they faked into existence was
+    // read by an outsider, and they are told who. the tapper is not — to them it is just another
+    // anonymous ChannelTapped.
+    FakeLoungeTapped {
+        display: ActorDisplay,
+    },
+
     // privately reveal a target player's true name to the recipient (BackgroundCheck)
     RevealTrueName {
         target_id: ActorKey,

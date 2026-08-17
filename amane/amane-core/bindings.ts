@@ -1214,6 +1214,7 @@ export type Command =
   | { RevealAutopsyMessages: { log: LogID; range: number; redact_names: boolean } }
   | { TapInResult: { contact_id: number; outcome: TapInOutcome } }
   | { ChannelTapped: { channel_id: ChannelKey } }
+  | { FakeLoungeTapped: { display: ActorDisplay } }
   | { RevealTrueName: { target_id: ActorKey; true_name: string } }
   | { RevealNotebookHolding: { target_id: ActorKey; holding: boolean } }
   | { RoleUpdate: { target_id: ActorKey; role: Role } }
@@ -1290,6 +1291,7 @@ export type ControlResponse =
   | "CapabilitiesSet"
   | "ActorScopeSet"
   | "ProfileSet"
+  | "ReSeed"
   | "TimeSet";
 
 export type ControlError =

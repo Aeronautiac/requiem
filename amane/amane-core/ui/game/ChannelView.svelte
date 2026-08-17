@@ -776,6 +776,15 @@
               description="Tap In"
               content={tap_in_text(tr.contact_id, tr.outcome)}
             />
+          {:else if "FakeLoungeTapped" in event.data}
+            {@const fl = event.data.FakeLoungeTapped}
+            <Announcement {view} timestamp={event.timestamp}
+              color="var(--color-event-surveillance)"
+              description="Fake Lounge Read"
+            >
+              Your fabricated lounge was read by
+              <ActorDisplay display={fl.display} {view} />.
+            </Announcement>
           {:else if "KiraConnectionAttempt" in event.data}
             {@const ka = event.data.KiraConnectionAttempt}
             <Announcement {view} timestamp={event.timestamp}

@@ -6,7 +6,16 @@
 // recipient is what says which of the two this is.
 import { SvelteSet } from "svelte/reactivity";
 import { slotKeyToString } from "../../bindings";
-import { nameLabel, new_org, new_player, playerLabel, t, upsert_ability } from "../helpers.svelte";
+import {
+  actorDisplayLabel,
+  nameLabel,
+  new_org,
+  new_player,
+  playerLabel,
+  roleLabel,
+  t,
+  upsert_ability,
+} from "../helpers.svelte";
 import type { CmdCtx, Handlers } from "./index";
 
 export const actorHandlers: Handlers = {
@@ -77,7 +86,10 @@ export const actorHandlers: Handlers = {
     }
     ctx.view.own_role = p.role;
     ctx.view.push_notif(ctx.timestamp, { RoleUpdate: { role: p.role } });
-    ctx.notify({ title: t("toast_role_title"), body: t("toast_role_body", { role: p.role }) });
+    ctx.notify({
+      title: t("toast_role_title"),
+      body: t("toast_role_body", { role: roleLabel(p.role) }),
+    });
   },
 
   TrueNameUpdate(ctx: CmdCtx, p) {
@@ -140,6 +152,20 @@ export const actorHandlers: Handlers = {
       title: t("toast_eyes_title"),
       body: t("toast_eyes_body", { count: p.count }),
     });
+  },
+
+  // A tap landed on a fabricated lounge. The creator (this player) is told who read it; the System
+  // copy is the admin's mirror. The tapper is never told their identity was handed over.
+  FakeLoungeTapped(ctx: CmdCtx, p) {
+    const who = actorDisplayLabel(p.display, ctx.view);
+    const data = { FakeLoungeTapped: { display: p.display } };
+    if (ctx.view.own_key === "System") {
+      ctx.view.push_notif(ctx.timestamp, data);
+      ctx.notify({ title: t("toast_fake_lounge_admin_title"), body: t("toast_fake_lounge_admin_body", { who }) });
+      return;
+    }
+    ctx.view.push_notif(ctx.timestamp, data);
+    ctx.notify({ title: t("toast_fake_lounge_title"), body: t("toast_fake_lounge_body", { who }) });
   },
 
   // Who planted it is deliberately not carried; `context` says only why.

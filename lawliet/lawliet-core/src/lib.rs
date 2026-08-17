@@ -216,12 +216,6 @@ pub use common::{
 // - no way to give random abilities as an admin
 // - you cannot see the list of running games on the platform layer of the client. not important
 // yet, but eventually needs to get done
-//
-// BUG:
-// - tapping into a fake lounge doesnt punish you yet
-// - prosecution history is not immediately shown on the client after time travel. it takes about 3
-// ticks. (need to update prosecutions until no prosections can keep updating on ticks rather than
-// just a single time.)
 
 // TODO:
 // - Need to pass in version numbers alongside inputs so old actions can be replayed without
