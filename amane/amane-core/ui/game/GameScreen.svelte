@@ -16,6 +16,7 @@
   import AdminPanel from "../admin/AdminPanel.svelte";
   import PlayerMenu from "./PlayerMenu.svelte";
   import { PLAYER_MENU_KEY, PlayerMenuController } from "./player_menu.svelte";
+  import { tooltip } from "../../lib/tooltip";
 
   // The caller keys on this, so the component is rebuilt whenever it changes and the contexts
   // below can never outlive the session they came from.
@@ -122,6 +123,19 @@
       {/if}
       <StatusBadges />
       <GameClock />
+      <button
+        type="button"
+        use:tooltip
+        data-tip={ui.notifications_enabled
+          ? "Notifications on — click to mute popups"
+          : "Notifications muted — click to unmute"}
+        class="px-2 py-0.5 text-[0.65rem] uppercase tracking-wide {ui.notifications_enabled
+          ? 'bg-neutral-800 text-neutral-400 hover:bg-raised hover:text-neutral-200'
+          : 'bg-neutral-800 text-red-400/80 line-through hover:text-red-300'}"
+        onclick={() => (ui.notifications_enabled = !ui.notifications_enabled)}
+      >
+        {ui.notifications_enabled ? "Notifications" : "Muted"}
+      </button>
     </div>
   </div>
 

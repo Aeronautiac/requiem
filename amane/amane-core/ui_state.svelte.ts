@@ -13,6 +13,9 @@ export class UiState {
   // Set by a poll-panel "jump" to ask the open channel to scroll that poll's inline card into
   // view; the channel view consumes and clears it. Outlives the channel switch it rides in on.
   jump_poll = $state<string | null>(null);
+  // Whether desktop/toast popups are raised. Off mutes the host popups but the in-app
+  // Notifications channel is untouched. Session-level, so it survives a view switch.
+  notifications_enabled = $state(true);
 
   get is_news(): boolean {
     return this.selected?.kind === "news";

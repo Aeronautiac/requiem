@@ -69,7 +69,11 @@ export class SessionState {
   // them with. Best-effort: a rejected or unsupported notification is swallowed inside the host.
   #wire() {
     this.game.set_notifier((view, toast) => {
-      if (!this.#catching_up && view === this.game.views.get(this.#selected_key())) {
+      if (
+        this.ui.notifications_enabled &&
+        !this.#catching_up &&
+        view === this.game.views.get(this.#selected_key())
+      ) {
         void this.host.notify(toast);
       }
     });

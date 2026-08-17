@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getContext } from "svelte";
+  import { getContext, tick } from "svelte";
   import MentionInput from "./MentionInput.svelte";
   import MentionText from "./MentionText.svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
@@ -354,6 +354,27 @@
     return accum;
   });
 
+  // The tail window: a channel with a long history renders only the most recent `shown` events,
+  // so loading a busy channel doesn't mount its whole history as DOM at once. Scrolling up (or
+  // clicking "Load earlier") grows the window by WINDOW at a time. `start` is the first index of
+  // the window, and `visible` is that slice of the full, still-unsliced `events` array — grouping
+  // and the `last` tail are computed against the full array so a window boundary never breaks a
+  // run of consecutive messages.
+  const WINDOW = 200;
+  let shown = $state(WINDOW);
+  const start = $derived(Math.max(0, events.length - shown));
+  const visible = $derived(events.slice(start));
+
+  // Grow the window by one chunk, keeping whatever was on screen in place: the prepended content
+  // pushes the old top down, so we compensate by scrolling down by exactly the height added.
+  async function load_earlier() {
+    if (start === 0 || !scroller) return;
+    const prev_height = scroller.scrollHeight;
+    shown = Math.min(events.length, shown + WINDOW);
+    await tick();
+    scroller.scrollTop += scroller.scrollHeight - prev_height;
+  }
+
   // The <main> element is reused across channels, so its scrollTop would otherwise carry over.
   $effect(() => {
     ui.selected; // track
@@ -460,15 +481,27 @@
       {/if}
 
       <main bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto py-4">
-        {#each events as event, i (event)}
+        {#if start > 0}
+          <div class="flex justify-center py-1">
+            <button
+              type="button"
+              class="rounded bg-neutral-800 px-3 py-1 text-xs text-neutral-400 hover:bg-raised hover:text-neutral-200"
+              onclick={load_earlier}
+            >
+              Load earlier messages
+            </button>
+          </div>
+        {/if}
+        {#each visible as event, i (event)}
+          {@const gi = start + i}
           {#if "Message" in event.data}
             <Message
               senderDisplay={event.data.Message.sender_display}
               content={event.data.Message.content}
               {view}
               timestamp={event.timestamp}
-              grouped={is_grouped_message(events[i - 1], event)}
-              last={!events[i + 1] || !is_grouped_message(event, events[i + 1])}
+              grouped={is_grouped_message(events[gi - 1], event)}
+              last={!events[gi + 1] || !is_grouped_message(event, events[gi + 1])}
               mentioned={mentionsViewer(view, event.data.Message.content)}
             />
           {:else if "Write" in event.data}

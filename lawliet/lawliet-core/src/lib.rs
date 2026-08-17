@@ -220,8 +220,13 @@ pub use common::{
 // BUG:
 // - prosecutions do not end on their own (timeout)
 // - tapping into a fake lounge doesnt punish you yet
+// - timeline viewer breaks on rewind
 
 // TODO:
+// - Need to pass in version numbers alongside inputs so old actions can be replayed without
+// breaking the timeline. Server should read the current engine version when persisting inputs.
+// - Set up a CI/CD pipeline
+// - Deploy to hetzner server
 // - Rulesets & live config editing
 // - Add destroy actions for the different kinds of objects (actors will be the final destroyable objects. they may get very messy.)
 
