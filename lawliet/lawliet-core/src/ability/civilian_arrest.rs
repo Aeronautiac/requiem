@@ -11,6 +11,7 @@ use lawliet_types::{
 };
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::ActionInterface,
     helpers::{actor_id, get_player},
@@ -27,7 +28,7 @@ impl AbilityInterface for CivilianArrest {
         ctx: &mut lawliet_types::action::ActionContext,
         actor: &lawliet_types::action::ActionActor,
         ability: lawliet_types::common::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         // You can only arrest a player; the arrester need not be one.

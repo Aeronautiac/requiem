@@ -9,6 +9,7 @@ use lawliet_types::{
 };
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, AddToOrg, StartProsecution},
     helpers::actor_id,
@@ -25,7 +26,7 @@ impl AbilityInterface for Outsource {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         ability: crate::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.org_only()?;

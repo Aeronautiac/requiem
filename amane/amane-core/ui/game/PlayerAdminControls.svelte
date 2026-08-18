@@ -43,6 +43,21 @@
   let true_name = $state("");
   let display_name = $state("");
 
+  // Sub-menu configuration for the kill / revive actions. Each option below is a real field of the
+  // engine action, surfaced as a control rather than hardcoded in the dispatch. A blank message
+  // sends None, meaning "use the engine default".
+  let kill_open = $state(false);
+  let kill_death_message = $state("");
+  let kill_silent = $state(false);
+  let kill_allow_link_chaining = $state(true);
+  let kill_sever_links = $state(true);
+  let kill_set_books_dormant = $state(false);
+
+  let revive_open = $state(false);
+  let revive_message = $state("");
+  let revive_silent = $state(false);
+  let revive_ignore_links = $state(false);
+
   async function run(payload: Action, ok: string) {
     const request: ActionRequest = {
       actor: viewerToActor(ui.viewer),
@@ -102,18 +117,28 @@
         Kill: {
           target_id: target,
           killer_id: null,
-          death_message: null,
-          silent: false,
-          allow_link_chaining: true,
-          sever_links: true,
-          set_books_dormant: false,
+          death_message: kill_death_message.trim() ? kill_death_message.trim() : null,
+          silent: kill_silent,
+          allow_link_chaining: kill_allow_link_chaining,
+          sever_links: kill_sever_links,
+          set_books_dormant: kill_set_books_dormant,
         },
       },
       "Player killed.",
     );
   }
   function revive() {
-    run({ Revive: { target_id: target, ignore_links: false } }, "Player revived.");
+    run(
+      {
+        Revive: {
+          target_id: target,
+          ignore_links: revive_ignore_links,
+          silent: revive_silent,
+          revival_message: revive_message.trim() ? revive_message.trim() : null,
+        },
+      },
+      "Player revived.",
+    );
   }
 </script>
 
@@ -186,19 +211,74 @@
     </button>
   </div>
 
-  <div class="flex items-center gap-1.5">
-    <button
-      class="flex-1 rounded bg-red-900/60 px-3 py-1.5 text-red-200 hover:bg-red-900"
-      onclick={kill}
-    >
-      Kill
-    </button>
-    <button
-      class="flex-1 rounded bg-emerald-900/60 px-3 py-1.5 text-emerald-200 hover:bg-emerald-900"
-      onclick={revive}
-    >
-      Revive
-    </button>
+  <div class="flex flex-col gap-1.5 border-t border-neutral-700 pt-1.5">
+    <div class="flex flex-col gap-1">
+      <button
+        class="flex items-center gap-2 rounded bg-red-900/60 px-3 py-1.5 text-left text-red-200 hover:bg-red-900"
+        onclick={() => (kill_open = !kill_open)}
+      >
+        <span class="inline-block w-3 text-center text-[0.7rem]">{kill_open ? "▾" : "▸"}</span>
+        Kill
+      </button>
+      {#if kill_open}
+        <div class="flex flex-col gap-1.5 pl-3">
+          <input
+            bind:value={kill_death_message}
+            placeholder="Death message (blank = default)"
+            class="min-w-0 flex-1 rounded bg-neutral-800 px-2 py-1.5 text-neutral-200"
+          />
+          <label class="flex items-center gap-2 text-neutral-300">
+            <input type="checkbox" bind:checked={kill_silent} /> Silent
+          </label>
+          <label class="flex items-center gap-2 text-neutral-300">
+            <input type="checkbox" bind:checked={kill_allow_link_chaining} /> Allow link chaining
+          </label>
+          <label class="flex items-center gap-2 text-neutral-300">
+            <input type="checkbox" bind:checked={kill_sever_links} /> Sever links
+          </label>
+          <label class="flex items-center gap-2 text-neutral-300">
+            <input type="checkbox" bind:checked={kill_set_books_dormant} /> Set books dormant
+          </label>
+          <button
+            class="rounded bg-red-900/60 px-3 py-1.5 text-red-200 hover:bg-red-900"
+            onclick={kill}
+          >
+            Kill
+          </button>
+        </div>
+      {/if}
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <button
+        class="flex items-center gap-2 rounded bg-emerald-900/60 px-3 py-1.5 text-left text-emerald-200 hover:bg-emerald-900"
+        onclick={() => (revive_open = !revive_open)}
+      >
+        <span class="inline-block w-3 text-center text-[0.7rem]">{revive_open ? "▾" : "▸"}</span>
+        Revive
+      </button>
+      {#if revive_open}
+        <div class="flex flex-col gap-1.5 pl-3">
+          <input
+            bind:value={revive_message}
+            placeholder="Revival message (blank = default)"
+            class="min-w-0 flex-1 rounded bg-neutral-800 px-2 py-1.5 text-neutral-200"
+          />
+          <label class="flex items-center gap-2 text-neutral-300">
+            <input type="checkbox" bind:checked={revive_silent} /> Silent
+          </label>
+          <label class="flex items-center gap-2 text-neutral-300">
+            <input type="checkbox" bind:checked={revive_ignore_links} /> Ignore links
+          </label>
+          <button
+            class="rounded bg-emerald-900/60 px-3 py-1.5 text-emerald-200 hover:bg-emerald-900"
+            onclick={revive}
+          >
+            Revive
+          </button>
+        </div>
+      {/if}
+    </div>
   </div>
 
   <FlashDisplay {flash} />

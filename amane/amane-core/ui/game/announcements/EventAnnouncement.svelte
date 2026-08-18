@@ -28,7 +28,7 @@
   import NotebookReceivedAnnouncement from "./NotebookReceivedAnnouncement.svelte";
   import PollCard from "../PollCard.svelte";
   import PollNoticeCard from "../PollNoticeCard.svelte";
-  import PseudocideRevivalAnnouncement from "./PseudocideRevivalAnnouncement.svelte";
+  import RevivalAnnouncement from "./RevivalAnnouncement.svelte";
   import KidnapRevealAnnouncement from "./KidnapRevealAnnouncement.svelte";
   import KidnappingAnnouncement from "./KidnappingAnnouncement.svelte";
   import IncarcerationAnnouncement from "./IncarcerationAnnouncement.svelte";
@@ -167,12 +167,8 @@
       {timestamp}
     />
   {/if}
-{:else if "PseudocideRevival" in event.data}
-  <PseudocideRevivalAnnouncement
-    data={event.data.PseudocideRevival}
-    {view}
-    {timestamp}
-  />
+{:else if "Revival" in event.data}
+  <RevivalAnnouncement data={event.data.Revival} {view} {timestamp} />
 {:else if "KidnapReveal" in event.data}
   <KidnapRevealAnnouncement data={event.data.KidnapReveal} {view} {timestamp} />
 {:else if "Kidnapping" in event.data}

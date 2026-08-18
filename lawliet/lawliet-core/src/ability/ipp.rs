@@ -2,6 +2,7 @@
 // presence + write immunity) come from engine config, applied by AddState.
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, AddState},
     actor::state::State,
@@ -22,7 +23,7 @@ impl AbilityInterface for Ipp {
         ctx: &mut crate::action::ActionContext,
         _actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         // No actor gate: this ability only writes a state to the target and never

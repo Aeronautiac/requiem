@@ -22,6 +22,7 @@ use lawliet_types::{
 };
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     helpers::{
         actor_id, cmd_channel, get_ability, get_channel, get_gc, get_lounge, owner_view_recipient,
@@ -41,7 +42,7 @@ impl AbilityInterface for TapIn {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         ability: crate::AbilityKey,
-        _version: u64,
+        _version: Version,
         _mutate: bool,
     ) -> super::AbilityResult {
         let user_id = actor_id(actor).expect("expected valid actor to use TapIn");

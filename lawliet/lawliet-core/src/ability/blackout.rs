@@ -22,6 +22,7 @@ use lawliet_types::{
 use smallvec::SmallVec;
 
 use crate::{
+    common::Version,
     ability::{AbilityInterface, AbilityStatus},
     action::ActionInterface,
     common::ActorKey,
@@ -39,7 +40,7 @@ impl AbilityInterface for Blackout {
         ctx: &mut lawliet_types::action::ActionContext,
         actor: &lawliet_types::action::ActionActor,
         _ability: lawliet_types::common::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         // Read the roster before anything else runs, so the mark lands on exactly who was in the

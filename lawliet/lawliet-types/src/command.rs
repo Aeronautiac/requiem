@@ -165,9 +165,11 @@ pub enum Command {
         kidnapper: Option<ActorKey>,
     },
 
-    // display/announce a pseudocide revival. can be handled similarly to death.
-    PseudocideRevival {
+    // display/announce a revival. handled the same as death: a generic announcement whose copy is
+    // configured, riding the message like Death rides death_message. Emitted on any revive.
+    Revival {
         target_id: ActorKey,
+        message: String,
     },
 
     AnonymousAnnouncement {

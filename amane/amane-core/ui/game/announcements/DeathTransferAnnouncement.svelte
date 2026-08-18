@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { GameView } from "../../../game/view.svelte";
   import Announcement from "../Announcement.svelte";
+  import Name from "../Name.svelte";
 
   let {
     data,
@@ -18,11 +19,11 @@
 
   function death_transfer_text(): string {
     if (data.notebook_transferred && data.ability_transferred) {
-      return "their notebooks and their transferrable abilities have";
+      return "Their notebook(s) and their transferrable abilities have";
     }
     return data.notebook_transferred
-      ? "their notebooks have"
-      : "their their transferrable abilities have";
+      ? "Their notebook(s) have"
+      : "Their transferrable abilities have";
   }
 </script>
 
@@ -33,5 +34,6 @@
   color="var(--color-event-death)"
   description="Inheritance"
 >
-  {death_transfer_text()} been passed to someone new.
+  <Name id={data.target_id} {view} chip /> had some notable possessions.
+  {death_transfer_text()} been given to the person responsible for their death.
 </Announcement>

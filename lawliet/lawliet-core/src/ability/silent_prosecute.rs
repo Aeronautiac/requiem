@@ -18,6 +18,7 @@ use lawliet_types::{
 };
 
 use crate::{
+    common::Version,
     ability::{AbilityInterface, AbilityStatus},
     action::ActionInterface,
     helpers::{
@@ -37,7 +38,7 @@ impl AbilityInterface for SilentProsecute {
         ctx: &mut lawliet_types::action::ActionContext,
         actor: &ActionActor,
         _ability: crate::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.org_only()?;

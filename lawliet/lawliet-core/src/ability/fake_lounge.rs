@@ -4,6 +4,7 @@
 // conversation that never took place.
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, comms::lounge::create_lounge::CreateLounge},
     config::ability::AbilityName,
@@ -24,7 +25,7 @@ impl AbilityInterface for FabricateLounge {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.player_only()?;

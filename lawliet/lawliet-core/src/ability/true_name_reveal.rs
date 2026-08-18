@@ -9,6 +9,7 @@ use lawliet_types::{
 };
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     helpers::{actor_id, get_player},
 };
@@ -24,7 +25,7 @@ impl AbilityInterface for TrueNameReveal {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        _version: u64,
+        _version: Version,
         _mutate: bool,
     ) -> super::AbilityResult {
         actor.player_only()?;

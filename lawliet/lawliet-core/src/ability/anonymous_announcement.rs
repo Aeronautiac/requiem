@@ -1,4 +1,5 @@
 use crate::{
+    common::Version,
     ability::AbilityInterface, action::ActionContext, common::AbilityKey,
     config::ability::AbilityName, helpers::cmd_world_event,
 };
@@ -16,7 +17,7 @@ impl AbilityInterface for AnonymousAnnouncement {
         ctx: &mut ActionContext,
         _: &crate::action::ActionActor,
         _: AbilityKey,
-        _: u64,
+        _: Version,
         _mutate: bool,
     ) -> super::AbilityResult {
         cmd_world_event(

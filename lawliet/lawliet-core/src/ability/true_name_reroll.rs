@@ -9,6 +9,7 @@
 use lawliet_types::ability::{AbilityName, TrueNameReroll};
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, SetTrueName},
     helpers::require_alive,
@@ -25,7 +26,7 @@ impl AbilityInterface for TrueNameReroll {
         ctx: &mut crate::action::ActionContext,
         _actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         require_alive(eng, self.target)?;

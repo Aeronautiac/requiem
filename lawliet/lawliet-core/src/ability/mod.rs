@@ -1,6 +1,7 @@
 pub use lawliet_types::ability::{AbilityBehaviour, AbilityName};
 
 use crate::{
+    common::Version,
     action::{ActionActor, ActionContext, ActionError},
     chargepool::{ChargeCondition, ChargeConditions, PoolLink, PoolLinkType},
     common::{AbilityKey, ChargeCount, ChargePoolKey, LinkWeight, Variant},
@@ -50,7 +51,7 @@ pub trait AbilityInterface {
         ctx: &mut ActionContext,
         actor: &ActionActor,
         ability: AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> AbilityResult;
 }
@@ -99,7 +100,7 @@ impl AbilityInterface for AbilityBehaviour {
         ctx: &mut ActionContext,
         actor: &ActionActor,
         ability: AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> AbilityResult {
         match self {

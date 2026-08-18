@@ -1,6 +1,7 @@
 use lawliet_types::channel::{ContactPolicy, PermUpdatePolicy};
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{
         Action, ActionActor, ActionError, ActionInterface, ActionResponse, CreateAndGiveProfile,
@@ -28,7 +29,7 @@ impl AbilityInterface for CreateGroupchat {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         let creator_id =

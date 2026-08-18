@@ -20,6 +20,7 @@ use lawliet_types::{
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, DestroyPassive},
     common::PassiveKey,
@@ -40,7 +41,7 @@ impl AbilityInterface for KiraConnection {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.player_only()?;

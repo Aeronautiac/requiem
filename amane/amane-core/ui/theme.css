@@ -74,6 +74,7 @@
   --color-event-nothing: #6b7280; /* the attempt found nothing */
   --color-event-anonymous: #a855f7; /* said by someone unnamed */
   --color-event-reveal: #3b82f6; /* an answer you went looking for */
+  --color-event-org-reveal: #ffffff;
   --color-event-surveillance: #eab308; /* you are being listened to */
   --color-event-personal: #8b5cf6; /* your own identity changed */
   --color-event-vote: #6366f1;

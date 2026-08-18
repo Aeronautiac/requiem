@@ -79,10 +79,10 @@ export function commandToEvent(cmd: Command, timestamp: number): GameEvent | nul
     };
   }
 
-  if ("PseudocideRevival" in cmd) {
+  if ("Revival" in cmd) {
     return {
       timestamp: ts,
-      data: { PseudocideRevival: { target_id: slotKeyToString(cmd.PseudocideRevival.target_id) } },
+      data: { Revival: { target_id: slotKeyToString(cmd.Revival.target_id), message: cmd.Revival.message } },
     };
   }
 

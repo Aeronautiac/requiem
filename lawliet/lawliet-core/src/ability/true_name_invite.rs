@@ -12,6 +12,7 @@ use lawliet_types::{
 };
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, AddToOrg},
     helpers::{actor_id, get_player, owner_view_recipient},
@@ -28,7 +29,7 @@ impl AbilityInterface for TrueNameInvite {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.org_only()?;

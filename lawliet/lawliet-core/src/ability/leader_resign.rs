@@ -8,6 +8,7 @@ use lawliet_types::{
 };
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, ResignLeadership},
     actor::organization::LeadershipTransferPolicy,
@@ -25,7 +26,7 @@ impl AbilityInterface for LeaderResign {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.org_only()?;

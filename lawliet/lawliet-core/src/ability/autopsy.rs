@@ -6,6 +6,7 @@ use lawliet_types::{
 };
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     helpers::{actor_id, get_actor, get_player},
 };
@@ -21,7 +22,7 @@ impl AbilityInterface for Autopsy {
         ctx: &mut lawliet_types::action::ActionContext,
         actor: &lawliet_types::action::ActionActor,
         _ability: lawliet_types::common::AbilityKey,
-        _version: u64,
+        _version: Version,
         _mutate: bool,
     ) -> super::AbilityResult {
         let target_actor = get_actor(eng, self.target)?;

@@ -8,6 +8,7 @@ use lawliet_types::{
 };
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     helpers::{actor_id, get_channel, get_org, get_player},
 };
@@ -23,7 +24,7 @@ impl AbilityInterface for BackgroundCheck {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        _version: u64,
+        _version: Version,
         _mutate: bool,
     ) -> super::AbilityResult {
         let user_id = actor_id(actor).expect("expected valid actor to use BackgroundCheck");

@@ -12,6 +12,7 @@ use lawliet_types::{
 };
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     helpers::{actor_get_effective_passive, actor_id, get_actor, get_player, get_player_mut},
 };
@@ -27,7 +28,7 @@ impl AbilityInterface for NotebookReveal {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        _version: u64,
+        _version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.player_only()?;

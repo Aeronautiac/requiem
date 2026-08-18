@@ -165,11 +165,11 @@ export const worldHandlers: Handlers = {
     });
   },
 
-  PseudocideRevival(ctx: CmdCtx, p) {
+  Revival(ctx: CmdCtx, p) {
     const target_id = slotKeyToString(p.target_id);
     ctx.view.events.push({
       timestamp: ctx.timestamp,
-      data: { PseudocideRevival: { target_id } },
+      data: { Revival: { target_id, message: p.message } },
     });
     ctx.notify({
       title: t("toast_revival_title"),

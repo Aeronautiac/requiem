@@ -44,8 +44,9 @@ export type WorldEvent = {
     ability_transferred: boolean,
   }
 } | {
-  PseudocideRevival: {
+  Revival: {
     target_id: string,
+    message: string,
   }
 } | {
   Kidnapping: {

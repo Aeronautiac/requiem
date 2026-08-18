@@ -4,7 +4,8 @@ use lawliet_types::{
     bug::BugSource,
 };
 
-use crate::{ability::AbilityInterface, action::ActionInterface};
+use crate::{
+    common::Version,ability::AbilityInterface, action::ActionInterface};
 
 impl AbilityInterface for Bug {
     fn ability_name(&self) -> lawliet_types::ability::AbilityName {
@@ -17,7 +18,7 @@ impl AbilityInterface for Bug {
         ctx: &mut lawliet_types::action::ActionContext,
         _actor: &lawliet_types::action::ActionActor,
         ability: lawliet_types::common::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         Action::CreateBug(CreateBug {

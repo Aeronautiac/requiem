@@ -498,6 +498,8 @@ export type Kill = {
 
 export type Revive = {
   ignore_links: boolean;
+  silent: boolean;
+  revival_message: string | null;
   target_id: ActorKey;
 };
 
@@ -1152,7 +1154,7 @@ export type Command =
   | { KidnapReveal: { kidnapping_id: KidnappingKey; kidnapper: ActorKey | null } }
   | { Incarceration: { incarceration_id: IncarcerationKey; victim_id: ActorKey; duration: number | null } }
   | { IncarcerationReleased: { incarceration_id: IncarcerationKey } }
-  | { PseudocideRevival: { target_id: ActorKey } }
+  | { Revival: { target_id: ActorKey; message: string } }
   | { AnonymousAnnouncement: { content: string } }
   // A press-conference roster change: someone gained or lost the right to speak on the news beyond
   // the anchor. Rides world-events like the rest of the news.

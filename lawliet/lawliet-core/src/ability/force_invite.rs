@@ -4,6 +4,7 @@
 use lawliet_types::ability::{AbilityName, ForceInvite};
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, AddToOrg},
     helpers::{actor_id, get_player},
@@ -20,7 +21,7 @@ impl AbilityInterface for ForceInvite {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.org_only()?;

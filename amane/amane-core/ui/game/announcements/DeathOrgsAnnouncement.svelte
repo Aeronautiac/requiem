@@ -22,7 +22,7 @@
 <Announcement
   {view}
   {timestamp}
-  color="var(--color-event-reveal)"
+  color="var(--color-event-org-reveal)"
   description="Affiliations"
 >
   <Name id={data.target_id} {view} chip /> stood with

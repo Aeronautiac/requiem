@@ -6,6 +6,7 @@ use lawliet_types::{
 };
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::ActionInterface,
     helpers::{get_player, player_id, require_no_blackout},
@@ -22,7 +23,7 @@ impl AbilityInterface for Prosecute {
         ctx: &mut lawliet_types::action::ActionContext,
         actor: &lawliet_types::action::ActionActor,
         ability: lawliet_types::common::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         let prosecutor_id =

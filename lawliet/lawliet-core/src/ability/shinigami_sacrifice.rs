@@ -9,6 +9,7 @@
 use lawliet_types::{ability::AbilityName, action::ActionError, command::Command};
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, Kill},
     helpers::{actor_id, cmd_channel, get_org, get_player, require_alive},
@@ -27,7 +28,7 @@ impl AbilityInterface for ShinigamiSacrifice {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.org_only()?;

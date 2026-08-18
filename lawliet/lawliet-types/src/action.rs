@@ -502,6 +502,8 @@ pub struct ReviveResponse {}
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct Revive {
     pub ignore_links: bool,
+    pub silent: bool,
+    pub revival_message: Option<String>,
     pub target_id: ActorKey,
 }
 

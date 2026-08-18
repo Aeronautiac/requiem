@@ -8,7 +8,8 @@ use lawliet_types::{
     incarceration::IncarcerationSource,
 };
 
-use crate::{ability::AbilityInterface, action::ActionInterface, helpers::get_player};
+use crate::{
+    common::Version,ability::AbilityInterface, action::ActionInterface, helpers::get_player};
 
 impl AbilityInterface for UnlawfulArrest {
     fn ability_name(&self) -> AbilityName {
@@ -21,7 +22,7 @@ impl AbilityInterface for UnlawfulArrest {
         ctx: &mut lawliet_types::action::ActionContext,
         _actor: &lawliet_types::action::ActionActor,
         ability: lawliet_types::common::AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         // You can only arrest a player; the arrester need not be one.

@@ -1,4 +1,5 @@
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionContext, ActionInterface, actor::player::kill::Kill},
     common::AbilityKey,
@@ -19,7 +20,7 @@ impl AbilityInterface for Gun {
         ctx: &mut ActionContext,
         actor: &crate::action::ActionActor,
         _: AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         let id = player_id(actor);

@@ -181,7 +181,7 @@ struct Game {
     last_reached: Time, // the latest timestamp executed by the engine, not necessarily
     // the highest ever executed. this distinction is important because time travel may change what
     // "the end of the timeline" is.
-    clock: GameClock,           // sandboxed source of action timestamps
+    clock: GameClock,              // sandboxed source of action timestamps
     accepted: Vec<VersionedInput>, // the single durable source of truth; replayed on boot
     // the engine's input version, queried from the runtime once per boot and stamped on every
     // newly-accepted input so a rebuild replays each under the semantics it was recorded with.
@@ -190,7 +190,7 @@ struct Game {
     // held only until the first boot learns the engine version and stamps them into `accepted`.
     // None once stamped, and always None for a resumed game (which loads already-versioned inputs).
     fresh_inputs: Option<Vec<ServerInput>>,
-    history: History,           // the in-memory command log every connection walks (a cache)
+    history: History, // the in-memory command log every connection walks (a cache)
     // the sim's key set, intercepted from the runtime's KeyRoster outputs. the authoritative copy
     // lives in the runtime; this cache is what yagami uses for meta-control auth and key-handle
     // reconciliation. updated whenever a KeyRoster passes through.
@@ -235,9 +235,11 @@ impl Game {
                     let init = ActionRequest {
                         actor: ActionActor::System,
                         timestamp: 0,
-                        payload: Action::InitializeEngine(lawliet_types::action::InitializeEngine {
-                            seed: crate::generate_seed(),
-                        }),
+                        payload: Action::InitializeEngine(
+                            lawliet_types::action::InitializeEngine {
+                                seed: crate::generate_seed(),
+                            },
+                        ),
                     };
                     let mut fresh = vec![ServerInput::Action(init)];
                     fresh.extend(creation_pack);
@@ -458,10 +460,7 @@ impl Game {
                     // meta controls are never stored in accepted.
                     continue;
                 };
-                match self
-                    .dispatch(&runtime_input, versioned.version, None)
-                    .await
-                {
+                match self.dispatch(&runtime_input, versioned.version, None).await {
                     Ok(output) => {
                         // the first boot of a fresh game also collects the responses to its
                         // creation pack (e.g. the minted admin key) to hand back to create_game.
@@ -787,9 +786,7 @@ impl Game {
         }
         // write-ahead: the reseed is part of the sim's state and must be replayed on reboot.
         let sim_input = ServerInput::Control(AdminControl::Sim(control));
-        if self.persist_accepted(&sim_input).await.is_err() {
-            return;
-        }
+        let _ = self.persist_accepted(&sim_input).await;
     }
 
     // ===== TIME TRAVEL ===== //
@@ -862,14 +859,17 @@ impl Game {
             ServerInput::Control(AdminControl::Meta(_)) => false,
         };
         let retained_len = self.accepted.iter().filter(|i| keep(i)).count();
-        if self.registered {
-            if let Err(e) = self
+        if self.registered
+            && let Err(e) = self
                 .store
                 .delete_inputs_from(self.game_id, retained_len as i64)
                 .await
-            {
-                eprintln!("failed to truncate inputs for game {}: {e}", self.game_id);
-            }
+        {
+            eprintln!(
+                "failed to truncate inputs for game {} -- tearing down: {e}",
+                self.game_id
+            );
+            self.cancel.cancel();
         }
         self.accepted.retain(keep);
     }
@@ -1021,7 +1021,11 @@ impl Game {
             keys: self.keys_cache.clone(),
         };
         if let Err(e) = self.store.persist_progress(self.game_id, &meta).await {
-            eprintln!("failed to persist progress for game {}: {e}", self.game_id);
+            eprintln!(
+                "failed to persist progress for game {} -- tearing down: {e}",
+                self.game_id
+            );
+            self.cancel.cancel();
         }
     }
 
@@ -1042,11 +1046,19 @@ impl Game {
     // task-generated InitializeEngine + the creation pack) as a group, then hand back the game id
     // and the creation pack's responses.
     async fn register_fresh(&mut self) {
-        let id = self
-            .store
-            .create_game(&self.accepted)
-            .await
-            .expect("failed to write fresh game to the db");
+        let id = match self.store.create_game(&self.accepted).await {
+            Ok(id) => id,
+            Err(e) => {
+                // the game cannot become durable, so it cannot exist. close it and tell the
+                // create_game caller it failed to boot, rather than leaving the endpoint hanging.
+                eprintln!("failed to write fresh game to the db -- tearing down: {e}");
+                self.cancel.cancel();
+                if let Some(reply) = self.creation_reply.take() {
+                    let _ = reply.send(Err(InitError::BootFailed));
+                }
+                return;
+            }
+        };
         self.game_id = id;
         self.registered = true;
         self.history.game_id = id;
@@ -1148,11 +1160,16 @@ impl Game {
         }
 
         loop {
+            // once the cancellation token has fired the game is closing. gate the input and tick
+            // arms on it not being cancelled, so a waiting input can never be selected (and
+            // processed) after the game should have stopped -- select! would otherwise pick
+            // nondeterministically among ready arms. with the token cancelled, only the cancel
+            // arm remains selectable and the loop breaks.
             select! {
-                Some(input) = self.events.recv() => {
+                Some(input) = self.events.recv(), if !self.cancel.is_cancelled() => {
                     self.handle_input(input).await;
                 }
-                _ = self.tick.tick() => {
+                _ = self.tick.tick(), if !self.cancel.is_cancelled() => {
                     self.tick().await;
                 }
                 _ = self.cancel.cancelled() => {
@@ -1204,10 +1221,12 @@ fn to_runtime_input(input: &ServerInput) -> Option<RuntimeInput> {
 // is a "leak": the receiver could use it as an oracle against the deterministic RNG, so the
 // simulation RNG must rotate before the next name is drawn.
 fn emits_leak(outputs: &[Output]) -> bool {
-    outputs.iter().any(|output| match &output.data {
-        OutputData::Engine(Command::RevealTrueName { .. })
-        | OutputData::Engine(Command::TrueNameUpdate { .. })
-        | OutputData::Sim(SimOutput::ProfileRoster { .. }) => true,
-        _ => false,
+    outputs.iter().any(|output| {
+        matches!(
+            &output.data,
+            OutputData::Engine(Command::RevealTrueName { .. })
+                | OutputData::Engine(Command::TrueNameUpdate { .. })
+                | OutputData::Sim(SimOutput::ProfileRoster { .. })
+        )
     })
 }

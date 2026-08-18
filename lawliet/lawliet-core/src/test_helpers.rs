@@ -135,6 +135,8 @@ pub fn quick_revive(eng: &mut Engine, timestamp: Time, ignore_links: bool, targe
         payload: Action::Revive(Revive {
             target_id: target,
             ignore_links,
+            silent: true,
+            revival_message: None,
         }),
     }, Engine::version())
     .unwrap();

@@ -1,6 +1,7 @@
 use smallvec::SmallVec;
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface,
@@ -25,7 +26,7 @@ impl AbilityInterface for Pseudocide {
         ctx: &mut ActionContext,
         _actor: &crate::action::ActionActor,
         _ability: AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         // `orgs` is client-supplied and is a list, not a map, on the wire (serde_json can't key on
@@ -54,6 +55,8 @@ impl AbilityInterface for Pseudocide {
             timestamp: eng.time + eng.config.defaults.pseudocide_duration,
             revive: Revive {
                 ignore_links: true,
+                silent: false,
+                revival_message: None,
                 target_id: self.target_id,
             },
         })

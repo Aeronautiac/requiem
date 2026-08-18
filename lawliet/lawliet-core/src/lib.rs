@@ -136,7 +136,7 @@
 * both the BasePlayer catch-up stream and the deferred command queue: an absent player is simply
 * not a member of the events one, and re-entry backfills the backlog in order.
 *
-* command coverage: Death, Kidnapping, PseudocideRevival, channel lifecycle (add message, map
+* command coverage: Death, Kidnapping, Revival, channel lifecycle (add message, map
 * lounge/gc, archive), notebook ops (map, write, borrow status), ability / passive views, bug
 * events (new, message, archive), and iteration progress.
 *
@@ -214,17 +214,12 @@ pub use common::{
 // CURRENT PROJECT ISSUES:
 // - you cannot edit the game's config as an admin
 // - no way to give random abilities as an admin
-// - you cannot see the list of running games on the platform layer of the client. not important
-// yet, but eventually needs to get done
 
 // TODO:
 // - Set up a CI/CD pipeline
 // - Deploy to hetzner server
 // - Rulesets & live config editing
 // - Add destroy actions for the different kinds of objects (actors will be the final destroyable objects. they may get very messy.)
-
-// BUG:
-// - revivals are not announced (likely need command emission on revival)
 
 #[cfg(test)]
 mod tests {

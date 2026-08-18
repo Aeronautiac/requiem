@@ -5,6 +5,7 @@
 use lawliet_types::{ability::AbilityName, actor::ActorDisplay, command::Command};
 
 use crate::{
+    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, CreateAndGiveAbility, DestroyAbility},
     common::AbilityKey,
@@ -24,7 +25,7 @@ impl AbilityInterface for ShinigamiEyeDeal {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         ability: AbilityKey,
-        version: u64,
+        version: Version,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.player_only()?;
