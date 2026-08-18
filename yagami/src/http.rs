@@ -339,6 +339,31 @@ pub async fn game_connection(
     outbound.abort();
 }
 
+#[derive(Serialize)]
+pub struct RosterEntry {
+    game_id: GameId,
+    connections: usize,
+}
+
+// The platform's directory of live games. Unauthenticated: a game id and its concurrent headcount
+// are public presence info, not a secret. Polled by the platform screen on an interval.
+pub async fn roster(
+    State(state): State<WrappedServerState>,
+) -> Json<Vec<RosterEntry>> {
+    let server_state = lock_state(&state);
+    let mut entries: Vec<RosterEntry> = server_state
+        .games
+        .iter()
+        .map(|(game_id, handle)| RosterEntry {
+            game_id: *game_id,
+            connections: handle.connections.len(),
+        })
+        .collect();
+    // A stable order keeps the client's re-render from reshuffling rows between polls.
+    entries.sort_by_key(|e| e.game_id);
+    Json(entries)
+}
+
 #[derive(Deserialize)]
 pub struct CreateGame {
     platform_key: String, // these are strings because they are created explicitly by a platform admin

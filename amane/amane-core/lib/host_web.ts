@@ -45,6 +45,13 @@ async function postJson(url: string, body: unknown): Promise<string> {
   return text;
 }
 
+async function getJson(url: string): Promise<unknown> {
+  const res = await fetch(url);
+  const text = await res.text();
+  if (!res.ok) throw new HttpError(res.status, text);
+  return JSON.parse(text);
+}
+
 function socketUrl(baseUrl: string, gameId: number, ticket: string): string {
   const url = new URL(`${baseUrl}/game/${gameId}/ws`);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -64,6 +71,10 @@ export function createWebHost(config: WebHostConfig): HostContext {
       await postJson(`${config.baseUrl}/game/${gameId}/end_game`, {
         platform_key: platformKey,
       });
+    },
+    async roster() {
+      const body = await getJson(`${config.baseUrl}/roster`);
+      return body as { game_id: number; connections: number }[];
     },
   };
 

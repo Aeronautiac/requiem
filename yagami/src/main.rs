@@ -34,7 +34,7 @@ use tower_http::cors::CorsLayer;
 
 use crate::{
     game::{GameStart, game},
-    http::{Config, create_game, end_game, establish_ws_connection, get_ticket},
+    http::{Config, create_game, end_game, establish_ws_connection, get_ticket, roster},
     state::{ServerState, insert_handle},
     store::{Store, wall_now},
 };
@@ -102,6 +102,7 @@ async fn main() {
 
     let router = Router::new()
         .route("/create_game", post(create_game))
+        .route("/roster", axum::routing::get(roster))
         .route("/game/{id}/end_game", post(end_game))
         .route("/game/{id}/get_ticket", post(get_ticket))
         .route("/game/{id}/ws", any(establish_ws_connection))

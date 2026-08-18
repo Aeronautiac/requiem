@@ -153,6 +153,22 @@ export const STRINGS = {
   display_org_unknown: "Org",
   display_unknown: "Unknown",
 
+  // ---- platform screen splashes ----
+  //
+  // One is picked at random each time the platform screen loads. Add a line to the array to add a
+  // new one; it needs no key because it is never looked up by name.
+  platform_splashes: [
+    "There are many types of monsters that scare me... Lying monsters are a real nuisance: They are much more cunning than others. They pose as humans even though they have no understanding of the human heart... they seek friendship even though they do not know how to love. If I were to encounter such monsters, I would likely be eaten by them… because in truth, I am that monster.",
+    "You’ve eased my boredom for quite a long time, haven’t you?",
+    "I am justice! I protect the innocent and those who fear evil... I'm the one who will become the god of a new world!",
+    "Let's just say this: you will feel the fear and pain known only to the humans who have used the Notebook. And when it's your time to die, it will fall on me to write your name in my Death Note.",
+    "A person is only as good as they are in the moments they have to make a choice.",
+    "Never once have I wished for death to be anything but justice.",
+    "I'll take a potato chip... and eat it!",
+    "I did it because I was bored.",
+    "No way... Then he'd be stuck there 'til the end of that human's life or until the Death Note was destroyed. That could take a while. ",
+  ],
+
   // ---- ability descriptions ----
   //
   // The single source for what each ability does. The card's description toggle and the drill-in
