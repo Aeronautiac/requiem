@@ -74,7 +74,7 @@ export function createWebHost(config: WebHostConfig): HostContext {
     },
     async roster() {
       const body = await getJson(`${config.baseUrl}/roster`);
-      return body as { game_id: number; connections: number }[];
+      return body as { game_id: number; connections: number; keys: number }[];
     },
   };
 

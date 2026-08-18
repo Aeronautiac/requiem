@@ -60,9 +60,10 @@ export interface GameTarget {
 export interface PlatformApi {
   createGame(platformKey: string): Promise<{ game_id: number; admin_key: string }>;
   endGame(gameId: number, platformKey: string): Promise<void>;
-  // The platform directory: every live game and how many are connected to it. Polled by the
-  // platform screen; presence info, so unauthenticated.
-  roster(): Promise<{ game_id: number; connections: number }[]>;
+  // The platform directory: every live game and its headcount. Polled by the platform screen;
+  // presence info, so unauthenticated. `connections` is sockets, `keys` is the distinct people
+  // behind them (a player open in several tabs counts once).
+  roster(): Promise<{ game_id: number; connections: number; keys: number }[]>;
 }
 
 // What a host must provide. Everything platform-shaped lives behind this, and amane never reaches

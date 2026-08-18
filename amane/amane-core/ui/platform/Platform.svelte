@@ -13,7 +13,7 @@
   const splashes = STRINGS.platform_splashes;
   const splash = $state(splashes[Math.floor(Math.random() * splashes.length)]);
 
-  type RosterEntry = { game_id: number; connections: number };
+  type RosterEntry = { game_id: number; connections: number; keys: number };
 
   // The platform directory, refreshed on an interval while this screen is up.
   let roster = $state<RosterEntry[]>([]);
@@ -124,11 +124,18 @@
     </header>
 
     {#if client.phase.status === "failed"}
-      <p
-        class="rounded border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-200"
+      <div
+        class="flex items-start gap-2 rounded border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-200"
       >
-        {client.phase.reason}
-      </p>
+        <p class="flex-1">{client.phase.reason}</p>
+        <button
+          class="shrink-0 leading-none text-red-300 hover:text-red-100"
+          aria-label="Dismiss"
+          onclick={() => client.dismiss()}
+        >
+          ✕
+        </button>
+      </div>
     {/if}
 
     {#if implicit}
@@ -165,9 +172,10 @@
         </div>
       {/if}
 
-      <!-- The games directory: the bulk of the screen. Bounded so a long roster scrolls in place
+      <!-- The games directory: the bulk of the screen. It hugs its content when the roster is
+           short and caps at a fixed height when it is not, so a long roster scrolls in place
            instead of stretching the whole screen. -->
-      <section class="flex h-[70vh] min-h-0 flex-col rounded border border-neutral-800 bg-neutral-900/40">
+      <section class="flex flex-col rounded border border-neutral-800 bg-neutral-900/40">
         <div class="flex items-center justify-between border-b border-neutral-800 px-4 py-2">
           <span class="text-xs uppercase tracking-wide text-neutral-500">
             Active games
@@ -184,11 +192,11 @@
         </div>
 
         {#if roster.length === 0}
-          <div class="flex flex-1 items-center justify-center p-6 text-sm text-neutral-500">
+          <div class="flex min-h-24 items-center justify-center p-6 text-sm text-neutral-500">
             No games running.
           </div>
         {:else}
-          <ul class="min-h-0 flex-1 divide-y divide-neutral-800 overflow-y-auto">
+          <ul class="max-h-[50vh] min-h-0 divide-y divide-neutral-800 overflow-y-auto">
             {#each roster as entry (entry.game_id)}
               <li class="flex items-center gap-4 px-4 py-3">
                 <div class="min-w-0 flex-1">
@@ -196,7 +204,7 @@
                     Game {entry.game_id}
                   </p>
                   <p class="text-xs text-neutral-500">
-                    {entry.connections} connected
+                    {entry.keys} {entry.keys === 1 ? "person" : "people"} · {entry.connections} {entry.connections === 1 ? "connection" : "connections"}
                   </p>
                 </div>
                 {#if client.canAdminister}
@@ -224,15 +232,33 @@
         <div
           class="space-y-1 rounded border border-neutral-800 bg-neutral-900 p-2 text-xs"
         >
-          <p class="text-neutral-400">
-            Game {created.game_id} created. This admin key is shown once — save it now.
-          </p>
+          <div class="flex items-start justify-between gap-2">
+            <p class="text-neutral-400">
+              Game {created.game_id} created. This admin key is shown once — save it now.
+            </p>
+            <button
+              class="shrink-0 leading-none text-neutral-500 hover:text-neutral-300"
+              aria-label="Dismiss"
+              onclick={() => (created = null)}
+            >
+              ✕
+            </button>
+          </div>
           <p class="break-all font-mono text-neutral-200">{created.admin_key}</p>
         </div>
       {/if}
 
       {#if adminError}
-        <p class="text-xs text-red-300">{adminError}</p>
+        <div class="flex items-start gap-2 text-xs text-red-300">
+          <p class="flex-1">{adminError}</p>
+          <button
+            class="shrink-0 leading-none hover:text-red-200"
+            aria-label="Dismiss"
+            onclick={() => (adminError = "")}
+          >
+            ✕
+          </button>
+        </div>
       {/if}
     {/if}
 

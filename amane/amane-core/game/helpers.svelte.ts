@@ -54,7 +54,9 @@ export function execErrorText(error: ExecError): string {
 
 // Resolve a copy key, filling `{name}` placeholders. The only way a string reaches the screen.
 export function t(key: StringKey, vars?: Record<string, string | number>): string {
-  const template: string = STRINGS[key];
+  // `keyof STRINGS` includes platform_splashes (an array, never looked up by name), so the lookup
+  // is narrowed to the string-copy case here.
+  const template = STRINGS[key] as string;
   if (!vars) return template;
   return template.replace(/\{(\w+)\}/g, (whole, name: string) =>
     name in vars ? String(vars[name]) : whole,

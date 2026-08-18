@@ -113,6 +113,10 @@ export const STRINGS = {
   toast_fake_lounge_body: "Your fabricated lounge was read by {who}.",
   toast_fake_lounge_admin_title: "Fake Lounge Read",
   toast_fake_lounge_admin_body: "A fabricated lounge was read by {who}.",
+  blackout_begun_label: "Blackout",
+  blackout_begun: "The world's gone dark...",
+  blackout_over_label: "Blackout Over",
+  blackout_over: "The light returns...",
 
   // ---- roles: the engine enum on the left, what a player reads on the right ----
   role_name_Kira: "Kira",

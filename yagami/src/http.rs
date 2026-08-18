@@ -342,11 +342,16 @@ pub async fn game_connection(
 #[derive(Serialize)]
 pub struct RosterEntry {
     game_id: GameId,
+    // Sockets currently open to the game.
     connections: usize,
+    // Keys held in the game -- the people. A key is an identity (a set of privileges), and it
+    // counts as a person whether or not it is currently connected; multiple tickets (connections)
+    // can map to the same key.
+    keys: usize,
 }
 
-// The platform's directory of live games. Unauthenticated: a game id and its concurrent headcount
-// are public presence info, not a secret. Polled by the platform screen on an interval.
+// The platform's directory of live games. Unauthenticated: a game id and its headcounts are public
+// presence info, not a secret. Polled by the platform screen on an interval.
 pub async fn roster(
     State(state): State<WrappedServerState>,
 ) -> Json<Vec<RosterEntry>> {
@@ -357,6 +362,7 @@ pub async fn roster(
         .map(|(game_id, handle)| RosterEntry {
             game_id: *game_id,
             connections: handle.connections.len(),
+            keys: handle.keys.len(),
         })
         .collect();
     // A stable order keeps the client's re-render from reshuffling rows between polls.

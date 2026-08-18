@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { GameView } from "../../../game/view.svelte";
+  import type { Role } from "../../../bindings";
   import { roleColorVar, roleLabel } from "../../../game/helpers.svelte";
   import Announcement from "../Announcement.svelte";
   import Chip from "../Chip.svelte";
@@ -8,7 +9,7 @@
     data,
     view,
     timestamp,
-  }: { data: { role: string }; view: GameView; timestamp: number } = $props();
+  }: { data: { role: Role }; view: GameView; timestamp: number } = $props();
 </script>
 
 <Announcement

@@ -71,6 +71,12 @@ export class ClientState {
     this.leave();
     this.phase = { status: "failed", reason };
   }
+
+  // The platform screen's failure banner offers a dismiss button. This only clears a `failed`
+  // phase; a joined game is left through `leave`, not here.
+  dismiss(): void {
+    if (this.phase.status === "failed") this.phase = { status: "idle" };
+  }
 }
 
 function reason(e: unknown): string {
