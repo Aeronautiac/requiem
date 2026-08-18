@@ -5,5 +5,5 @@
 pub use yagami_wire::{
     ActionOutcome, AdminControl, Batch, BatchKind, ControlOutcome, ControlResponse, ExecOutcome,
     LogCommand, LogType, MetaControl, Output, OutputData, Recipient, ResponsePair, ServerCmd,
-    ServerInput, SimControl, SimControlData, SimOutput, privileges_to_wire,
+    ServerInput, SimControl, SimControlData, SimOutput, VersionedInput, privileges_to_wire,
 };

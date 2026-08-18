@@ -19,7 +19,7 @@ impl AbilityInterface for Gun {
         ctx: &mut ActionContext,
         actor: &crate::action::ActionActor,
         _: AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         let id = player_id(actor);

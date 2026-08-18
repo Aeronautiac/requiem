@@ -22,7 +22,7 @@ impl AbilityInterface for Ipp {
         ctx: &mut crate::action::ActionContext,
         _actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         // No actor gate: this ability only writes a state to the target and never

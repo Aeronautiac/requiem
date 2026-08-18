@@ -41,7 +41,7 @@ impl AbilityInterface for TapIn {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         ability: crate::AbilityKey,
-        _version: u8,
+        _version: u64,
         _mutate: bool,
     ) -> super::AbilityResult {
         let user_id = actor_id(actor).expect("expected valid actor to use TapIn");
@@ -175,7 +175,7 @@ mod tests {
                     contacted_id: b,
                 },
             }),
-        })
+        }, Engine::version())
         .unwrap();
 
         let ability = quick_ability(
@@ -285,7 +285,7 @@ mod tests {
                 channel_id,
                 loggable: false,
             }),
-        })
+        }, Engine::version())
         .unwrap();
 
         let ctx = tap(&mut eng, 2, tapper, ability, contact_id);
@@ -377,7 +377,7 @@ mod tests {
                     contactor_id: alice,
                 },
             }),
-        })
+        }, Engine::version())
         .unwrap();
 
         let ability = quick_ability(

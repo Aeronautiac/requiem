@@ -24,7 +24,7 @@ impl AbilityInterface for ShinigamiEyeDeal {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         ability: AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.player_only()?;

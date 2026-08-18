@@ -16,7 +16,7 @@ impl AbilityInterface for AnonymousAnnouncement {
         ctx: &mut ActionContext,
         _: &crate::action::ActionActor,
         _: AbilityKey,
-        _: u8,
+        _: u64,
         _mutate: bool,
     ) -> super::AbilityResult {
         cmd_world_event(

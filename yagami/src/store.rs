@@ -24,7 +24,7 @@ use sqlx::{PgPool, Row};
 use crate::{
     auth::{Key, Privileges, to_flags},
     state::GameId,
-    wire::{ServerInput, privileges_to_wire},
+    wire::{VersionedInput, privileges_to_wire},
 };
 use yagami_wire::PrivilegeSet;
 
@@ -49,7 +49,7 @@ pub struct GameMeta {
 pub struct GameRecord {
     pub id: GameId,
     pub meta: GameMeta,
-    pub inputs: Vec<ServerInput>,
+    pub inputs: Vec<VersionedInput>,
 }
 
 impl Store {
@@ -70,7 +70,10 @@ impl Store {
     // -- the one place the initial stream is inserted as a group, because the normal append_input
     // path would imply the row already exists, which it does not until after boot. clock_wall is
     // anchored to now so the birth checkpoint (clock = 0, clock_wall = now) holds.
-    pub async fn create_game(&self, initial_inputs: &[ServerInput]) -> Result<GameId, sqlx::Error> {
+    pub async fn create_game(
+        &self,
+        initial_inputs: &[VersionedInput],
+    ) -> Result<GameId, sqlx::Error> {
         let mut tx = self.pool.begin().await?;
         let row = sqlx::query("INSERT INTO games (clock_wall) VALUES ($1) RETURNING id")
             .bind(wall_now())
@@ -96,7 +99,7 @@ impl Store {
         &self,
         game_id: GameId,
         seq: i64,
-        input: &ServerInput,
+        input: &VersionedInput,
         meta: &GameMeta,
     ) -> Result<(), sqlx::Error> {
         let input_json = serde_json::to_value(input).map_err(json_err)?;
@@ -152,7 +155,7 @@ impl Store {
     }
 
     // load one game's full accepted stream, in append order.
-    pub async fn load_inputs(&self, game_id: GameId) -> Result<Vec<ServerInput>, sqlx::Error> {
+    pub async fn load_inputs(&self, game_id: GameId) -> Result<Vec<VersionedInput>, sqlx::Error> {
         let rows = sqlx::query("SELECT input FROM inputs WHERE game_id = $1 ORDER BY seq")
             .bind(game_id as i64)
             .fetch_all(&self.pool)
@@ -160,7 +163,7 @@ impl Store {
         let mut out = Vec::with_capacity(rows.len());
         for row in rows {
             let value: serde_json::Value = row.try_get("input")?;
-            let input: ServerInput = serde_json::from_value(value).map_err(json_err)?;
+            let input: VersionedInput = serde_json::from_value(value).map_err(json_err)?;
             out.push(input);
         }
         Ok(out)
@@ -217,7 +220,7 @@ impl Store {
     pub async fn record_crash(
         &self,
         game_id: GameId,
-        sequence: &[ServerInput],
+        sequence: &[VersionedInput],
     ) -> Result<(), sqlx::Error> {
         let seq_json = serde_json::to_value(sequence).map_err(json_err)?;
         sqlx::query("INSERT INTO crashes (game_id, seq) VALUES ($1, $2)")
@@ -249,7 +252,7 @@ impl Store {
 }
 
 fn json_err(e: serde_json::Error) -> sqlx::Error {
-    // the shapes we serialize (ServerInput, the key ledger) are all serializable by construction;
+    // the shapes we serialize (VersionedInput, the key ledger) are all serializable by construction;
     // a failure here is a bug, surfaced as a protocol-level error rather than a panic.
     sqlx::Error::Protocol(format!("json serialization failed: {e}"))
 }

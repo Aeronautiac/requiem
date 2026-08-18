@@ -23,7 +23,7 @@ impl AbilityInterface for BackgroundCheck {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        _version: u8,
+        _version: u64,
         _mutate: bool,
     ) -> super::AbilityResult {
         let user_id = actor_id(actor).expect("expected valid actor to use BackgroundCheck");

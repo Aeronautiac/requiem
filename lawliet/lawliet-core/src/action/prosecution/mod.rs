@@ -294,7 +294,7 @@ mod prosecution_tests {
                 prosecution_id,
                 success,
             }),
-        })
+        }, Engine::version())
         .unwrap()
     }
 
@@ -701,7 +701,7 @@ mod prosecution_tests {
                 actor: ActionActor::System,
                 timestamp: 1,
                 payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id: id }),
-            })
+            }, Engine::version())
             .unwrap();
 
         let channel = trial_channel(&eng, id);
@@ -1080,7 +1080,7 @@ mod prosecution_tests {
                     defendant_display: ActorDisplay::Raw(defendant),
                     autonomous: true,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         let told: Vec<_> = ctx

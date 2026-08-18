@@ -87,7 +87,7 @@ mod tests {
                     target_id: target,
                     source,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(r) = resp else {
             unreachable!()
@@ -155,7 +155,7 @@ mod tests {
             actor: ActionActor::System,
             timestamp: 2,
             payload: Action::ArchiveBug(ArchiveBug { bug_id: bug }),
-        })
+        }, Engine::version())
         .unwrap();
         assert!(!status(&eng, p).contains(Status::Bugged));
     }

@@ -37,7 +37,7 @@ impl AbilityInterface for SilentProsecute {
         ctx: &mut lawliet_types::action::ActionContext,
         actor: &ActionActor,
         _ability: crate::AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.org_only()?;

@@ -16,7 +16,7 @@ use std::{collections::HashMap, env::current_exe, io::ErrorKind, process::Stdio,
 use lawliet_types::{
     action::{Action, ActionActor, ActionRequest, Null},
     command::Command,
-    common::{Time, ViewportKey},
+    common::{Time, Version, ViewportKey},
 };
 use serde::Serialize;
 use tokio::{
@@ -37,6 +37,7 @@ use crate::{
     wire::{
         ActionOutcome, AdminControl, ControlOutcome, ControlResponse, ExecOutcome, MetaControl,
         Output, OutputData, ResponsePair, ServerInput, SimControl, SimControlData, SimOutput,
+        VersionedInput,
     },
 };
 
@@ -87,7 +88,7 @@ pub enum GameStart {
     },
     Resumed {
         game_id: GameId,
-        inputs: Vec<ServerInput>,
+        inputs: Vec<VersionedInput>,
         keys: HashMap<Key, Privileges>,
         start_clock: Time,
     },
@@ -181,7 +182,14 @@ struct Game {
     // the highest ever executed. this distinction is important because time travel may change what
     // "the end of the timeline" is.
     clock: GameClock,           // sandboxed source of action timestamps
-    accepted: Vec<ServerInput>, // the single durable source of truth; replayed on boot
+    accepted: Vec<VersionedInput>, // the single durable source of truth; replayed on boot
+    // the engine's input version, queried from the runtime once per boot and stamped on every
+    // newly-accepted input so a rebuild replays each under the semantics it was recorded with.
+    engine_version: Version,
+    // a fresh game's raw (unversioned) initial inputs -- InitializeEngine + the creation pack --
+    // held only until the first boot learns the engine version and stamps them into `accepted`.
+    // None once stamped, and always None for a resumed game (which loads already-versioned inputs).
+    fresh_inputs: Option<Vec<ServerInput>>,
     history: History,           // the in-memory command log every connection walks (a cache)
     // the sim's key set, intercepted from the runtime's KeyRoster outputs. the authoritative copy
     // lives in the runtime; this cache is what yagami uses for meta-control auth and key-handle
@@ -215,44 +223,49 @@ impl Game {
 
         // a fresh game's first accepted input is always InitializeEngine, built here with a seed
         // the task generates itself -- the handler never sees the seed. the rest of the accepted
-        // stream is the creation pack the handler supplied (the admin-key minting, etc).
-        let (game_id, registered, accepted, clock, keys_cache, creation_reply) = match start {
-            GameStart::Fresh {
-                creation_pack,
-                creation_reply,
-            } => {
-                let init = ActionRequest {
-                    actor: ActionActor::System,
-                    timestamp: 0,
-                    payload: Action::InitializeEngine(lawliet_types::action::InitializeEngine {
-                        seed: crate::generate_seed(),
-                    }),
-                };
-                let mut accepted = vec![ServerInput::Action(init)];
-                accepted.extend(creation_pack);
-                (
-                    0,
-                    false,
-                    accepted,
-                    GameClock::new(),
-                    HashMap::new(),
-                    Some(creation_reply),
-                )
-            }
-            GameStart::Resumed {
-                game_id,
-                inputs,
-                keys,
-                start_clock,
-            } => (
-                game_id,
-                true,
-                inputs,
-                GameClock::at(start_clock),
-                keys,
-                None,
-            ),
-        };
+        // stream is the creation pack the handler supplied (the admin-key minting, etc). the engine
+        // version is not known until boot queries the runtime, so a fresh stream is kept raw here
+        // and stamped into `accepted` by boot() once the version is learned.
+        let (game_id, registered, accepted, fresh_inputs, clock, keys_cache, creation_reply) =
+            match start {
+                GameStart::Fresh {
+                    creation_pack,
+                    creation_reply,
+                } => {
+                    let init = ActionRequest {
+                        actor: ActionActor::System,
+                        timestamp: 0,
+                        payload: Action::InitializeEngine(lawliet_types::action::InitializeEngine {
+                            seed: crate::generate_seed(),
+                        }),
+                    };
+                    let mut fresh = vec![ServerInput::Action(init)];
+                    fresh.extend(creation_pack);
+                    (
+                        0,
+                        false,
+                        Vec::new(),
+                        Some(fresh),
+                        GameClock::new(),
+                        HashMap::new(),
+                        Some(creation_reply),
+                    )
+                }
+                GameStart::Resumed {
+                    game_id,
+                    inputs,
+                    keys,
+                    start_clock,
+                } => (
+                    game_id,
+                    true,
+                    inputs,
+                    None,
+                    GameClock::at(start_clock),
+                    keys,
+                    None,
+                ),
+            };
 
         Self {
             game_id,
@@ -267,6 +280,8 @@ impl Game {
             last_reached: 0,
             clock,
             accepted,
+            engine_version: 0,
+            fresh_inputs,
             history: History::new(game_id),
             keys_cache,
             data_viewport: None,
@@ -319,10 +334,12 @@ impl Game {
     async fn dispatch(
         &mut self,
         input: &RuntimeInput,
+        version: Version,
         caller: Option<&Key>,
     ) -> Result<RuntimeOutput, DispatchError> {
         let frame = PipeFrame {
             input: input.clone(),
+            version,
             caller: caller.cloned(),
         };
         let line = to_line(&frame);
@@ -337,6 +354,27 @@ impl Game {
                 eprintln!("runtime output failed to deserialize: {e} -- aborting");
                 std::process::abort()
             }
+        }
+    }
+
+    // ask the runtime for the engine's input version. a server-issued GetVersion sim query that
+    // changes nothing, so it is never persisted. returns 0 if the exchange fails (a degenerate
+    // fallback; boot retries would have surfaced a real pipe failure).
+    async fn query_engine_version(&mut self) -> Version {
+        let control = SimControl {
+            time: 0,
+            data: SimControlData::GetVersion,
+        };
+        let runtime_input = RuntimeInput::Sim(control);
+        let Ok(output) = self.dispatch(&runtime_input, 0, None).await else {
+            return 0;
+        };
+        let Some(reply) = output.reply else {
+            return 0;
+        };
+        match reply.outcome {
+            ExecOutcome::Control(ControlOutcome::Ok(ControlResponse::EngineVersion(v))) => v,
+            _ => 0,
         }
     }
 
@@ -391,19 +429,39 @@ impl Game {
             // a fresh boot re-collects the creation pack's responses from scratch.
             self.creation_responses.clear();
 
+            // learn the engine's input version for this boot, then stamp any still-unstamped fresh
+            // inputs with it so the replay (and later persistence) carry it. boot runs first, so
+            // the version is always known before the stream is executed.
+            self.engine_version = self.query_engine_version().await;
+            if let Some(fresh) = self.fresh_inputs.take() {
+                self.accepted = fresh
+                    .into_iter()
+                    .map(|input| VersionedInput {
+                        version: self.engine_version,
+                        input,
+                    })
+                    .collect();
+            }
+
             let mut ok = true;
             let mut last_time: Time = 0;
 
             // re-feed the accepted stream. every input is server-issued (caller None): the stream
             // was already authorized when first accepted, so replay trusts it. the runtime
             // reconstructs engine + sim state and emits the output stream, which we append to
-            // history.
-            for input in self.accepted.clone() {
-                let Some(runtime_input) = to_runtime_input(&input) else {
+            // history. each input carries the version it was recorded under, so a rebuild replays
+            // it under its own semantics. accepted is taken out for the replay (dispatch borrows
+            // self mutably) and put back afterwards; it is still needed for later appends.
+            let accepted = std::mem::take(&mut self.accepted);
+            for versioned in &accepted {
+                let Some(runtime_input) = to_runtime_input(&versioned.input) else {
                     // meta controls are never stored in accepted.
                     continue;
                 };
-                match self.dispatch(&runtime_input, None).await {
+                match self
+                    .dispatch(&runtime_input, versioned.version, None)
+                    .await
+                {
                     Ok(output) => {
                         // the first boot of a fresh game also collects the responses to its
                         // creation pack (e.g. the minted admin key) to hand back to create_game.
@@ -426,6 +484,7 @@ impl Game {
                     }
                 }
             }
+            self.accepted = accepted;
 
             if ok {
                 self.last_reached = last_time;
@@ -511,7 +570,10 @@ impl Game {
                 control.time = self.clock.now();
 
                 let runtime_input = RuntimeInput::Sim(control.clone());
-                match self.dispatch(&runtime_input, caller_key.as_ref()).await {
+                match self
+                    .dispatch(&runtime_input, self.engine_version, caller_key.as_ref())
+                    .await
+                {
                     Ok(output) => {
                         self.update_server_projections(&output.outputs);
                         let at = if output.outputs.is_empty() {
@@ -586,7 +648,10 @@ impl Game {
                 // record as accepted.
                 let reply_input = ServerInput::Action(request.clone());
                 let runtime_input = RuntimeInput::Action(request.clone());
-                match self.dispatch(&runtime_input, caller_key.as_ref()).await {
+                match self
+                    .dispatch(&runtime_input, self.engine_version, caller_key.as_ref())
+                    .await
+                {
                     Ok(output) => {
                         self.update_server_projections(&output.outputs);
                         // a name left the server's secrecy in this action's outputs; rotate the
@@ -711,7 +776,11 @@ impl Game {
             },
         };
         let runtime_input = RuntimeInput::Sim(control.clone());
-        if self.dispatch(&runtime_input, None).await.is_err() {
+        if self
+            .dispatch(&runtime_input, self.engine_version, None)
+            .await
+            .is_err()
+        {
             // the runtime crashed mid-reseed: reboot, which replays it from the stream below.
             self.reboot_after_crash().await;
             return;
@@ -753,7 +822,10 @@ impl Game {
                 payload: Action::Null(Null {}),
             };
             let runtime_input = RuntimeInput::Action(request);
-            if let Ok(output) = self.dispatch(&runtime_input, None).await {
+            if let Ok(output) = self
+                .dispatch(&runtime_input, self.engine_version, None)
+                .await
+            {
                 self.update_server_projections(&output.outputs);
                 let at = self.history.append(output.outputs);
                 self.history.broadcast(&self.server_state, at, None);
@@ -784,7 +856,7 @@ impl Game {
     // durable half -- rows at seq >= the new length -- is deleted from the DB too; crash records
     // are untouched (separate table).
     async fn truncate_accepted(&mut self, target: Time) {
-        let keep = |input: &ServerInput| match input {
+        let keep = |versioned: &VersionedInput| match &versioned.input {
             ServerInput::Action(request) => request.timestamp <= target,
             ServerInput::Control(AdminControl::Sim(control)) => control.time <= target,
             ServerInput::Control(AdminControl::Meta(_)) => false,
@@ -927,7 +999,10 @@ impl Game {
             payload: Action::Null(Null {}),
         };
         let runtime_input = RuntimeInput::Action(request);
-        if let Ok(output) = self.dispatch(&runtime_input, None).await {
+        if let Ok(output) = self
+            .dispatch(&runtime_input, self.engine_version, None)
+            .await
+        {
             self.update_server_projections(&output.outputs);
             let at = self.history.append(output.outputs);
             self.history.broadcast(&self.server_state, at, None);
@@ -998,13 +1073,17 @@ impl Game {
             clock_wall: wall_now(),
             keys: self.keys_cache.clone(),
         };
+        let versioned = VersionedInput {
+            version: self.engine_version,
+            input: input.clone(),
+        };
         match self
             .store
-            .append_input(self.game_id, seq, input, &meta)
+            .append_input(self.game_id, seq, &versioned, &meta)
             .await
         {
             Ok(()) => {
-                self.accepted.push(input.clone());
+                self.accepted.push(versioned);
                 Ok(())
             }
             Err(e) => {
@@ -1022,7 +1101,10 @@ impl Game {
     // debugging. inert -- never replayed, and survives rewind.
     async fn record_crash(&self, crashing: &ServerInput) {
         let mut sequence = self.accepted.clone();
-        sequence.push(crashing.clone());
+        sequence.push(VersionedInput {
+            version: self.engine_version,
+            input: crashing.clone(),
+        });
         if let Err(e) = self.store.record_crash(self.game_id, &sequence).await {
             eprintln!("failed to record crash for game {}: {e}", self.game_id);
         }

@@ -95,7 +95,7 @@ pub fn add_player(
                 true_name: String::from(true_name),
                 starting_role,
             }),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::AddPlayer(response) = data else {
@@ -124,7 +124,7 @@ pub fn quick_kill(
             allow_link_chaining,
             sever_links,
         }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -136,7 +136,7 @@ pub fn quick_revive(eng: &mut Engine, timestamp: Time, ignore_links: bool, targe
             target_id: target,
             ignore_links,
         }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -157,7 +157,7 @@ pub fn quick_write(
             notebook_id,
             delay,
         }),
-    });
+    }, Engine::version());
     match result {
         Ok(response) => Ok(response.0),
         Err((err, _)) => Err(err),
@@ -169,7 +169,7 @@ pub fn next_iteration(eng: &mut Engine, time: Time) {
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::NextIteration(crate::action::NextIteration {}),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -178,7 +178,7 @@ pub fn set_blackout(eng: &mut Engine, time: Time, active: bool) {
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::SetBlackout(crate::action::SetBlackout { active }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -187,7 +187,7 @@ pub fn null_action(eng: &mut Engine, time: Time) {
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::Null(Null {}),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -205,7 +205,7 @@ pub fn quick_lend(
             notebook_id,
             target_id: lend_to,
         }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -219,7 +219,7 @@ pub fn quick_notebook(eng: &mut Engine, time: Time, player: ActorKey, fake: bool
                 actor_id: player,
                 volatile: false,
             }),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::CreateAndGiveNotebook(response) = data else {
@@ -245,7 +245,7 @@ pub fn quick_passive(
                 actor_id: player,
                 volatile: false,
             }),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::CreateAndGivePassive(response) = data else {
@@ -260,7 +260,7 @@ pub fn create_poll(eng: &mut Engine, time: Time, action: CreatePoll) -> PollKey 
             actor: ActionActor::System,
             timestamp: time,
             payload: Action::CreatePoll(action),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::CreatePoll(response) = data else {
@@ -285,7 +285,7 @@ pub fn add_vote(
         actor: ActionActor::Player(voter_id),
         timestamp: time,
         payload: Action::AddVote(AddVote { poll_id, option }),
-    })
+    }, Engine::version())
 }
 
 pub fn remove_vote(
@@ -298,7 +298,7 @@ pub fn remove_vote(
         actor: ActionActor::Player(voter_id),
         timestamp: time,
         payload: Action::RemoveVote(RemoveVote { poll_id }),
-    })
+    }, Engine::version())
 }
 
 pub fn default_kill(id: ActorKey) -> Action {
@@ -319,7 +319,7 @@ pub fn quick_ability(eng: &mut Engine, time: Time, args: CreateAndGiveAbility) -
             actor: ActionActor::System,
             timestamp: time,
             payload: Action::CreateAndGiveAbility(args),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::CreateAndGiveAbility(response) = data else {
@@ -342,7 +342,7 @@ pub fn use_ability(
             ability_id,
             ability_args: args,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn quick_pool(eng: &mut Engine, time: Time, args: AddChargePool) -> ChargePoolKey {
@@ -351,7 +351,7 @@ pub fn quick_pool(eng: &mut Engine, time: Time, args: AddChargePool) -> ChargePo
             actor: ActionActor::System,
             timestamp: time,
             payload: Action::AddChargePool(args),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::AddChargePool(response) = data else {
@@ -380,7 +380,7 @@ pub fn quick_link(
             // test helper: subtract on any outcome, matching the pre-conditional behavior
             condition: crate::chargepool::ChargeConditions::all(),
         }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -389,7 +389,7 @@ pub fn quick_clear_links(eng: &mut Engine, time: Time, ability_id: AbilityKey) {
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::ClearLinks(ClearLinks { ability_id }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -406,7 +406,7 @@ pub fn init_engine_unstarted(eng: &mut Engine) {
         actor: ActionActor::System,
         timestamp: 0,
         payload: Action::InitializeEngine(InitializeEngine { seed: 0 }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -426,7 +426,7 @@ pub fn start_game(eng: &mut Engine, time: Time) -> ExecutionResult {
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::StartGame(StartGame {}),
-    })
+    }, Engine::version())
 }
 
 pub fn add_org(eng: &mut Engine, time: Time, org: OrganizationName) -> ActorKey {
@@ -435,7 +435,7 @@ pub fn add_org(eng: &mut Engine, time: Time, org: OrganizationName) -> ActorKey 
             timestamp: time,
             actor: ActionActor::System,
             payload: Action::CreateOrg(CreateOrg { name: org }),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::CreateOrg(response) = data else {
@@ -459,7 +459,7 @@ pub fn set_blacklist_status(
             org_id: org,
             blacklisted,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn set_og_status(
@@ -477,7 +477,7 @@ pub fn set_og_status(
             org_id: org,
             og,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn add_to_org(
@@ -497,7 +497,7 @@ pub fn add_to_org(
             og,
             org_id: org,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn remove_from_org(
@@ -513,7 +513,7 @@ pub fn remove_from_org(
             actor_id: actor,
             org_id: org,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn set_leadership(
@@ -529,7 +529,7 @@ pub fn set_leadership(
             policies,
             org_id: org,
         }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -546,7 +546,7 @@ pub fn change_leader(
             org_id: org,
             new_leader: actor,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn quick_org_ability(
@@ -559,7 +559,7 @@ pub fn quick_org_ability(
             actor: ActionActor::System,
             timestamp: time,
             payload: Action::CreateAndGiveOrgAbility(args),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::CreateAndGiveOrgAbility(response) = data else {
@@ -584,7 +584,7 @@ pub fn use_org_ability(
             ability_args: args,
             org_id,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn force_charges(eng: &mut Engine, _time: Time, ability_id: AbilityKey, charges: ChargeCount) {
@@ -609,7 +609,7 @@ pub fn add_state(
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::AddState(AddState { actor_id, state }),
-    })
+    }, Engine::version())
     .unwrap()
 }
 
@@ -623,7 +623,7 @@ pub fn remove_state(
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::RemoveState(RemoveState { actor_id, state }),
-    })
+    }, Engine::version())
     .unwrap()
 }
 
@@ -636,7 +636,7 @@ pub fn create_channel(eng: &mut Engine, time: Time, loggable: bool) -> ChannelKe
                 loggable,
                 base_profile: None,
             }),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::CreateChannel(response) = data else {
@@ -650,7 +650,7 @@ pub fn destroy_channel(eng: &mut Engine, time: Time, channel_id: ChannelKey) -> 
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::DestroyChannel(DestroyChannel { channel_id }),
-    })
+    }, Engine::version())
 }
 
 // Put a name in a channel and hand it to somebody, with permissions that will not move under the
@@ -676,7 +676,7 @@ pub fn give_profile(
                 transferrable: false,
                 perm_policy: PermUpdatePolicy::Fixed(FixedPolicy { perms }),
             }),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::CreateAndGiveProfile(response) = data else {
@@ -719,7 +719,7 @@ pub fn set_profile_perms(
             profile_id,
             perm_policy: PermUpdatePolicy::Fixed(FixedPolicy { perms }),
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn remove_from_channel(
@@ -735,7 +735,7 @@ pub fn remove_from_channel(
             channel_id,
             player_id,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn send_message(
@@ -754,7 +754,7 @@ pub fn send_message(
             profile_id: Some(profile_id),
             content: content.into(),
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn create_gc(eng: &mut Engine, time: Time) -> GroupchatKey {
@@ -763,7 +763,7 @@ pub fn create_gc(eng: &mut Engine, time: Time) -> GroupchatKey {
             actor: ActionActor::System,
             timestamp: time,
             payload: Action::CreateGroupchat(CreateGroupchat {}),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::CreateGroupchat(response) = data else {
@@ -788,7 +788,7 @@ pub fn add_to_gc(
             player_id,
             owner,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn remove_from_gc(
@@ -805,7 +805,7 @@ pub fn remove_from_gc(
             groupchat_id: gc_id,
             player_id,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn set_gc_owner(
@@ -822,7 +822,7 @@ pub fn set_gc_owner(
             groupchat_id: gc_id,
             owner,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn create_lounge(
@@ -835,7 +835,7 @@ pub fn create_lounge(
             actor: ActionActor::System,
             timestamp: time,
             payload: Action::CreateLounge(CreateLounge { variant }),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::CreateLounge(response) = data else {
@@ -854,7 +854,7 @@ pub fn leave_lounge(
         actor: ActionActor::Player(player_id),
         timestamp: time,
         payload: Action::LeaveLounge(LeaveLounge { lounge_id }),
-    })
+    }, Engine::version())
 }
 
 pub fn remove_from_lounge(
@@ -870,7 +870,7 @@ pub fn remove_from_lounge(
             lounge_id,
             player_id,
         }),
-    })
+    }, Engine::version())
 }
 
 pub fn give_role(eng: &mut Engine, time: Time, target_id: ActorKey, role: Role) {
@@ -878,7 +878,7 @@ pub fn give_role(eng: &mut Engine, time: Time, target_id: ActorKey, role: Role) 
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::GiveRole(GiveRole { target_id, role }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -887,7 +887,7 @@ pub fn set_news_anchor(eng: &mut Engine, time: Time, target_id: Option<ActorKey>
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::SetNewsAnchor(SetNewsAnchor { target_id }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -899,7 +899,7 @@ pub fn press_conf_access(eng: &mut Engine, time: Time, target_id: ActorKey, has_
             target_id,
             has_access,
         }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -920,7 +920,7 @@ pub fn create_kidnapping(
                 source,
                 duration: None,
             }),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::CreateKidnapping(r) = data else {
@@ -938,7 +938,7 @@ pub fn release_kidnapping(eng: &mut Engine, time: Time, kidnapping_id: Kidnappin
             kidnapping_id,
             forced: false,
         }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -974,7 +974,7 @@ pub fn start_prosecution_with(
                 defendant_display: ActorDisplay::Raw(defendant_id),
                 autonomous,
             }),
-        })
+        }, Engine::version())
         .unwrap()
         .0;
     let ActionResponse::StartProsecution(response) = data else {
@@ -995,7 +995,7 @@ pub fn signal_ready(
         actor: ActionActor::Player(caller),
         timestamp: time,
         payload: Action::SignalReady(SignalReady { prosecution_id }),
-    })
+    }, Engine::version())
 }
 
 pub fn select_lawyer(
@@ -1012,7 +1012,7 @@ pub fn select_lawyer(
             prosecution_id,
             lawyer_id,
         }),
-    })
+    }, Engine::version())
 }
 
 // An automatic advance, as a timer or a completed pair of signals would produce it. A
@@ -1022,7 +1022,7 @@ pub fn advance_prosecution(eng: &mut Engine, time: Time, prosecution_id: Prosecu
         actor: ActionActor::System,
         timestamp: time,
         payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }),
-    })
+    }, Engine::version())
     .unwrap();
 }
 
@@ -1036,7 +1036,7 @@ pub fn host_advance_prosecution(
         actor: ActionActor::Admin,
         timestamp: time,
         payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }),
-    })
+    }, Engine::version())
 }
 
 pub fn terminate_prosecution(
@@ -1051,7 +1051,7 @@ pub fn terminate_prosecution(
             prosecution_id,
             verdict: None,
         }),
-    })
+    }, Engine::version())
 }
 
 // ---- incarcerations ----
@@ -1071,7 +1071,7 @@ pub fn incarcerate(
                 source: IncarcerationSource::None,
                 duration,
             }),
-        })
+        }, Engine::version())
         .unwrap();
     let ActionResponse::CreateIncarceration(response) = data else {
         unreachable!()
@@ -1091,5 +1091,5 @@ pub fn release_incarceration(
             incarceration_id,
             forced: false,
         }),
-    })
+    }, Engine::version())
 }

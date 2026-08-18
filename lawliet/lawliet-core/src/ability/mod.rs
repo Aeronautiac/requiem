@@ -50,7 +50,7 @@ pub trait AbilityInterface {
         ctx: &mut ActionContext,
         actor: &ActionActor,
         ability: AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> AbilityResult;
 }
@@ -99,7 +99,7 @@ impl AbilityInterface for AbilityBehaviour {
         ctx: &mut ActionContext,
         actor: &ActionActor,
         ability: AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> AbilityResult {
         match self {

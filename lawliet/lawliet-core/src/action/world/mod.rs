@@ -90,7 +90,7 @@ mod world_tests {
                 notebook_id: notebook,
                 target_id: p2,
             }),
-        });
+        }, Engine::version());
         assert!(matches!(lend, Err((ActionError::GameNotStarted, _))));
         assert!(
             send_message(&mut eng, 1, p1, channel, seat, "hello").is_ok(),
@@ -270,7 +270,7 @@ mod world_tests {
                     true_name: "p1".into(),
                     starting_role: Role::Civilian,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::AddPlayer(data) = response else {
             unreachable!()

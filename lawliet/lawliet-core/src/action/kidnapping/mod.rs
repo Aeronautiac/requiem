@@ -51,7 +51,7 @@ mod tests {
                     source: KidnappingSource::None,
                     duration,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let crate::action::ActionResponse::CreateKidnapping(response) = data else {
             unreachable!()
@@ -308,7 +308,7 @@ mod tests {
                 kidnapping_id: kid_id,
                 forced: false,
             }),
-        });
+        }, Engine::version());
         assert!(matches!(
             result,
             Err((ActionError::InsufficientPermissions, _))
@@ -349,7 +349,7 @@ mod tests {
                 kidnapping_id: kid_id,
                 forced: false,
             }),
-        });
+        }, Engine::version());
         assert!(result.is_ok());
         assert!(get_kidnapping(&eng, kid_id).is_err());
     }
@@ -372,7 +372,7 @@ mod tests {
                     duration: None,
                 },
             ),
-        });
+        }, Engine::version());
         assert!(matches!(result, Err((ActionError::UserNotPresent, _))));
     }
 
@@ -400,7 +400,7 @@ mod tests {
                     duration: None,
                 },
             ),
-        });
+        }, Engine::version());
         assert!(matches!(result, Err((ActionError::UserNotPresent, _))));
     }
 
@@ -422,7 +422,7 @@ mod tests {
                     duration: None,
                 },
             ),
-        });
+        }, Engine::version());
         assert!(matches!(
             result,
             Err((ActionError::ActorHasStrengthenedPresence, _))

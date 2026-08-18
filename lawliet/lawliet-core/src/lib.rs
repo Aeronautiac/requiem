@@ -218,8 +218,6 @@ pub use common::{
 // yet, but eventually needs to get done
 
 // TODO:
-// - Need to pass in version numbers alongside inputs so old actions can be replayed without
-// breaking the timeline. Server should read the current engine version when persisting inputs.
 // - Set up a CI/CD pipeline
 // - Deploy to hetzner server
 // - Rulesets & live config editing

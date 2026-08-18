@@ -28,7 +28,7 @@ impl AbilityInterface for UnderTheRadar {
         ctx: &mut lawliet_types::action::ActionContext,
         actor: &lawliet_types::action::ActionActor,
         _ability: lawliet_types::common::AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.player_only()?;
@@ -115,7 +115,7 @@ mod tests {
                     target_id: target,
                     source: crate::bug::BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap()
             .0;
         let crate::action::ActionResponse::CreateBug(response) = data else {
@@ -139,7 +139,7 @@ mod tests {
                     contacted_id: contacted,
                 },
             }),
-        })
+        }, Engine::version())
         .unwrap()
         .1
     }

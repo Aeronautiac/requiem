@@ -17,7 +17,7 @@ impl AbilityInterface for Bug {
         ctx: &mut lawliet_types::action::ActionContext,
         _actor: &lawliet_types::action::ActionActor,
         ability: lawliet_types::common::AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         Action::CreateBug(CreateBug {

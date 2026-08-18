@@ -39,7 +39,7 @@ impl AbilityInterface for Blackout {
         ctx: &mut lawliet_types::action::ActionContext,
         actor: &lawliet_types::action::ActionActor,
         _ability: lawliet_types::common::AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         // Read the roster before anything else runs, so the mark lands on exactly who was in the

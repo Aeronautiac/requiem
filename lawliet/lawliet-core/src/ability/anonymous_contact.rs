@@ -28,7 +28,7 @@ impl AbilityInterface for AnonymousContact {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.player_only()?;

@@ -98,7 +98,7 @@ mod comms_tests {
                         perms: ChannelPerm::Send | ChannelPerm::View,
                     }),
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
@@ -139,7 +139,7 @@ mod comms_tests {
                         perms: ChannelPerm::Send | ChannelPerm::View,
                     }),
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         assert!(!ctx.commands.iter().any(|p| {
@@ -173,7 +173,7 @@ mod comms_tests {
                         perms: ChannelPerm::Send | ChannelPerm::View,
                     }),
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateAndGiveProfile(data) = response else {
             unreachable!()
@@ -236,7 +236,7 @@ mod comms_tests {
                         perms: ChannelPerm::Send | ChannelPerm::View,
                     }),
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateAndGiveProfile(data) = response else {
             unreachable!()
@@ -297,7 +297,7 @@ mod comms_tests {
                 player_id: p2,
                 granted: true,
             }),
-        });
+        }, Engine::version());
 
         assert!(matches!(result, Err((ActionError::ProfileNotShareable, _))));
     }
@@ -326,7 +326,7 @@ mod comms_tests {
                         perms: ChannelPerm::Send | ChannelPerm::View,
                     }),
                 }),
-            })
+            }, Engine::version())
             .unwrap()
             .0;
         let ActionResponse::CreateAndGiveProfile(passed) = passed else {
@@ -376,7 +376,7 @@ mod comms_tests {
                 channel_id: ch,
                 loggable: true,
             }),
-        })
+        }, Engine::version())
         .unwrap();
 
         assert!(get_channel(&eng, ch).unwrap().loggable);
@@ -476,11 +476,11 @@ mod comms_tests {
         };
 
         assert!(matches!(
-            eng.execute(nameless(ActionActor::Player(p1))),
+            eng.execute(nameless(ActionActor::Player(p1)), Engine::version()),
             Err((ActionError::ProfileRequired, _))
         ));
 
-        let (_, ctx) = eng.execute(nameless(ActionActor::System)).unwrap();
+        let (_, ctx) = eng.execute(nameless(ActionActor::System), Engine::version()).unwrap();
         assert!(ctx.commands.iter().any(|p| {
             matches!(&p.cmd, Command::AddMessage { sender_display, .. }
                 if *sender_display == ActorDisplay::System)
@@ -508,7 +508,7 @@ mod comms_tests {
                         perms: ChannelPerm::Send | ChannelPerm::View,
                     }),
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         assert!(
@@ -555,7 +555,7 @@ mod comms_tests {
                 actor: ActionActor::System,
                 timestamp: 0,
                 payload: Action::CreateGroupchat(CreateGroupchat {}),
-            })
+            }, Engine::version())
             .unwrap();
 
         let ActionResponse::CreateGroupchat(data) = response else {
@@ -732,7 +732,7 @@ mod comms_tests {
                         contacted_id: p2,
                     },
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         let ActionResponse::CreateLounge(data) = response else {
@@ -815,7 +815,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
@@ -837,7 +837,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
@@ -859,7 +859,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
@@ -888,7 +888,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(p1)
@@ -922,7 +922,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Ability(ab),
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(p1)
@@ -947,7 +947,7 @@ mod comms_tests {
                     target_id: ActorKey::default(),
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .is_err()
         );
     }
@@ -965,7 +965,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Ability(AbilityKey::default()),
                 }),
-            })
+            }, Engine::version())
             .is_err()
         );
     }
@@ -983,7 +983,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
@@ -995,7 +995,7 @@ mod comms_tests {
             actor: ActionActor::System,
             timestamp: 0,
             payload: Action::ArchiveBug(ArchiveBug { bug_id: data.id }),
-        })
+        }, Engine::version())
         .unwrap();
 
         assert!(!get_bug(&eng, data.id).unwrap().enabled);
@@ -1014,7 +1014,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(create_data) = response else {
             unreachable!()
@@ -1027,7 +1027,7 @@ mod comms_tests {
                 payload: Action::ArchiveBug(ArchiveBug {
                     bug_id: create_data.id,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         // Archiving leaves the bug (and its viewport) in place — it only stops the relay — so
@@ -1051,7 +1051,7 @@ mod comms_tests {
                 payload: Action::ArchiveBug(ArchiveBug {
                     bug_id: BugKey::default(),
                 }),
-            })
+            }, Engine::version())
             .is_err()
         );
     }
@@ -1069,7 +1069,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
@@ -1079,7 +1079,7 @@ mod comms_tests {
             actor: ActionActor::System,
             timestamp: 0,
             payload: Action::ArchiveBug(ArchiveBug { bug_id: data.id }),
-        })
+        }, Engine::version())
         .unwrap();
 
         assert!(get_bug(&eng, data.id).is_ok());
@@ -1098,7 +1098,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
@@ -1108,7 +1108,7 @@ mod comms_tests {
             actor: ActionActor::System,
             timestamp: 0,
             payload: Action::DestroyBug(DestroyBug { bug_id: data.id }),
-        })
+        }, Engine::version())
         .unwrap();
 
         assert!(get_bug(&eng, data.id).is_err());
@@ -1127,7 +1127,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
@@ -1137,7 +1137,7 @@ mod comms_tests {
             actor: ActionActor::System,
             timestamp: 0,
             payload: Action::DestroyBug(DestroyBug { bug_id: data.id }),
-        })
+        }, Engine::version())
         .unwrap();
 
         assert!(!get_player(&eng, p1).unwrap().bugs.contains(&data.id));
@@ -1156,7 +1156,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(create_data) = response else {
             unreachable!()
@@ -1169,7 +1169,7 @@ mod comms_tests {
                 payload: Action::DestroyBug(DestroyBug {
                     bug_id: create_data.id,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         // Destroying a bug archives it rather than deleting it, and the notice is addressed to
@@ -1191,7 +1191,7 @@ mod comms_tests {
                 payload: Action::DestroyBug(DestroyBug {
                     bug_id: BugKey::default(),
                 }),
-            })
+            }, Engine::version())
             .is_err()
         );
     }
@@ -1211,7 +1211,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(bug_data) = response else {
             unreachable!()
@@ -1241,7 +1241,7 @@ mod comms_tests {
                 target_id: p1,
                 source: BugSource::Custody,
             }),
-        })
+        }, Engine::version())
         .unwrap();
 
         let (_, ctx) = send_message(&mut eng, 0, p1, ch, seat, "hello").unwrap();
@@ -1268,7 +1268,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(bug_data) = response else {
             unreachable!()
@@ -1280,7 +1280,7 @@ mod comms_tests {
             payload: Action::ArchiveBug(ArchiveBug {
                 bug_id: bug_data.id,
             }),
-        })
+        }, Engine::version())
         .unwrap();
 
         let (_, ctx) = send_message(&mut eng, 0, p1, ch, seat, "hello").unwrap();
@@ -1307,7 +1307,7 @@ mod comms_tests {
                     target_id: p1,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateBug(bug_data) = response else {
             unreachable!()
@@ -1348,7 +1348,7 @@ mod comms_tests {
                     target_id: target,
                     source: BugSource::Ability(ab),
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         let bug_viewport = only_bug_viewport(&eng);
@@ -1373,7 +1373,7 @@ mod comms_tests {
                     variant: 0,
                     transferrable: false,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::AddAbility(ab_data) = response else {
             unreachable!()
@@ -1387,7 +1387,7 @@ mod comms_tests {
                     target_id: target,
                     source: BugSource::Ability(ab_data.id),
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         let bug_viewport = only_bug_viewport(&eng);
@@ -1420,7 +1420,7 @@ mod comms_tests {
                 target_id: target,
                 source: BugSource::Ability(ab),
             }),
-        })
+        }, Engine::version())
         .unwrap();
 
         // Incarcerated gives NoPresence — visibility update is triggered inside AddState
@@ -1432,7 +1432,7 @@ mod comms_tests {
                     actor_id: owner,
                     state: State::Incarcerated,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         let bug_viewport = only_bug_viewport(&eng);
@@ -1464,7 +1464,7 @@ mod comms_tests {
                     target_id: target,
                     source: BugSource::Custody,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         let bug_viewport = only_bug_viewport(&eng);
@@ -1500,7 +1500,7 @@ mod comms_tests {
                     target_id: target,
                     source: BugSource::Ability(ab),
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         // Everything the bug's viewport says about itself must land there before anyone is

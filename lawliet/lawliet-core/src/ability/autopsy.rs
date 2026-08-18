@@ -21,7 +21,7 @@ impl AbilityInterface for Autopsy {
         ctx: &mut lawliet_types::action::ActionContext,
         actor: &lawliet_types::action::ActionActor,
         _ability: lawliet_types::common::AbilityKey,
-        _version: u8,
+        _version: u64,
         _mutate: bool,
     ) -> super::AbilityResult {
         let target_actor = get_actor(eng, self.target)?;

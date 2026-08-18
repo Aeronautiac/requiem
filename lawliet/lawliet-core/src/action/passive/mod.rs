@@ -38,7 +38,7 @@ mod contact_log_tests {
                     contacted_id: contacted,
                 },
             }),
-        })
+        }, Engine::version())
         .unwrap()
         .1
     }
@@ -116,7 +116,7 @@ mod contact_log_tests {
                         ),
                     },
                 }),
-            })
+            }, Engine::version())
             .unwrap()
             .1;
 

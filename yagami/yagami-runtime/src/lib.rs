@@ -14,7 +14,7 @@ use lawliet::engine::Engine;
 use lawliet_types::{
     action::{Action, ActionActor, ActionRequest, AddPlayer, SetTrueName},
     command::{Command, CommandPayload, CommandRecipient},
-    common::{ActorKey, Time, ViewportKey},
+    common::{ActorKey, Time, Version, ViewportKey},
 };
 use rand_pcg::Pcg64;
 use rand_pcg::rand_core::{Rng, SeedableRng};
@@ -103,11 +103,13 @@ impl NamePool {
     }
 }
 
-// What yagami feeds the runtime over the pipe: the input plus the caller's key (None for a
-// server-issued input or a rebuild replay, which are trusted). Meta controls never appear here.
+// What yagami feeds the runtime over the pipe: the input, the engine version that must interpret
+// it, and the caller's key (None for a server-issued input or a rebuild replay, which are trusted).
+// Meta controls never appear here.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PipeFrame {
     pub input: RuntimeInput,
+    pub version: Version,
     pub caller: Option<Key>,
 }
 
@@ -202,12 +204,19 @@ impl Simulation {
     }
 
     // process one input. `caller` is the connection's key (None for a server-issued input or a
-    // rebuild replay). the returned outputs are gated ServerOutputs ready to append to history;
-    // `reply` carries the outcome for the originating connection.
-    pub fn process(&mut self, input: &RuntimeInput, caller: Option<&Key>) -> RuntimeOutput {
+    // rebuild replay). `version` is the engine version the input was recorded under, threaded into
+    // the engine so an action executes under its own semantics. the returned outputs are gated
+    // ServerOutputs ready to append to history; `reply` carries the outcome for the originating
+    // connection.
+    pub fn process(
+        &mut self,
+        input: &RuntimeInput,
+        caller: Option<&Key>,
+        version: Version,
+    ) -> RuntimeOutput {
         match input {
             RuntimeInput::Action(request) => {
-                let mut out = self.process_action(request, caller);
+                let mut out = self.process_action(request, caller, version);
                 if request.actor != ActionActor::System {
                     out.outputs.push(Output {
                         time: self.engine.time,
@@ -223,7 +232,12 @@ impl Simulation {
         }
     }
 
-    fn process_action(&mut self, request: &ActionRequest, caller: Option<&Key>) -> RuntimeOutput {
+    fn process_action(
+        &mut self,
+        request: &ActionRequest,
+        caller: Option<&Key>,
+        version: Version,
+    ) -> RuntimeOutput {
         // authorize: a server-issued input (None) always passes; a connection's input must hold the
         // actor under its key.
         if !self.authorize_action(caller, &request.actor) {
@@ -242,7 +256,7 @@ impl Simulation {
         let mut request = request.clone();
         self.assign_true_name(&mut request);
 
-        let result = self.engine.execute(request.clone());
+        let result = self.engine.execute(request.clone(), version);
         let (outcome, context) = match result {
             Ok((response, ctx)) => (ActionOutcome::Ok(response), ctx),
             Err((error, ctx)) => (ActionOutcome::Err(error), ctx),
@@ -340,6 +354,7 @@ impl Simulation {
                 self.reseed_rng(*seed);
                 Ok(ControlResponse::ReSeed)
             }
+            SimControlData::GetVersion => Ok(ControlResponse::EngineVersion(Engine::version())),
         };
 
         let (outcome, outputs) = match result {

@@ -25,7 +25,7 @@ impl AbilityInterface for TrueNameReroll {
         ctx: &mut crate::action::ActionContext,
         _actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         require_alive(eng, self.target)?;

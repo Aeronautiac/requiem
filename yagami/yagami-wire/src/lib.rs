@@ -171,6 +171,8 @@ pub enum ControlResponse {
     ProfileSet,
     ReSeed,
     TimeSet,
+    // the engine's input version, in reply to a server-issued GetVersion query.
+    EngineVersion(u64),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -237,6 +239,10 @@ pub enum SimControlData {
     ReSeed {
         seed: u64,
     },
+    // a server-issued query for the engine's input version (Engine::version). NOT part of the
+    // accepted stream: it changes nothing, so it is never persisted or replayed. the game task
+    // dispatches it once per boot to learn what version to stamp on subsequently-accepted inputs.
+    GetVersion,
 }
 
 // A meta-level control acts on the timeline itself rather than the sim, so it is NOT part of the
@@ -256,6 +262,19 @@ pub enum AdminControl {
 pub enum ServerInput {
     Action(ActionRequest),
     Control(AdminControl),
+}
+
+// The unit the accepted stream is persisted and replayed in: the input plus the engine version that
+// interpreted it. The server stamps `version` (learned once per boot by querying the runtime for
+// the engine's version) when it first accepts an input, so a later engine bugfix can tell, per
+// input, which semantics were in force and migrate a replay without corrupting the timeline. The
+// client->server wire still carries a bare ServerInput; this wrap exists only where the stream is
+// stored, and its version rides the runtime pipe so the engine can execute under the input's own
+// semantics. Only the client never sees it.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct VersionedInput {
+    pub version: u64,
+    pub input: ServerInput,
 }
 
 #[derive(Serialize, Deserialize)]

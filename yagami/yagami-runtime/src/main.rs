@@ -32,7 +32,7 @@ fn main() {
             sim.reseed_sim(*seed as u64);
         }
 
-        let output: RuntimeOutput = sim.process(&frame.input, frame.caller.as_ref());
+        let output: RuntimeOutput = sim.process(&frame.input, frame.caller.as_ref(), frame.version);
         serde_json::to_writer(&mut stdout_lock, &output).unwrap();
         stdout_lock.write_all(b"\n").unwrap();
         stdout_lock.flush().unwrap();

@@ -1,6 +1,7 @@
 use rand_pcg::Pcg32;
 use rand_pcg::rand_core::SeedableRng;
 
+use crate::common::Version;
 use crate::Time;
 use crate::action::{
     ActionContext, ActionError, ActionExt, ActionRequest, ActionResponse, ActionResult,
@@ -54,18 +55,19 @@ impl Engine {
         &mut self,
         ctx: &mut ActionContext,
         mut action: ActionRequest,
+        version: Version,
     ) -> ActionResult {
         let old_time = self.time;
         self.time = action.timestamp;
         // prevent validation mutation on action context
-        let dry_result = action.payload.validate(self, ctx, &action.actor, 0);
+        let dry_result = action.payload.validate(self, ctx, &action.actor, version);
         if dry_result.is_err() {
             self.time = old_time;
             return dry_result;
         }
         self.time = action.timestamp;
         ctx.commands.clear();
-        let result = action.payload.execute(self, ctx, &action.actor, 0);
+        let result = action.payload.execute(self, ctx, &action.actor, version);
         result
             .as_ref()
             .expect("Validate and execute pass desync detected.");
@@ -77,7 +79,7 @@ impl Engine {
     // execute the requested action
     // recursively execute sub-actions
     // return only top level result (with the combined command buffer)
-    pub fn execute(&mut self, action: ActionRequest) -> ExecutionResult {
+    pub fn execute(&mut self, action: ActionRequest, version: Version) -> ExecutionResult {
         let mut ctx = ActionContext {
             commands: vec![],
             mutate: false,
@@ -104,11 +106,11 @@ impl Engine {
 
             // ignore the errors of scheduled jobs.
             let job = self.jobs.pop().unwrap();
-            let _ = self.execute_atomic(&mut ctx, job.request);
+            let _ = self.execute_atomic(&mut ctx, job.request, version);
             commands.append(&mut ctx.commands);
         }
 
-        let result = self.execute_atomic(&mut ctx, action);
+        let result = self.execute_atomic(&mut ctx, action, version);
         commands.append(&mut ctx.commands);
 
         // Catchup commands first, then the target action's, in the order they occurred.
@@ -124,7 +126,7 @@ impl Engine {
 
     // every update to any place in code after the engine is publicly usable requires the version number to be incremented by 1
     /// return the latest version of the engine
-    pub fn version() -> u64 {
+    pub fn version() -> Version {
         0
     }
 }

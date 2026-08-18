@@ -129,7 +129,7 @@ mod presence_tests {
                 allow_link_chaining: true,
                 sever_links: true,
             }),
-        })
+        }, Engine::version())
         .unwrap()
     }
 

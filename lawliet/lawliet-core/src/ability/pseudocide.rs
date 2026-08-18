@@ -25,7 +25,7 @@ impl AbilityInterface for Pseudocide {
         ctx: &mut ActionContext,
         _actor: &crate::action::ActionActor,
         _ability: AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         // `orgs` is client-supplied and is a list, not a map, on the wire (serde_json can't key on

@@ -23,6 +23,7 @@ mod notebook_tests {
         },
         actor::state::State,
         config::role::Role,
+        engine::Engine,
         helpers::{get_actor, get_notebook},
         test_helpers::*,
     };
@@ -356,7 +357,7 @@ mod notebook_tests {
                     actor_id: p1,
                     volatile: false,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         let recipients = fake_status(&ctx);
@@ -387,7 +388,7 @@ mod notebook_tests {
                     notebook_id: p2_book,
                     delay: 0,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         assert!(get_actor(&eng, p1).unwrap().has_state(State::Dead));
@@ -411,7 +412,7 @@ mod notebook_tests {
                     notebook_id: book_id,
                     fake: false,
                 }),
-            })
+            }, Engine::version())
             .unwrap();
 
         let recipients = fake_status(&ctx);

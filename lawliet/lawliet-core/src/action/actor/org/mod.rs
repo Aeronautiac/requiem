@@ -658,7 +658,7 @@ mod org_tests {
                     org_id: o1,
                     settings: settings.clone(),
                 }),
-            })
+            }, Engine::version())
             .unwrap();
         let ActionResponse::CreateAndGiveOrgAbility(data) = response else {
             unreachable!()

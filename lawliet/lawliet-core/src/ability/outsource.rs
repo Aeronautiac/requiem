@@ -25,7 +25,7 @@ impl AbilityInterface for Outsource {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         ability: crate::AbilityKey,
-        version: u8,
+        version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.org_only()?;

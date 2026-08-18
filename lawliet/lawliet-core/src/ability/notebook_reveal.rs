@@ -27,7 +27,7 @@ impl AbilityInterface for NotebookReveal {
         ctx: &mut crate::action::ActionContext,
         actor: &crate::action::ActionActor,
         _ability: crate::AbilityKey,
-        _version: u8,
+        _version: u64,
         mutate: bool,
     ) -> super::AbilityResult {
         actor.player_only()?;

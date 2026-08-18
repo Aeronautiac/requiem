@@ -18,7 +18,7 @@ fn main() {
     let stream = serde_json::Deserializer::from_reader(stdin_lock).into_iter::<ActionRequest>();
     for input in stream {
         let rqst = input.unwrap();
-        let res = eng.execute(rqst);
+        let res = eng.execute(rqst, Engine::version());
         serde_json::to_writer(&mut stdout_lock, &res).unwrap();
         stdout_lock.write_all(b"\n").unwrap();
         stdout_lock.flush().unwrap();
