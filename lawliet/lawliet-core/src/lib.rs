@@ -225,6 +225,9 @@ pub use common::{
 // - Rulesets & live config editing
 // - Add destroy actions for the different kinds of objects (actors will be the final destroyable objects. they may get very messy.)
 
+// BUG:
+// - revivals are not announced (likely need command emission on revival)
+
 #[cfg(test)]
 mod tests {
     use crate::{

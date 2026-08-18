@@ -114,13 +114,6 @@ export const STRINGS = {
   toast_fake_lounge_admin_title: "Fake Lounge Read",
   toast_fake_lounge_admin_body: "A fabricated lounge was read by {who}.",
 
-  // ---- blackout, which is the only world event that announces its own silence ----
-  blackout_begun_label: "Blackout",
-  blackout_begun:
-    "The world has gone dark...",
-  blackout_over_label: "Blackout Over",
-  blackout_over: "The light returns...",
-
   // ---- roles: the engine enum on the left, what a player reads on the right ----
   role_name_Kira: "Kira",
   role_name_SecondKira: "2nd Kira",

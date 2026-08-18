@@ -5,9 +5,7 @@
   import { getContext } from "svelte";
   import Dialog from "../kit/Dialog.svelte";
   import Button from "../kit/Button.svelte";
-  import { GAME_STATE_KEY } from "../../game/state.svelte";
   import { SESSION_KEY, type SessionState } from "../../session.svelte.ts";
-  import type { GameState } from "../../game/state.svelte";
   import { UI_STATE_KEY } from "../../ui_state.svelte.ts";
   import { now } from "../../time.svelte.ts";
   import type { UiState } from "../../ui_state.svelte.ts";
@@ -23,8 +21,6 @@
     notebookId: NotebookKey;
   }
   let { open = $bindable(), notebookId }: Props = $props();
-
-  const game = getContext<GameState>(GAME_STATE_KEY);
 
   const session = getContext<SessionState>(SESSION_KEY);
   const ui = getContext<UiState>(UI_STATE_KEY);
