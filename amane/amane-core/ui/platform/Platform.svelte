@@ -106,6 +106,8 @@
     adminError = "";
     try {
       await client.host.platform.endGame(id, platformKey.trim());
+      // Refetch so the ended game drops off the list at once.
+      await refreshRoster();
     } catch (e) {
       adminError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -163,8 +165,9 @@
         </div>
       {/if}
 
-      <!-- The games directory: the bulk of the screen. -->
-      <section class="flex min-h-0 flex-1 flex-col rounded border border-neutral-800 bg-neutral-900/40">
+      <!-- The games directory: the bulk of the screen. Bounded so a long roster scrolls in place
+           instead of stretching the whole screen. -->
+      <section class="flex h-[70vh] min-h-0 flex-col rounded border border-neutral-800 bg-neutral-900/40">
         <div class="flex items-center justify-between border-b border-neutral-800 px-4 py-2">
           <span class="text-xs uppercase tracking-wide text-neutral-500">
             Active games
