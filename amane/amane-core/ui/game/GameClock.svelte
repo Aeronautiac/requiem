@@ -35,10 +35,10 @@
   const running = $derived(game.view_of(ui.viewer).game_clock !== null);
 </script>
 
-<span class="ml-auto flex items-center gap-1.5 text-xs tabular-nums text-neutral-500">
+<span class="flex items-center gap-1.5 text-sm tabular-nums text-neutral-500">
   <span class="uppercase tracking-wide text-neutral-600">clock</span>
   <span
-    class="rounded border border-neutral-700/80 bg-neutral-800/60 px-1.5 py-px font-mono text-neutral-300"
+    class="flex h-8 items-center rounded-md border border-edge bg-panel px-3 font-mono text-sm text-neutral-300"
   >
     {formatTime(running ? now : 0)}
   </span>

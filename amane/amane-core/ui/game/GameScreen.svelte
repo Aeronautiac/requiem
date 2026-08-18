@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { setContext, untrack } from "svelte";
+  import { getContext, setContext, untrack } from "svelte";
+  import { CLIENT_KEY, ClientState } from "../../client.svelte";
   import { SESSION_KEY, SessionState } from "../../session.svelte";
   import { GAME_STATE_KEY } from "../../game/state.svelte";
   import { UI_STATE_KEY } from "../../ui_state.svelte";
@@ -15,6 +16,7 @@
   import ChannelView from "./ChannelView.svelte";
   import AdminPanel from "../admin/AdminPanel.svelte";
   import PlayerMenu from "./PlayerMenu.svelte";
+  import Button from "../kit/Button.svelte";
   import { PLAYER_MENU_KEY, PlayerMenuController } from "./player_menu.svelte";
   import { tooltip } from "../../lib/tooltip";
 
@@ -35,6 +37,9 @@
   setContext(GAME_STATE_KEY, game);
   setContext(UI_STATE_KEY, ui);
   setContext(PLAYER_MENU_KEY, new PlayerMenuController());
+
+  // The client owns leaving: it closes the connection and drops back to the platform screen.
+  const client = getContext<ClientState>(CLIENT_KEY);
 
   // Rail widths, in px. Drag the divider between a rail and the message column, or focus it and use
   // the arrow keys. Bounds keep either rail from swallowing the conversation or collapsing to nothing.
@@ -121,21 +126,32 @@
       {#if self.administers}
         <AdminPanel />
       {/if}
-      <StatusBadges />
-      <GameClock />
-      <button
-        type="button"
-        use:tooltip
-        data-tip={ui.notifications_enabled
-          ? "Notifications on — click to mute popups"
-          : "Notifications muted — click to unmute"}
-        class="px-2 py-0.5 text-[0.65rem] uppercase tracking-wide {ui.notifications_enabled
-          ? 'bg-neutral-800 text-neutral-400 hover:bg-raised hover:text-neutral-200'
-          : 'bg-neutral-800 text-red-400/80 line-through hover:text-red-300'}"
-        onclick={() => (ui.notifications_enabled = !ui.notifications_enabled)}
-      >
-        {ui.notifications_enabled ? "Notifications" : "Muted"}
-      </button>
+<StatusBadges />
+      <div class="ml-auto flex items-center gap-2">
+        <GameClock />
+        <span
+          use:tooltip
+          data-tip={ui.notifications_enabled
+            ? "Notifications on — click to mute popups"
+            : "Notifications muted — click to mute"}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            class={ui.notifications_enabled
+              ? ""
+              : "text-red-400/90 line-through hover:text-red-300"}
+            onclick={() => (ui.notifications_enabled = !ui.notifications_enabled)}
+          >
+            {ui.notifications_enabled ? "Notifications" : "Muted"}
+          </Button>
+        </span>
+        <span use:tooltip data-tip="Disconnect and return to the platform">
+          <Button variant="ghost" size="sm" onclick={() => client.leave()}>
+            Menu
+          </Button>
+        </span>
+      </div>
     </div>
   </div>
 
