@@ -47,6 +47,12 @@ import type {
 // how it came out, as the server recorded them at the time it was asked. The request is "who did
 // what, as whom"; the outcome is how the engine (or the gate in front of it) answered.
 export interface ActionLogEntry {
+  // Monotonic per view, assigned at append time. The timeline keys its rows off this rather than
+  // content: entries are appended in delivery order and never reordered, but their `time:variant`
+  // is NOT unique — a manual game-clock that hasn't ticked can stamp many identical actions with
+  // the same instant, which would collide as duplicate `{#each}` keys. `id` is the one field
+  // guaranteed distinct.
+  id: number;
   time: number;
   action: ActionRequest;
 }
@@ -453,8 +459,12 @@ export class GameView {
   // different question -- "what was asked, and how it went" -- rather than "what the world now is".
   action_log: ActionLogEntry[] = $state([]);
 
+  // Next action_timeline id. Kept off the entries themselves so a replayed timeline, which rebuilds
+  // by appending, assigns the same ids as the live one did.
+  #action_seq = 0;
+
   apply_log_action(action: ActionRequest, time: number) {
-    this.action_log.push({ time, action });
+    this.action_log.push({ id: ++this.#action_seq, time, action });
   }
 
   // A filtered channel record this view has been handed: an autopsy of a target's record, or a

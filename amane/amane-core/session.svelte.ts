@@ -47,11 +47,12 @@ export class SessionState {
   // strictly in the order that connection submitted, so the n-th reply belongs to the n-th thing
   // we sent. Load-bearing — see the shape check in submit_action and submit_control.
   #waiting: Waiter[] = [];
-  // True only while the outputs of a catch-up (Initialize) batch are being applied — a fresh
-  // attach's replay, or the resync every connection gets after a time-travel rewind. Toasts are
-  // suppressed for exactly that window: everything a connection is owed arrives at once during
-  // catch-up, and nobody wants the whole history buzzing their lock screen. It is not a latch — a
-  // resync can happen any time, so the flag lives and dies with each Initialize batch.
+  // True between the terminal "Initialize" batch that enters catch-up and the next live terminal
+  // that ends it — a fresh attach's replay, or the resync every connection gets after a time-travel
+  // rewind, including the continuation chunks that extend it. Toasts are suppressed for exactly
+  // that window: everything a connection is owed arrives at once during catch-up, and nobody wants
+  // the whole history buzzing their lock screen. It is not a latch tied to a single batch — the
+  // window spans terminal Initialize and any continuations until a live terminal arrives.
   #catching_up = false;
 
   constructor(connection: GameConnection, host: HostContext) {
@@ -79,9 +80,16 @@ export class SessionState {
     });
   }
 
-  // Batches arrive in order — the server drives every connection's outbox with one task and a
+  // Batches arrive in order — the protocol drives every connection's outbox with one task and a
   // reliable, ordered transport carries them — so no sequencing is needed: a batch is applied when
-  // it arrives, and an "Initialize" batch replaces the state and rebuilds it from its outputs.
+  // it arrives.
+  //
+  // A large batch may arrive split across several frames: a terminal chunk ("Initialize" or a Live
+  // batch) followed by zero or more "Continuation" chunks that extend it. The connection's MODE is
+  // set only by a terminal. An "Initialize" terminal replaces the state and rebuilds it from its
+  // outputs — the reset happens THERE, once; its continuations are applied like any outputs without
+  // resetting again — and puts the connection into catch-up until a Live terminal arrives and
+  // leaves it. Continuations never change the mode, they only add outputs.
   //
   // A batch that throws mid-apply is unrecoverable, and the catch is what makes that VISIBLE.
   // Client state is cumulative, so a half-applied batch has already corrupted it and running the
@@ -90,16 +98,23 @@ export class SessionState {
   #ingest(batch: Batch) {
     console.log(batch);
     try {
-      if (batch.kind === "Initialize") {
+      const kind = batch.kind;
+
+      // The terminal batches change the connection’s MODE; a Continuation is just the remaining
+      // outputs of whichever terminal it extends, so it resets nothing and changes nothing.
+      if (kind === "Initialize") {
         // Reset is a session-level concern, not a game-state one: authority (privileges), the view
         // layers, and the catch-up window all belong to the connection and reset together. The same
-        // GameState is cleared in place (the UI is bound to it) and rebuilds from the catch-up.
+        // GameState is cleared in place (the UI is bound to it) and rebuilds from the catch-up. It
+        // also ends mode: entering catch-up is the only effect of the init terminal right now.
         this.privileges = null;
         this.game.reset();
         this.#catching_up = true;
       }
+
       for (const out of batch.outputs) this.#apply_output(out);
-      if (batch.kind === "Initialize") {
+
+      if (kind === "Initialize") {
         const sys = this.game.system_view();
         console.log(
           "[diag] initialize applied",
@@ -117,9 +132,16 @@ export class SessionState {
           "viewports:",
           sys.viewports.size,
         );
-        this.#catching_up = false;
+      } else if (kind === "Continuation") {
+        // Named so the variants are enumerated outright. A Continuation's outputs were already
+        // applied above; it changes neither mode nor reply, so there is nothing here. If a new
+        // BatchKind ever appears, this chain stops compiling until it is handled.
       } else {
-        const pair = batch.kind.Live;
+        // Neither Initialize nor Continuation, so this is the Live variant. A live terminal ends
+        // catch-up, and carries the reply, if any, to one of THIS connection's own inputs — the
+        // reply never rides on a Continuation (those are output-only).
+        this.#catching_up = false;
+        const pair = kind.Live;
         if (pair) this.#waiting.shift()?.(pair.response);
       }
     } catch (error) {

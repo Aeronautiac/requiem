@@ -4,9 +4,15 @@
 // its traffic belongs to the game task, and this module only shuttles bytes between the two.
 
 use std::{
+    collections::VecDeque,
     env,
+    future::ready,
     net::SocketAddr,
-    time::Duration,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -30,7 +36,8 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     auth::{ActorScope, Capability, Key, KeyHandle, Ticket},
     constants::{
-        HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, OUTBOX_BUF_SIZE, TICKET_LIMIT, TICKET_TIMEOUT,
+        BATCH_SIZE, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, OUTBOX_BUF_SIZE, TICKET_LIMIT,
+        TICKET_TIMEOUT,
     },
     delivery::DeliveryData,
     game::{GameCommand, GameInput, GameStart, InputEnvelope, game},
@@ -303,28 +310,48 @@ pub async fn game_connection(
     });
 
     let mut outbound = tokio::spawn(async move {
+        let mut split_batches: Option<std::vec::IntoIter<Batch>> = None;
         let mut ping = interval(Duration::from_secs(HEARTBEAT_INTERVAL));
         loop {
             select! {
-                // provoke a Pong so the peer's recv-side deadline keeps resetting on an idle link.
+                // always send a ping on first opportunity
+                biased;
+
                 _ = ping.tick() => {
                     if ws_send.send(Message::Ping(Default::default())).await.is_err() {
                         break; // socket gone
                     }
-                }
-                out = recv.recv() => match out {
+                },
+
+                // we have an unsplit batch waiting. only take it when we have already processed the
+                // previous batch. split it into chunks.
+                out = recv.recv(), if split_batches.is_none() => match out {
                     Some(out) => {
-                        // Batch is ours; a serialize failure is a bug in this process, not a
-                        // runtime condition. abort loudly rather than drop a message on the floor.
-                        let json = serde_json::to_string(&out).unwrap_or_else(|e| {
-                            eprintln!("Batch failed to serialize: {e} -- aborting");
-                            std::process::abort()
-                        });
-                        if ws_send.send(Message::Text(json.into())).await.is_err() {
-                            break; // socket gone
-                        }
+                        // split batch into chunks using batch split method (chunks are just more batches)
+                        split_batches = Some(out.into_chunks(BATCH_SIZE).into_iter());
                     }
                     None => break, // game task dropped the outbox sender
+                },
+
+                () = ready(()), if split_batches.is_some() => {
+                    let Some(batches) = &mut split_batches  else {
+                        unreachable!()
+                    };
+                    let out = batches.next();
+
+                    // Batch is ours; a serialize failure is a bug in this process, not a
+                    // runtime condition. abort loudly rather than drop a message on the floor.
+                    let json = serde_json::to_string(&out).unwrap_or_else(|e| {
+                        eprintln!("Batch failed to serialize: {e} -- aborting");
+                        std::process::abort()
+                    });
+                    if ws_send.send(Message::Text(json.into())).await.is_err() {
+                        break; // socket gone
+                    }
+
+                    if batches.len() == 0 {
+                        split_batches = None;
+                    }
                 }
             }
         }
@@ -352,9 +379,7 @@ pub struct RosterEntry {
 
 // The platform's directory of live games. Unauthenticated: a game id and its headcounts are public
 // presence info, not a secret. Polled by the platform screen on an interval.
-pub async fn roster(
-    State(state): State<WrappedServerState>,
-) -> Json<Vec<RosterEntry>> {
+pub async fn roster(State(state): State<WrappedServerState>) -> Json<Vec<RosterEntry>> {
     let server_state = lock_state(&state);
     let mut entries: Vec<RosterEntry> = server_state
         .games

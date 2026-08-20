@@ -214,10 +214,13 @@ pub use common::{
 // CURRENT PROJECT ISSUES:
 // - you cannot edit the game's config as an admin
 // - no way to give random abilities as an admin
+// - the engine's default config should not be treated as stable. once a config editing path is
+// opened, servers should create their own defaults and inject them into the engine. otherwise, if
+// engine config is changed in production, every timeline corrupts.
 
 // TODO:
-// - Set up a CI/CD pipeline
 // - Deploy to hetzner server
+// - Set up a CI/CD pipeline
 // - Rulesets & live config editing
 // - Add destroy actions for the different kinds of objects (actors will be the final destroyable objects. they may get very messy.)
 

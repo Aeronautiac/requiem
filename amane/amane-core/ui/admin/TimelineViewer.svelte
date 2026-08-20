@@ -211,7 +211,7 @@
       bind:this={list}
       class="max-h-[30rem] overflow-y-auto divide-y divide-edge"
     >
-      {#each shown as entry (entry.time + ":" + actionName(entry.action.payload))}
+      {#each shown as entry (entry.id)}
         <li class="flex items-start gap-3 py-1.5 text-[0.9375rem]">
           <span
             class="shrink-0 font-mono text-[0.8125rem] text-ink-dim tabular-nums w-16 pt-0.5"

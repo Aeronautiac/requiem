@@ -383,6 +383,7 @@ pub struct Output {
 pub enum BatchKind {
     Live(Option<ResponsePair>),
     Initialize,
+    Continuation, // this is a continuation of the previous batch
 }
 
 // clients receive filtered batches rather than many disconnected events
@@ -392,4 +393,39 @@ pub struct Batch {
     pub kind: BatchKind,
     // outputs are sent to everyone who passes a recipient
     pub outputs: Vec<Output>,
+}
+
+impl Batch {
+    // TODO:
+    // zero copy optimization
+    // not important yet
+    pub fn into_chunks(self, chunk_size: usize) -> Vec<Batch> {
+        let Batch { kind, outputs } = self;
+
+        let mut outputs_split: Vec<Vec<Output>> =
+            outputs.chunks(chunk_size).map(|c| c.to_vec()).collect();
+
+        if outputs_split.is_empty() {
+            outputs_split.push(vec![]);
+        }
+
+        let mut chunks_iter = outputs_split.into_iter();
+        let mut batches = vec![];
+
+        if let Some(first_chunk) = chunks_iter.next() {
+            batches.push(Batch {
+                kind,
+                outputs: first_chunk,
+            });
+        }
+
+        for remaining_chunk in chunks_iter {
+            batches.push(Batch {
+                kind: BatchKind::Continuation,
+                outputs: remaining_chunk,
+            });
+        }
+
+        batches
+    }
 }

@@ -101,7 +101,9 @@ pub enum GameInput {
 }
 
 // the only shape a runtime dispatch can end in. a successful dispatch returns the deserialized
-// runtime output; anything else is a write or read failure.
+// runtime output; anything else is a write or read failure -- and by the time it is returned,
+// dispatch has already killed the child (see kill_runtime). the invariant a caller must uphold:
+// after an Err, reboot before dispatching again, or the next dispatch will find no pipe.
 enum DispatchError {
     Write,
     Read,
@@ -345,9 +347,22 @@ impl Game {
             caller: caller.cloned(),
         };
         let line = to_line(&frame);
-        self.write_line(&line).await?;
+        if let Err(e) = self.write_line(&line).await {
+            // a failed exchange abandons the pipe protocol mid-flight. the child must not survive
+            // it: a child left running would eventually write the reply it owes, and a LATER
+            // dispatch would read that stale line as its own -- every reply after that misaligned
+            // by one. kill first, so a hang behaves exactly like a crash from here on.
+            self.kill_runtime();
+            return Err(e);
+        }
 
-        let text = self.read_line().await?;
+        let text = match self.read_line().await {
+            Ok(text) => text,
+            Err(e) => {
+                self.kill_runtime();
+                return Err(e);
+            }
+        };
         match serde_json::from_str(&text) {
             Ok(output) => Ok(output),
             // an undeserializable line means the two binaries disagree about the wire format. a
@@ -360,23 +375,25 @@ impl Game {
     }
 
     // ask the runtime for the engine's input version. a server-issued GetVersion sim query that
-    // changes nothing, so it is never persisted. returns 0 if the exchange fails (a degenerate
-    // fallback; boot retries would have surfaced a real pipe failure).
-    async fn query_engine_version(&mut self) -> Version {
+    // changes nothing, so it is never persisted. None means the exchange failed -- which has
+    // already killed the child -- so the caller must treat it as a failed attempt rather than
+    // dispatch again. a reply of an unexpected shape still yields 0 (a degenerate fallback; boot
+    // retries would have surfaced a real pipe failure).
+    async fn query_engine_version(&mut self) -> Option<Version> {
         let control = SimControl {
-            time: 0,
+            time: self.clock.now(),
             data: SimControlData::GetVersion,
         };
         let runtime_input = RuntimeInput::Sim(control);
         let Ok(output) = self.dispatch(&runtime_input, 0, None).await else {
-            return 0;
+            return None;
         };
         let Some(reply) = output.reply else {
-            return 0;
+            return Some(0);
         };
         match reply.outcome {
-            ExecOutcome::Control(ControlOutcome::Ok(ControlResponse::EngineVersion(v))) => v,
-            _ => 0,
+            ExecOutcome::Control(ControlOutcome::Ok(ControlResponse::EngineVersion(v))) => Some(v),
+            _ => Some(0),
         }
     }
 
@@ -399,6 +416,17 @@ impl Game {
         let stdin = child.stdin.take().expect("child stdin piped");
         let stdout = child.stdout.take().expect("child stdout piped");
         (stdin, stdout, child)
+    }
+
+    // kill the runtime child and drop its pipes. dropping the Child triggers kill_on_drop (the
+    // child is signaled and reaped) and dropping stdin closes the pipe, so a child abandoned
+    // mid-exchange -- hung on a giant catch-up, or already dead -- can never have its late reply
+    // misread as the answer to a later input. after this, the caller must reboot before the next
+    // dispatch: stdin/stdout are gone, and dispatch expects them present.
+    fn kill_runtime(&mut self) {
+        self.child = None;
+        self.stdin = None;
+        self.stdout = None;
     }
 
     // boot: spawn a fresh runtime and bring it up to the state the old one had reached by re-feeding
@@ -433,9 +461,18 @@ impl Game {
 
             // learn the engine's input version for this boot, then stamp any still-unstamped fresh
             // inputs with it so the replay (and later persistence) carry it. boot runs first, so
-            // the version is always known before the stream is executed.
-            self.engine_version = self.query_engine_version().await;
-            if let Some(fresh) = self.fresh_inputs.take() {
+            // the version is always known before the stream is executed. a failed exchange has
+            // already killed the child (see dispatch), so it fails the attempt outright -- the
+            // replay below must never dispatch into a dead pipe.
+            let mut ok = true;
+            match self.query_engine_version().await {
+                Some(version) => self.engine_version = version,
+                None => ok = false,
+            }
+
+            if ok
+                && let Some(fresh) = self.fresh_inputs.take()
+            {
                 self.accepted = fresh
                     .into_iter()
                     .map(|input| VersionedInput {
@@ -445,7 +482,6 @@ impl Game {
                     .collect();
             }
 
-            let mut ok = true;
             let mut last_time: Time = 0;
 
             // re-feed the accepted stream. every input is server-issued (caller None): the stream
@@ -454,36 +490,38 @@ impl Game {
             // history. each input carries the version it was recorded under, so a rebuild replays
             // it under its own semantics. accepted is taken out for the replay (dispatch borrows
             // self mutably) and put back afterwards; it is still needed for later appends.
-            let accepted = std::mem::take(&mut self.accepted);
-            for versioned in &accepted {
-                let Some(runtime_input) = to_runtime_input(&versioned.input) else {
-                    // meta controls are never stored in accepted.
-                    continue;
-                };
-                match self.dispatch(&runtime_input, versioned.version, None).await {
-                    Ok(output) => {
-                        // the first boot of a fresh game also collects the responses to its
-                        // creation pack (e.g. the minted admin key) to hand back to create_game.
-                        if !self.registered
-                            && let Some(reply) = &output.reply
-                        {
-                            self.creation_responses.push(reply.outcome.clone());
-                        }
-                        for out in &output.outputs {
-                            if out.time > last_time {
-                                last_time = out.time;
+            if ok {
+                let accepted = std::mem::take(&mut self.accepted);
+                for versioned in &accepted {
+                    let Some(runtime_input) = to_runtime_input(&versioned.input) else {
+                        // meta controls are never stored in accepted.
+                        continue;
+                    };
+                    match self.dispatch(&runtime_input, versioned.version, None).await {
+                        Ok(output) => {
+                            // the first boot of a fresh game also collects the responses to its
+                            // creation pack (e.g. the minted admin key) to hand back to create_game.
+                            if !self.registered
+                                && let Some(reply) = &output.reply
+                            {
+                                self.creation_responses.push(reply.outcome.clone());
                             }
+                            for out in &output.outputs {
+                                if out.time > last_time {
+                                    last_time = out.time;
+                                }
+                            }
+                            self.update_server_projections(&output.outputs);
+                            self.history.append(output.outputs);
                         }
-                        self.update_server_projections(&output.outputs);
-                        self.history.append(output.outputs);
-                    }
-                    Err(_) => {
-                        ok = false;
-                        break;
+                        Err(_) => {
+                            ok = false;
+                            break;
+                        }
                     }
                 }
+                self.accepted = accepted;
             }
-            self.accepted = accepted;
 
             if ok {
                 self.last_reached = last_time;
@@ -812,22 +850,35 @@ impl Game {
         // drive it forward to `target` with a null tick so time-based state actually settles there,
         // rather than waiting for the next scheduled tick.
         if target >= now {
-            self.last_reached = target;
             let request = ActionRequest {
                 actor: ActionActor::System,
                 timestamp: self.clock.now(),
                 payload: Action::Null(Null {}),
             };
             let runtime_input = RuntimeInput::Action(request);
-            if let Ok(output) = self
+            match self
                 .dispatch(&runtime_input, self.engine_version, None)
                 .await
             {
-                self.update_server_projections(&output.outputs);
-                let at = self.history.append(output.outputs);
-                self.history.broadcast(&self.server_state, at, None);
+                Ok(output) => {
+                    self.last_reached = target;
+                    self.update_server_projections(&output.outputs);
+                    let at = self.history.append(output.outputs);
+                    self.history.broadcast(&self.server_state, at, None);
+                }
+                Err(_) => {
+                    // the engine hung (or died) mid-catch-up: a crash like any other. dispatch has
+                    // already killed the child; the reboot replays the accepted stream, which does
+                    // not contain this null (it was never accepted), so the engine comes back at
+                    // the pre-jump state. the clock must be rolled back to match it -- a clock
+                    // wound past a point the engine cannot reach within ENGINE_TIMEOUT would hang
+                    // every subsequent tick the same way, forever.
+                    self.clock.go_to(now);
+                    self.reboot_after_crash().await;
+                }
             }
-            // the clock was wound forward; re-anchor every client's game time on the new baseline.
+            // re-anchor every client's game time on the current baseline (the jump target, or the
+            // restored pre-jump time if the catch-up crashed).
             let at = self.append_game_clock();
             self.history.broadcast(&self.server_state, at, None);
             return;
@@ -999,13 +1050,23 @@ impl Game {
             payload: Action::Null(Null {}),
         };
         let runtime_input = RuntimeInput::Action(request);
-        if let Ok(output) = self
+        match self
             .dispatch(&runtime_input, self.engine_version, None)
             .await
         {
-            self.update_server_projections(&output.outputs);
-            let at = self.history.append(output.outputs);
-            self.history.broadcast(&self.server_state, at, None);
+            Ok(output) => {
+                self.update_server_projections(&output.outputs);
+                let at = self.history.append(output.outputs);
+                self.history.broadcast(&self.server_state, at, None);
+            }
+            Err(_) => {
+                // a hung tick is a crash like any other: dispatch has killed the child, so reboot
+                // from the accepted stream. the null is server-issued and never persisted, so
+                // there is nothing to roll back and nothing worth recording (the replayed stream
+                // does not even contain the input that hung) -- the same policy as a failed
+                // reseed.
+                self.reboot_after_crash().await;
+            }
         }
     }
 
@@ -1122,8 +1183,9 @@ impl Game {
         }
     }
 
-    // reboot after an engine crash; if the fresh child cannot be brought up within the retry
-    // bound, the game tears itself down (it cannot serve).
+    // reboot after an engine crash or hang; the old child is already dead (dispatch kills it), so
+    // this is purely a fresh spawn + replay. if the fresh child cannot be brought up within the
+    // retry bound, the game tears itself down (it cannot serve).
     async fn reboot_after_crash(&mut self) {
         if self.boot(None).await.is_err() {
             eprintln!(

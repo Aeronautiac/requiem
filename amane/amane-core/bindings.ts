@@ -1392,7 +1392,13 @@ export type Output = {
 // A batch is either the catch-up that initializes (or resets and rebuilds) a connection's state,
 // or a live batch of new outputs. A Live batch optionally carries the reply to THIS connection's
 // own input, in `kind`.
-export type BatchKind = "Initialize" | { Live: ResponsePair | null };
+//
+// A batch may be split on the wire when it is large: the first chunk is the TERMINAL batch and
+// only it carries a kind that changes the connection's mode ("Initialize" or a Live batch); every
+// "Continuation" chunk that follows is an extension of that terminal. A Continuation is applied
+// the same as a terminal's outputs, but it does not reset state and does not change the mode — the
+// mode comes from the last terminal received, and stays fixed until a live/init one arrives again.
+export type BatchKind = "Initialize" | "Continuation" | { Live: ResponsePair | null };
 
 export type Batch = {
   kind: BatchKind;
