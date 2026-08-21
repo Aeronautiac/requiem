@@ -4,7 +4,10 @@
 */
 
 use crate::{
-    action::{ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult},
+    action::{
+        Action, ActionActor, ActionContext, ActionInterface, ActionResponse, ActionResult,
+        DestroyChannel,
+    },
     helpers::{get_actor, get_actor_mut, get_notebook},
 };
 
@@ -14,9 +17,9 @@ impl ActionInterface for DestroyNotebook {
     fn handle(
         &mut self,
         eng: &mut crate::engine::Engine,
-        _ctx: &mut ActionContext,
+        ctx: &mut ActionContext,
         actor: &ActionActor,
-        _version: crate::common::Version,
+        version: crate::common::Version,
         mutate: bool,
     ) -> ActionResult {
         actor.admin_or_system()?;
@@ -29,6 +32,14 @@ impl ActionInterface for DestroyNotebook {
             get_actor(eng, owner_id)?;
         }
 
+        Action::DestroyChannel(DestroyChannel { channel_id }).handle(
+            eng,
+            ctx,
+            &ActionActor::System,
+            version,
+            mutate,
+        )?;
+
         if mutate {
             if let Some(owner_id) = owner {
                 get_actor_mut(eng, owner_id)
@@ -36,7 +47,6 @@ impl ActionInterface for DestroyNotebook {
                     .remove_notebook(self.notebook_id);
             }
             eng.world.remove_notebook(self.notebook_id);
-            eng.world.remove_channel(channel_id);
         }
 
         Ok(ActionResponse::DestroyNotebook(DestroyNotebookResponse {}))
