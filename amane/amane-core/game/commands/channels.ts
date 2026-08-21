@@ -102,8 +102,13 @@ export const channelHandlers: Handlers = {
 
   // Tearing a channel down is always archival — nothing said in it can be un-said.
   ArchiveChannel(ctx: CmdCtx, p) {
-    const channel = ctx.view.channels.get(slotKeyToString(p.channel_id));
+    const channel_key = slotKeyToString(p.channel_id);
+    const channel = ctx.view.channels.get(channel_key);
     if (channel) channel.archived = true;
+    // Destroying a notebook destroys its channel, so an archived notebook channel is a destroyed
+    // book. Mark it so the view stops treating it as something that can still be written to.
+    const notebook = ctx.view.notebook_of(channel_key);
+    if (notebook) ctx.view.set_notebook_destroyed(notebook, true);
   },
 
   SetChannelLoggable(ctx: CmdCtx, p) {

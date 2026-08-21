@@ -35,6 +35,9 @@ impl ActionInterface for AddToGroupchat {
         actor.player_or_authoritative()?;
 
         let gc = get_gc(eng, self.groupchat_id)?;
+        if gc.members.len() >= eng.config.defaults.groupchat_member_limit as usize {
+            return Err(ActionError::GroupchatFull);
+        }
         if actor.is_player() {
             let id = actor_id(actor).expect("expected valid actor id");
             if gc.owner != Some(id) {

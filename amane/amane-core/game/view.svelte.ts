@@ -196,6 +196,11 @@ export class GameView {
   // Only the original owner (and admin) is ever told this, so absence is meaningful: a borrower or
   // inheritor holds no entry and is left to deduce the book's nature.
   #notebook_fake = new SvelteMap<string, boolean>();
+  // Set once the notebook's channel is archived, which is exactly how a notebook is destroyed: the
+  // book's only physical home is its channel, so an archived notebook channel is a destroyed book.
+  // Stored here rather than read off the channel so the fact reads identically anywhere the view is
+  // asked, and so a destroyed book is not offered as something to write in or pass.
+  #notebook_destroyed = new SvelteMap<string, boolean>();
   // viewport -> the org whose backing channel it is. Routing rather than visibility: an org's
   // abilities are addressed to that viewport rather than to the org actor, so this is how a
   // command finds the org it belongs to.
@@ -272,6 +277,13 @@ export class GameView {
   // undefined = this view was never told, which is not the same as "genuine".
   notebook_fake(notebook_key: string): boolean | undefined {
     return this.#notebook_fake.get(notebook_key);
+  }
+
+  set_notebook_destroyed(notebook_key: string, destroyed: boolean) {
+    this.#notebook_destroyed.set(notebook_key, destroyed);
+  }
+  is_notebook_destroyed(notebook_key: string): boolean {
+    return this.#notebook_destroyed.get(notebook_key) ?? false;
   }
 
   record_org_viewport(viewport: string | undefined, org_key: string) {

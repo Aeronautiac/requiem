@@ -21,7 +21,7 @@
     { flag: StateFlag.Dead, label: "Dead", classes: "bg-red-600/20 text-red-300" },
     { flag: StateFlag.Custody, label: "In Custody", classes: "bg-rose-600/20 text-rose-300" },
     { flag: StateFlag.Kidnapped, label: "Kidnapped", classes: "bg-amber-600/20 text-amber-300" },
-    { flag: StateFlag.Incarcerated, label: "Imprisoned", classes: "bg-slate-500/20 text-slate-300" },
+    { flag: StateFlag.Incarcerated, label: "incarcerated", classes: "bg-slate-500/20 text-slate-300" },
     { flag: StateFlag.UnderTheRadar, label: "Off the Record", classes: "bg-neutral-600/30 text-neutral-300" },
     { flag: StateFlag.Ipp, label: "IPP", classes: "bg-emerald-600/20 text-emerald-300" },
   ];

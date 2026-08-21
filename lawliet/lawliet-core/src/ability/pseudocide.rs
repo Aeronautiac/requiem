@@ -56,7 +56,7 @@ impl AbilityInterface for Pseudocide {
             revive: Revive {
                 ignore_links: true,
                 silent: false,
-                revival_message: None,
+                revival_message: Some(eng.config.defaults.pseudocide_revival_message.clone()),
                 target_id: self.target_id,
             },
         })

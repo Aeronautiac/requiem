@@ -131,6 +131,11 @@
   const notebook_fake = $derived(
     notebook_id ? view.notebook_fake(notebook_id) : undefined,
   );
+  // A destroyed notebook's channel is archived; the book no longer exists, so it cannot be written
+  // to or passed, and its borrowed/fake badges no longer mean anything.
+  const notebook_destroyed = $derived(
+    notebook_id ? view.is_notebook_destroyed(notebook_id) : false,
+  );
   let write_open = $state(false);
   let pass_open = $state(false);
 
@@ -329,7 +334,15 @@
         {/if}
 
         <div class="ml-auto flex items-center gap-2">
-          {#if notebook_borrowed}
+          {#if notebook_destroyed}
+            <span
+              class="rounded bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-400"
+              title="This notebook no longer exists."
+            >
+              Destroyed
+            </span>
+          {/if}
+          {#if notebook_borrowed && !notebook_destroyed}
             <span
               class="rounded bg-sky-600/20 px-2 py-0.5 text-xs font-medium text-sky-300"
               title="This notebook is currently on loan (being borrowed)."
@@ -338,7 +351,7 @@
             </span>
           {/if}
 
-          {#if notebook_fake !== undefined}
+          {#if notebook_fake !== undefined && !notebook_destroyed}
             {@const cls = notebook_fake
               ? "bg-rose-600/20 text-rose-300"
               : "bg-emerald-600/20 text-emerald-300"}
@@ -534,7 +547,7 @@
             {/if}
           </div>
 
-          {#if notebook_id}
+          {#if notebook_id && !notebook_destroyed}
             <Button size="sm" variant="ghost" onclick={() => (pass_open = true)}
               >Pass</Button
             >
@@ -547,7 +560,7 @@
         </div>
       </footer>
 
-      {#if notebook_id}
+      {#if notebook_id && !notebook_destroyed}
         <NotebookWrite
           bind:open={write_open}
           notebookId={slotKeyFromString(notebook_id)}

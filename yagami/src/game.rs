@@ -1072,15 +1072,21 @@ impl Game {
 
     // ===== DURABILITY / REGISTRATION ===== //
 
-    // write the current progress (last_reached, clock, keys) into the games row. called after a
-    // boot of a durable game so the metadata the row caches (for on-demand boot) stays current.
-    async fn persist_progress(&self) {
-        let meta = GameMeta {
+    // the current GameMeta: last_reached, clock, and the keys cache. shared by every persist site
+    // so the metadata row is always built the same way.
+    fn current_meta(&self) -> GameMeta {
+        GameMeta {
             last_reached: self.last_reached,
             clock: self.clock.now(),
             clock_wall: wall_now(),
             keys: self.keys_cache.clone(),
-        };
+        }
+    }
+
+    // write the current progress (last_reached, clock, keys) into the games row. called after a
+    // boot of a durable game so the metadata the row caches (for on-demand boot) stays current.
+    async fn persist_progress(&self) {
+        let meta = self.current_meta();
         if let Err(e) = self.store.persist_progress(self.game_id, &meta).await {
             eprintln!(
                 "failed to persist progress for game {} -- tearing down: {e}",
@@ -1127,6 +1133,16 @@ impl Game {
         // mint the live key handles (cancel token + tickets) for the rebuilt key set -- get_ticket
         // needs a handle for the admin key before any connection can form.
         self.reconcile_key_handles();
+        // persist the key cache on creation so it is durable even before any action is performed.
+        let meta = self.current_meta();
+        if let Err(e) = self.store.persist_progress(self.game_id, &meta).await {
+            eprintln!(
+                "failed to persist keys cache for fresh game {} -- tearing down: {e}",
+                self.game_id
+            );
+            self.cancel.cancel();
+            return;
+        }
         if let Some(reply) = self.creation_reply.take() {
             let responses = std::mem::take(&mut self.creation_responses);
             let _ = reply.send(Ok((id, responses)));
@@ -1140,12 +1156,7 @@ impl Game {
     // game, closes its connections, and drops the runtime).
     async fn persist_accepted(&mut self, input: &ServerInput) -> Result<(), sqlx::Error> {
         let seq = self.accepted.len() as i64;
-        let meta = GameMeta {
-            last_reached: self.last_reached,
-            clock: self.clock.now(),
-            clock_wall: wall_now(),
-            keys: self.keys_cache.clone(),
-        };
+        let meta = self.current_meta();
         let versioned = VersionedInput {
             version: self.engine_version,
             input: input.clone(),

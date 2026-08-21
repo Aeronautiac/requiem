@@ -1119,7 +1119,8 @@ export type ActionError =
   | "AlreadyInConference"
   | "NotInConference"
   | "NoNewsControl"
-  | "AlreadyNewsAnchor";
+  | "AlreadyNewsAnchor"
+  | "GroupchatFull";
 
 export type ActionResponse =
   | { AddPlayer: { id: ActorKey } }

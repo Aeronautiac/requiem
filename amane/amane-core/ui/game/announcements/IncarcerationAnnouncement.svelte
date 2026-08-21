@@ -8,6 +8,5 @@
 </script>
 
 <Announcement {view} {timestamp} color="var(--color-event-custody)" description="Imprisonment">
-  <Name id={data.victim_id} {view} chip /> has been imprisoned{#if data.duration}
-    for {formatDuration(data.duration)}{/if}.
+  <Name id={data.victim_id} {view} chip /> has been imprisoned {#if data.duration}for {formatDuration(data.duration)}{/if}.
 </Announcement>

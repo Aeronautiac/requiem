@@ -20,6 +20,7 @@ pub struct DefaultConfig {
     pub sacrifice_death_message: String,
     pub silent_prosecution_death_message: String,
     pub revival_message: String,
+    pub pseudocide_revival_message: String,
     pub pseudocide_duration: Time,                   // milliseconds
     pub universal_abilities: Vec<AbilityIdentifier>, // the abilities that everyone gets regardless
     // of role
@@ -50,6 +51,7 @@ pub struct DefaultConfig {
     pub blackout_duration: Time,
     pub prosecution_autonomous: bool, // whether the plain Prosecute ability files autonomous trials
     pub press_conf_limit: u16,
+    pub groupchat_member_limit: u16, // max members a groupchat can hold (owner included)
 }
 
 pub fn default_defaults() -> DefaultConfig {
@@ -72,8 +74,10 @@ pub fn default_defaults() -> DefaultConfig {
         silent_prosecution_death_message:
             "They were executed without a trial. The paperwork was filed the following morning."
                 .into(),
-        revival_message: "They were found half-naked and unconscious in the middle of a crowded \
-street in Tokyo. When questioned, they claimed to have no recollection of how they arrived \
+        revival_message: "Through some kind of divine intervention, they have returned to this world."
+            .into(),
+        pseudocide_revival_message: "They were found half-naked and unconscious in the middle of a \
+crowded street in Tokyo. When questioned, they claimed to have no recollection of how they arrived \
 there. Their death appears to have been staged using an uncannily perfect replica dummy. \
 Authorities have now allowed them to re-enter society."
             .into(),
@@ -99,5 +103,6 @@ Authorities have now allowed them to re-enter society."
         blackout_duration: hrs(24),
         prosecution_autonomous: true,
         press_conf_limit: 5,
+        groupchat_member_limit: 5,
     }
 }

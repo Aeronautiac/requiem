@@ -114,6 +114,7 @@ pub enum ActionError {
     NotInConference,
     NoNewsControl,
     AlreadyNewsAnchor,
+    GroupchatFull,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
