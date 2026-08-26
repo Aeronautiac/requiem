@@ -14,7 +14,7 @@ Key primitives:
 - **Action execution is two-pass**: validate (non-mutating dry run) then execute (mutating), with recursive sub-actions sharing one command buffer. Actions may reject at any level, and those
 rejections must propagate to the top level without causing state corruption.
 - **Temporal causality** is enforced by draining due jobs before the requested action at a timestamp.
-- **Failure model** is explicit: inconsistent validate/execute behavior is treated as a crash-worthy invariant violation; recovery is by replay.
+- **Failure model** is explicit: inconsistent validate/execute behavior is treated as a crash-worthy invariant violation; recovery is by replay to the last stable state.
 
 State model highlights:
 - Players and organizations are both actors with state/modifier bitfields, links, ownership caches, and role-configured grants.
