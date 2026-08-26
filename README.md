@@ -34,6 +34,20 @@ Architecture and concurrency:
 - Server state tracks live games, key handles, tickets, and connections; cancellation is token-tree based (game -> key -> connection).
 - HTTP/WS edge is separated from game execution: handlers authenticate/attach, game task serializes game mutations.
 
+Connection handling model:
+- **Two-step join**: client exchanges durable key for a short-lived single-use ticket, then upgrades websocket with that ticket (key never rides ws URL).
+- **Claim-at-upgrade semantics**: ticket claim is made during upgrade, making HTTP `101` authoritative (after `101`, failures are transport failures, not auth ambiguity).
+- **Single-connection claim per ticket**: claim state is tracked in live connections; replayed/duplicate ticket attempts are rejected as invalid.
+- **Guarded cleanup**: ticket claims are released by a drop guard, so failed upgrades and normal disconnects both reliably clear ticket/connection state.
+- **Per-connection outbox + game inbox**: websocket task shuttles inbound frames to the game task; game task pushes filtered batches to each connection outbox.
+- **Heartbeat/liveness**: inbound read timeout and outbound ping loop detect dead peers; protocol violations (e.g., binary frames/bad JSON) close the socket.
+- **Backpressure policy**: if a connection outbox is full, that connection is cancelled and marked dropped rather than stalling global delivery.
+- **Batch framing**: server emits `Initialize` (full reset/catch-up) and `Live` batches; oversized batches are chunked into `Continuation` frames preserving order.
+- **Reply correlation model**: only the initiating connection receives the response pair, and it is carried on the terminal `Live` batch.
+- **Sync/resync behavior**: new connections, privilege changes, rewind, and some authority transitions trigger full `Initialize` replay from log start.
+- **Delivery watermarks**: each connection tracks per-viewport delivery position + membership, enabling exact late-entry backfill without duplicate replay.
+- **Privilege-first sync**: every initialize replay begins with a connection-scoped privileges output so UI can gate controls before replayed data is applied.
+
 Reliability and crash handling:
 - **Write-ahead acceptance**: accepted inputs are committed (idempotent by `(game_id, seq)`) before client acknowledgement.
 - **Replay is the source of truth**: engine/sim state is rebuilt by re-feeding accepted inputs; history is a rebuildable cache.
@@ -59,6 +73,7 @@ Architecture:
 - Transport contract is batch-oriented (commands + reply correlation in one ordered stream), avoiding dual-stream race conditions.
 - Session owns connection lifecycle and reply waiters; game state is a pure command fold with per-view routing.
 - Per-view backfill is indexed by viewport history and delivery watermarks, matching server delivery semantics at client granularity.
+- Join retry policy mirrors server semantics: credential refusal is terminal, dropped live socket is retryable with a fresh ticket and catch-up replay.
 
 Reliability posture:
 - Re-sync uses in-place reset/rebuild of the same state object to keep UI bindings valid.
