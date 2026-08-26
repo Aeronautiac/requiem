@@ -44,7 +44,7 @@ Connection handling model:
 - **Per-connection outbox + game inbox**: websocket task shuttles inbound frames to the game task; game task pushes filtered batches to each connection outbox.
 - **Heartbeat/liveness**: inbound read timeout and outbound ping loop detect dead peers; protocol violations (e.g., binary frames/bad JSON) close the socket.
 - **Backpressure policy**: if a connection outbox is full, that connection is cancelled and marked dropped rather than stalling global delivery.
-- **Batch framing**: server emits `Initialize` (full reset/catch-up) and `Live` batches; oversized batches are chunked into `Continuation` frames preserving order.
+- **Batch framing**: server emits `Initialize` (full reset/catch-up) and `Live` batches; oversized batches are chunked into `Continuation` frames preserving order and preventing starvation triggered heartbeat timeouts.
 - **Reply correlation model**: only the initiating connection receives the response pair, and it is carried on the terminal `Live` batch.
 - **Sync/resync behavior**: new connections, privilege changes, rewind, and some authority transitions trigger full `Initialize` replay from log start.
 - **Delivery watermarks**: each connection tracks per-viewport delivery position + membership, enabling exact late-entry backfill without duplicate replay.
