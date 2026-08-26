@@ -66,7 +66,7 @@ Hard problems solved in server/runtime:
 - Keeping auth, deterministic replay, and live sockets consistent by separating **sim state** (replayable) from **live handles** (reconciled).
 - Making time travel safe by treating rewind as authoritative log truncation + full rebuild instead of in-place mutation.
 - Preserving deterministic behavior while still handling real-world failures (timeouts, child crashes, partial pipe exchanges).
-- Making most race conditions impossible by design.
+- Making most race conditions structurally impossible rather than patching them over as they occur.
 - Creating a delivery model capable of both live streaming + late join catch up.
 
 ## Client (amane)
