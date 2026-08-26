@@ -87,8 +87,8 @@ Several difficult areas were intentionally reduced to fewer core mechanisms:
 - Unified recipient/viewports replaced special-case delivery paths for late join and re-entry.
 - Policy recomputation and composable permission rules replaced scattered one-off permission updates.
 - Runtime replay pipeline unifies engine and simulation reconstruction, reducing split-brain risk.
-- The concurrency model for a single game was collapsed from a supervisor task + a co-ordinator task into one game task, exploiting a property
-of tokio select arms where a selected arm runs to completion with no interleaving between other arms regardless of the existence of await points within that arm.
+- The concurrency model for a single game was collapsed from a race-prone multi-task model into one game task, exploiting a property of tokio select
+arms where a selected arm runs to completion with no interleaving between other arms regardless of the existence of await points within that arm.
 
 ## Notable implemented features
 
