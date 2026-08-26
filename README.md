@@ -10,8 +10,9 @@ The game implemented on this stack is a multi-day Death Note-inspired social ded
 `lawliet` is the deterministic Rust simulation core.
 
 Key primitives:
-- **Engine** owns `World`, dynamic `Config`, current virtual `Time`, and a min-heap `Jobs` scheduler.
-- **Action execution is two-pass**: validate (non-mutating dry run) then execute (mutating), with recursive sub-actions sharing one command buffer.
+- **Engine** owns `World`, dynamic `Config`, current virtual `Time`, and a min-heap based `Jobs` scheduler.
+- **Action execution is two-pass**: validate (non-mutating dry run) then execute (mutating), with recursive sub-actions sharing one command buffer. Actions may reject at any level, and those
+rejections must propagate to the top level without causing state corruption.
 - **Temporal causality** is enforced by draining due jobs before the requested action at a timestamp.
 - **Failure model** is explicit: inconsistent validate/execute behavior is treated as a crash-worthy invariant violation; recovery is by replay.
 
@@ -19,6 +20,7 @@ State model highlights:
 - Players and organizations are both actors with state/modifier bitfields, links, ownership caches, and role-configured grants.
 - Role config maps roles to default abilities, passives, notebooks, actor links, and world-channel profiles.
 - Complex subsystems (polls, prosecution state machine, charge pools, notebook ownership/borrowing, incarceration/kidnapping) are modeled as first-class typed objects and actions.
+- Actions and abilities are executed via static dispatch to avoid the pointer chasing costs of dynamic dispatch.
 
 Information asymmetry model:
 - Engine outputs are addressed to **recipients** (admin, player, viewport, log), not broadcast globally.
@@ -84,8 +86,9 @@ Reliability posture:
 Several difficult areas were intentionally reduced to fewer core mechanisms:
 - Unified recipient/viewports replaced special-case delivery paths for late join and re-entry.
 - Policy recomputation and composable permission rules replaced scattered one-off permission updates.
-- A single accepted-input stream replaced snapshot + patch complexity for authoritative recovery.
 - Runtime replay pipeline unifies engine and simulation reconstruction, reducing split-brain risk.
+- The concurrency model for a single game was collapsed from a supervisor task + a co-ordinator task into one game task, exploiting a property
+of tokio select arms where a selected arm runs to completion with no interleaving between other arms regardless of the existence of await points within that arm.
 
 ## Notable implemented features
 
