@@ -3,7 +3,7 @@
 Requiem is a deterministic, server-hosted social deduction platform built around a strict accepted-input log and replay-first architecture.  
 Core philosophy: simulation is authoritative and reproducible, persistence is write-ahead and append-oriented, and clients are state-folders over ordered output rather than local authorities.
 
-The game implemented on this stack is a multi-day Death Note-inspired social deduction game with hidden roles, asymmetric role kits, notebooks (real/fake), investigations, bugs/wiretaps, kidnappings, prosecutions, polls, world events, and layered communication spaces (world channels, lounges, groupchats, custody/trial channels).
+The game implemented on this stack is a long running (multiple real days) Death Note-inspired social deduction game with hidden roles, asymmetric role kits, notebooks (real/fake), investigations, bugs/wiretaps, kidnappings, prosecutions, polls, world events, and layered communication spaces (world channels, lounges, groupchats, custody/trial channels).
 
 ## Engine (lawliet)
 
