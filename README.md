@@ -1,25 +1,90 @@
 # Requiem
 
-Requiem is a deterministic, server-hosted social deduction platform built around a strict event-log architecture.  
-The design philosophy is: keep simulation authoritative and replayable, keep transport/persistence separate, and keep clients as renderers of ordered server output.
+Requiem is a deterministic, server-hosted social deduction platform built around a strict accepted-input log and replay-first architecture.  
+Core philosophy: simulation is authoritative and reproducible, persistence is write-ahead and append-oriented, and clients are state-folders over ordered output rather than local authorities.
 
-The game implemented on this stack is a multi-day Death Note-inspired deduction game with hidden roles, asymmetric abilities, notebooks, investigations, kidnappings, prosecutions, world events, and role-scoped/private communication spaces.
+The game implemented on this stack is a multi-day Death Note-inspired social deduction game with hidden roles, asymmetric role kits, notebooks (real/fake), investigations, bugs/wiretaps, kidnappings, prosecutions, polls, world events, and layered communication spaces (world channels, lounges, groupchats, custody/trial channels).
 
 ## Engine (lawliet)
 
-`lawliet` is the core simulation engine in Rust. It owns world state, dynamic config, and scheduled jobs, and executes actions deterministically (validate first, then mutate).  
-State is advanced through typed actions and emitted as addressed commands (system/actor/viewport), which are the only thing downstream layers need to deliver UI state.  
-The engine is intentionally crash-recoverable by replay: timelines are reconstructed from action history rather than snapshots.
+`lawliet` is the deterministic Rust simulation core.
+
+Key primitives:
+- **Engine** owns `World`, dynamic `Config`, current virtual `Time`, and a min-heap `Jobs` scheduler.
+- **Action execution is two-pass**: validate (non-mutating dry run) then execute (mutating), with recursive sub-actions sharing one command buffer.
+- **Temporal causality** is enforced by draining due jobs before the requested action at a timestamp.
+- **Failure model** is explicit: inconsistent validate/execute behavior is treated as a crash-worthy invariant violation; recovery is by replay.
+
+State model highlights:
+- Players and organizations are both actors with state/modifier bitfields, links, ownership caches, and role-configured grants.
+- Role config maps roles to default abilities, passives, notebooks, actor links, and world-channel profiles.
+- Complex subsystems (polls, prosecution state machine, charge pools, notebook ownership/borrowing, incarceration/kidnapping) are modeled as first-class typed objects and actions.
+
+Information asymmetry model:
+- Engine outputs are addressed to **recipients** (admin, player, viewport, log), not broadcast globally.
+- **Viewport-owned history** means late access can receive backlog in order, while loss of access only stops future delivery.
+- Client-visible state is monotonic; deletions are represented by archival/lifecycle commands, not state retraction.
 
 ## Server (yagami + yagami-runtime)
 
-`yagami` is the authoritative multiplayer server. It hosts many game instances, manages auth/keys/tickets, handles websocket/HTTP surfaces, persists accepted input streams, and routes batches to connections by privilege + viewport access.  
-Each game runs through `yagami-runtime`, a child process that combines `lawliet` with simulation-side state (profiles/keys/name generation), so replaying the accepted stream rebuilds both engine state and emitted output stream identically.  
-Time travel/rewind is server-orchestrated by truncating and replaying accepted inputs.
+`yagami` is the authoritative multiplayer host; `yagami-runtime` is the child simulation process per game.
+
+Architecture and concurrency:
+- One game coordinator task owns a game’s accepted stream, runtime child pipes, history cache, clock, and connection fanout.
+- Server state tracks live games, key handles, tickets, and connections; cancellation is token-tree based (game -> key -> connection).
+- HTTP/WS edge is separated from game execution: handlers authenticate/attach, game task serializes game mutations.
+
+Reliability and crash handling:
+- **Write-ahead acceptance**: accepted inputs are committed (idempotent by `(game_id, seq)`) before client acknowledgement.
+- **Replay is the source of truth**: engine/sim state is rebuilt by re-feeding accepted inputs; history is a rebuildable cache.
+- **Runtime pipe safety**: failed read/write/timeouts kill the child to prevent response-stream misalignment.
+- **Crash recording**: crashing accepted sequences are persisted as inert repro artifacts.
+- **Boot retry with backoff**: failed spawn/replay attempts retry up to a fixed bound; unrecoverable games are torn down.
+
+Time and timeline control:
+- Game time is sandboxed with a virtual clock anchored to wall time.
+- Forward jumps are settled with null progression; backward jumps truncate accepted history and rebuild from target time.
+- Key/connection handles are reconciled against rebuilt key state after replay, so revoked/rolled-back authority is not left live.
+
+Hard problems solved in server/runtime:
+- Keeping auth, deterministic replay, and live sockets consistent by separating **sim state** (replayable) from **live handles** (reconciled).
+- Making time travel safe by treating rewind as authoritative log truncation + full rebuild instead of in-place mutation.
+- Preserving deterministic behavior while still handling real-world failures (timeouts, child crashes, partial pipe exchanges).
 
 ## Client (amane)
 
-`amane` is a Svelte client split into a reusable core (`amane-core`) and a browser host (`amane-webhost`).  
-It applies ordered output batches into per-view state, enforces no local authority, and treats reconnection as full state reconstruction from server replay.
+`amane` is a Svelte client split into reusable core (`amane-core`) and host (`amane-webhost`).
+
+Architecture:
+- Transport contract is batch-oriented (commands + reply correlation in one ordered stream), avoiding dual-stream race conditions.
+- Session owns connection lifecycle and reply waiters; game state is a pure command fold with per-view routing.
+- Per-view backfill is indexed by viewport history and delivery watermarks, matching server delivery semantics at client granularity.
+
+Reliability posture:
+- Re-sync uses in-place reset/rebuild of the same state object to keep UI bindings valid.
+- Batch-apply errors are treated as unrecoverable local drift, resolved by reconnect/replay instead of speculative patching.
+
+## Simplifications over time
+
+Several difficult areas were intentionally reduced to fewer core mechanisms:
+- Unified recipient/viewports replaced special-case delivery paths for late join and re-entry.
+- Policy recomputation and composable permission rules replaced scattered one-off permission updates.
+- A single accepted-input stream replaced snapshot + patch complexity for authoritative recovery.
+- Runtime replay pipeline unifies engine and simulation reconstruction, reducing split-brain risk.
+
+## Notable implemented features
+
+- Multi-game hosting with per-game runtime isolation.
+- Deterministic replay across engine + server-side simulation state.
+- Privilege system with key capabilities, actor scopes, supervise/admin controls, and ticketed WS claims.
+- Server-side time travel (forward catch-up + backward truncation/rebuild).
+- Rich game systems: role kits, passives, notebooks, bugs, polls, prosecution phases, kidnappings, and scoped communication artifacts.
+
+## Project scale
+
+Current codebase scale is substantial and multi-language:
+- **Rust**: 255 files, ~37k LOC (engine + server + runtime + shared wire/types).
+- **TypeScript**: 34 files, ~6k LOC.
+- **Svelte**: 108 files, ~8k LOC.
 
 [requiem-dn.dev](https://requiem-dn.dev/)
