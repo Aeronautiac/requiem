@@ -51,7 +51,7 @@ Connection handling model:
 - **Privilege-first sync**: every initialize replay begins with a connection-scoped privileges output so UI can gate controls before replayed data is applied.
 
 Reliability and crash handling:
-- **Write-ahead acceptance**: accepted inputs are committed (idempotent by `(game_id, seq)`) before client acknowledgement.
+- **Write before ack**: accepted inputs are committed (idempotent by `(game_id, seq)`) before client acknowledgement.
 - **Replay is the source of truth**: engine/sim state is rebuilt by re-feeding accepted inputs; history is a rebuildable cache.
 - **Runtime pipe safety**: failed read/write/timeouts kill the child to prevent response-stream misalignment.
 - **Crash recording**: crashing accepted sequences are persisted as inert repro artifacts.
