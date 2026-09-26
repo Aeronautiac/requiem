@@ -4,15 +4,8 @@
 // its traffic belongs to the game task, and this module only shuttles bytes between the two.
 
 use std::{
-    collections::VecDeque,
-    env,
-    future::ready,
-    net::SocketAddr,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::{Duration, Instant},
+    env, fmt::Display, future::ready, net::SocketAddr, num::NonZeroU32, str::FromStr,
+    time::Duration,
 };
 
 use axum::{
@@ -25,6 +18,7 @@ use axum::{
     response::IntoResponse,
 };
 use futures_util::{SinkExt, StreamExt};
+use governor::{Quota, RateLimiter};
 use serde::{Deserialize, Serialize};
 use tokio::{
     select,
@@ -35,13 +29,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth::{ActorScope, Capability, Key, KeyHandle, Ticket},
-    constants::{
-        BATCH_SIZE, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, OUTBOX_BUF_SIZE, TICKET_LIMIT,
-        TICKET_TIMEOUT,
-    },
     delivery::DeliveryData,
-    game::{GameCommand, GameInput, GameStart, InputEnvelope, game},
-    state::{ConnHandle, GameId, WrappedServerState, lock_state},
+    game::{GameCommand, GameInput, GameStart, InputEnvelope, game, wake},
+    state::{ConnHandle, GameHandle, GameId, Settings, WrappedServerState, lock_state},
     store::Store,
     wire::{
         AdminControl, Batch, ControlOutcome, ControlResponse, ExecOutcome, ServerInput, SimControl,
@@ -53,22 +43,62 @@ pub fn req(key: &str) -> Result<String, String> {
     env::var(key).map_err(|_| format!("missing required env var: {key}"))
 }
 
+fn req_parse<T: FromStr>(key: &str) -> Result<T, String>
+where
+    T::Err: Display,
+{
+    req(key)?.parse().map_err(|e| format!("{key}: {e}"))
+}
+
+// one token every `period_key` milliseconds, saving up to `burst_key` while idle.
+fn req_quota(period_key: &str, burst_key: &str) -> Result<Quota, String> {
+    let period = req_millis(period_key)?;
+    let quota = Quota::with_period(period).ok_or(format!("{period_key}: must be nonzero"))?;
+    Ok(quota.allow_burst(req_parse::<NonZeroU32>(burst_key)?))
+}
+
+fn req_secs(key: &str) -> Result<Duration, String> {
+    Ok(Duration::from_secs(req_parse(key)?))
+}
+
+fn req_millis(key: &str) -> Result<Duration, String> {
+    Ok(Duration::from_millis(req_parse(key)?))
+}
+
 pub struct Config {
     pub bind_addr: SocketAddr,
     pub allowed_origin: HeaderValue,
     pub database_url: String,
+    pub database_pool_size: u32,
+    pub settings: Settings,
 }
 
 impl Config {
     pub fn from_env() -> Result<Self, String> {
         Ok(Config {
-            bind_addr: req("YAGAMI_BIND")?
-                .parse()
-                .map_err(|e| format!("YAGAMI_BIND: {e}"))?,
-            allowed_origin: req("YAGAMI_ALLOWED_ORIGIN")?
-                .parse()
-                .map_err(|e| format!("YAGAMI_ALLOWED_ORIGIN: {e}"))?,
+            bind_addr: req_parse("YAGAMI_BIND")?,
+            allowed_origin: req_parse("YAGAMI_ALLOWED_ORIGIN")?,
             database_url: req("DATABASE_URL")?,
+            database_pool_size: req_parse("YAGAMI_DATABASE_POOL_SIZE")?,
+            settings: Settings {
+                max_resident: req_parse("YAGAMI_MAX_RESIDENT")?,
+                hibernate_after: req_secs("YAGAMI_HIBERNATE_AFTER_SECS")?,
+                null_tick_interval: req_secs("YAGAMI_NULL_TICK_INTERVAL_SECS")?,
+                engine_timeout: req_secs("YAGAMI_ENGINE_TIMEOUT_SECS")?,
+                boot_retry_base: req_millis("YAGAMI_BOOT_RETRY_BASE_MS")?,
+                boot_max_retries: req_parse("YAGAMI_BOOT_MAX_RETRIES")?,
+                boot_cooldown: req_secs("YAGAMI_BOOT_COOLDOWN_SECS")?,
+                ticket_limit: req_parse("YAGAMI_TICKET_LIMIT")?,
+                ticket_timeout: req_secs("YAGAMI_TICKET_TIMEOUT_SECS")?,
+                outbox_size: req_parse("YAGAMI_OUTBOX_SIZE")?,
+                batch_size: req_parse("YAGAMI_BATCH_SIZE")?,
+                heartbeat_interval: req_secs("YAGAMI_HEARTBEAT_INTERVAL_SECS")?,
+                heartbeat_timeout: req_secs("YAGAMI_HEARTBEAT_TIMEOUT_SECS")?,
+                max_input_bytes: req_parse("YAGAMI_MAX_INPUT_BYTES")?,
+                max_body_bytes: req_parse("YAGAMI_MAX_BODY_BYTES")?,
+                input_quota: req_quota("YAGAMI_INPUT_PERIOD_MS", "YAGAMI_INPUT_BURST")?,
+                request_quota: req_quota("YAGAMI_REQUEST_PERIOD_MS", "YAGAMI_REQUEST_BURST")?,
+            },
         })
     }
 }
@@ -79,7 +109,15 @@ pub enum ServerError {
     InvalidKey,
     InvalidTicket,
     TicketLimitReached,
+    // the game could not be brought up: a new game failed its first boot, or an existing one gave
+    // up booting recently and is refused a wake until its cooldown passes.
     GameBootFailed,
+    // as many games are running as the server allows; nothing new may start until one hibernates.
+    ServerAtCapacity,
+    // the database could not answer.
+    StoreFailed,
+    // this client IP is over its REST budget.
+    RateLimited,
 }
 
 impl IntoResponse for ServerError {
@@ -90,6 +128,9 @@ impl IntoResponse for ServerError {
             Self::TicketLimitReached => StatusCode::FORBIDDEN,
             Self::InvalidTicket => StatusCode::NOT_FOUND,
             Self::GameBootFailed => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::ServerAtCapacity => StatusCode::SERVICE_UNAVAILABLE,
+            Self::StoreFailed => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
         };
         (status, Json(self)).into_response()
     }
@@ -100,18 +141,78 @@ pub struct TicketRequest {
     key: Key,
 }
 
+// a running game answers from its handle. a hibernated one has no handle: its key is checked
+// against the durable ledger first -- so no key can wake a game it does not belong to -- and then
+// the game is woken and the ticket issued against its fresh handle. a game caught mid-hibernation is
+// waited out and then woken, so the caller never sees the difference.
 pub async fn get_ticket(
     State(state): State<WrappedServerState>,
     Path(game_id): Path<GameId>,
     Json(body): Json<TicketRequest>,
 ) -> Result<Ticket, ServerError> {
-    let mut server_state = lock_state(&state);
-
-    let Some(game_state) = server_state.games.get_mut(&game_id) else {
-        return Err(ServerError::InvalidGameId);
-    };
-
     let key = body.key;
+    loop {
+        // subscribed under the lock, while the handle still exists, so its removal cannot be missed.
+        let closing = {
+            let mut server_state = lock_state(&state);
+            let settings = server_state.settings;
+            match server_state.games.get_mut(&game_id) {
+                Some(game_state) if game_state.closing => Some(game_state.gone.subscribe()),
+                Some(game_state) => {
+                    return issue_ticket(&state, settings, game_state, game_id, key);
+                }
+                None => None,
+            }
+        };
+        // changed() only errors once the handle is dropped (nothing is ever sent), after which the
+        // game is plainly asleep -- or ended.
+        if let Some(mut gone) = closing {
+            let _ = gone.changed().await;
+            continue;
+        }
+
+        let store = lock_state(&state).store.clone();
+        let keys = match store.load_keys(game_id).await {
+            Ok(Some(keys)) => keys,
+            Ok(None) => return Err(ServerError::InvalidGameId),
+            Err(e) => {
+                eprintln!("failed to load keys for game {game_id}: {e}");
+                return Err(ServerError::StoreFailed);
+            }
+        };
+        if !keys.contains_key(&key) {
+            return Err(ServerError::InvalidKey);
+        }
+
+        let mut server_state = lock_state(&state);
+        // another request may have woken it while the ledger was loading: go again against its
+        // handle.
+        if server_state.games.contains_key(&game_id) {
+            continue;
+        }
+        if server_state.boot_cooling_down(game_id) {
+            return Err(ServerError::GameBootFailed);
+        }
+        if server_state.at_capacity() {
+            return Err(ServerError::ServerAtCapacity);
+        }
+        wake(&state, &mut server_state, game_id, keys);
+        let settings = server_state.settings;
+        let game_state = server_state
+            .games
+            .get_mut(&game_id)
+            .expect("just woken, under this lock");
+        return issue_ticket(&state, settings, game_state, game_id, key);
+    }
+}
+
+fn issue_ticket(
+    state: &WrappedServerState,
+    settings: Settings,
+    game_state: &mut GameHandle,
+    game_id: GameId,
+    key: Key,
+) -> Result<Ticket, ServerError> {
     if !game_state.keys.contains_key(&key) {
         return Err(ServerError::InvalidKey);
     }
@@ -119,7 +220,7 @@ pub async fn get_ticket(
         return Err(ServerError::InvalidKey);
     };
 
-    if key_handle.tickets.len() == TICKET_LIMIT {
+    if key_handle.tickets.len() >= settings.ticket_limit {
         return Err(ServerError::TicketLimitReached);
     }
 
@@ -130,7 +231,7 @@ pub async fn get_ticket(
     let state_clone = state.clone();
     let ticket_clone = ticket.clone();
     tokio::spawn(async move {
-        sleep(Duration::from_secs(TICKET_TIMEOUT)).await;
+        sleep(settings.ticket_timeout).await;
         let mut server_state = lock_state(&state_clone);
         if let Some(game_state) = server_state.games.get_mut(&game_id)
             && !game_state.connections.contains_key(&ticket_clone)
@@ -197,9 +298,19 @@ pub async fn establish_ws_connection(
 ) -> Result<axum::response::Response, ServerError> {
     let mut server_state = lock_state(&state);
 
+    let settings = server_state.settings;
+    let ws = ws
+        .max_message_size(settings.max_input_bytes)
+        .max_frame_size(settings.max_input_bytes);
+
     let Some(game_state) = server_state.games.get_mut(&game_id) else {
         return Err(ServerError::InvalidGameId);
     };
+    // a closing game is semantically gone: its tickets died with it, even though the handle has not
+    // left the registry yet. the client's retry goes back through get_ticket, which waits it out.
+    if game_state.closing {
+        return Err(ServerError::InvalidTicket);
+    }
     let Some(key) = game_state.tickets.get(&params.ticket).cloned() else {
         return Err(ServerError::InvalidTicket);
     };
@@ -218,7 +329,7 @@ pub async fn establish_ws_connection(
     };
     let cancel = cancel.child_token();
 
-    let (outbox, inbox) = mpsc::channel(OUTBOX_BUF_SIZE);
+    let (outbox, inbox) = mpsc::channel(settings.outbox_size);
 
     game_state.connections.insert(
         params.ticket.clone(),
@@ -255,7 +366,7 @@ pub async fn game_connection(
     ticket: Ticket,
 ) {
     let (mut ws_send, mut ws_recv) = stream.split();
-    let (cancel_tok, inbox) = {
+    let (cancel_tok, inbox, settings) = {
         let server_state = lock_state(&state);
         let Some(game_state) = server_state.games.get(&game_id) else {
             return;
@@ -264,8 +375,13 @@ pub async fn game_connection(
             // invalid state
             std::process::abort();
         };
-        (conn_handle.cancel.clone(), game_state.inbox.clone())
+        (
+            conn_handle.cancel.clone(),
+            game_state.inbox.clone(),
+            server_state.settings,
+        )
     };
+    let input_budget = RateLimiter::direct(settings.input_quota);
 
     if inbox
         .send(GameInput::GameCommand(GameCommand::Sync {
@@ -279,8 +395,8 @@ pub async fn game_connection(
     let mut inbound = tokio::spawn(async move {
         loop {
             // per-iteration timeout is the heartbeat deadline: every inbound frame grants the next
-            // read a fresh window, so silence past HEARTBEAT_TIMEOUT is what marks a dead peer.
-            let msg = match timeout(Duration::from_secs(HEARTBEAT_TIMEOUT), ws_recv.next()).await {
+            // read a fresh window, so silence past the heartbeat timeout is what marks a dead peer.
+            let msg = match timeout(settings.heartbeat_timeout, ws_recv.next()).await {
                 Err(_) => break,                  // no frame within the deadline -> dead peer
                 Ok(None | Some(Err(_))) => break, // stream ended / transport error
                 Ok(Some(Ok(msg))) => msg,
@@ -291,6 +407,11 @@ pub async fn game_connection(
                     let Ok(input) = serde_json::from_str::<ServerInput>(t.as_str()) else {
                         break; // undeserializable payload -> protocol violation
                     };
+
+                    // over budget, stop reading until a token frees up. the backlog waits in the
+                    // socket's fixed-size kernel buffer and then on the sender's side, never here.
+                    // the wait is outside the read timeout, so it cannot trip the heartbeat.
+                    input_budget.until_ready().await;
 
                     if inbox
                         .send(GameInput::ServerInput(InputEnvelope {
@@ -311,7 +432,7 @@ pub async fn game_connection(
 
     let mut outbound = tokio::spawn(async move {
         let mut split_batches: Option<std::vec::IntoIter<Batch>> = None;
-        let mut ping = interval(Duration::from_secs(HEARTBEAT_INTERVAL));
+        let mut ping = interval(settings.heartbeat_interval);
         loop {
             select! {
                 // always send a ping on first opportunity
@@ -328,7 +449,7 @@ pub async fn game_connection(
                 out = recv.recv(), if split_batches.is_none() => match out {
                     Some(out) => {
                         // split batch into chunks using batch split method (chunks are just more batches)
-                        split_batches = Some(out.into_chunks(BATCH_SIZE).into_iter());
+                        split_batches = Some(out.into_chunks(settings.batch_size).into_iter());
                     }
                     None => break, // game task dropped the outbox sender
                 },
@@ -369,30 +490,43 @@ pub async fn game_connection(
 #[derive(Serialize)]
 pub struct RosterEntry {
     game_id: GameId,
-    // Sockets currently open to the game.
+    // Sockets currently open to the game. Always 0 for a hibernated game.
     connections: usize,
     // Keys held in the game -- the people. A key is an identity (a set of privileges), and it
     // counts as a person whether or not it is currently connected; multiple tickets (connections)
     // can map to the same key.
     keys: usize,
+    // Whether the game is running right now, rather than hibernated.
+    resident: bool,
 }
 
-// The platform's directory of live games. Unauthenticated: a game id and its headcounts are public
-// presence info, not a secret. Polled by the platform screen on an interval.
-pub async fn roster(State(state): State<WrappedServerState>) -> Json<Vec<RosterEntry>> {
+// The platform's directory of active games, running or hibernated. Unauthenticated: a game id and
+// its headcounts are public presence info, not a secret. Polled by the platform screen on an
+// interval.
+pub async fn roster(
+    State(state): State<WrappedServerState>,
+) -> Result<Json<Vec<RosterEntry>>, ServerError> {
+    let store = lock_state(&state).store.clone();
+    let listings = store.game_directory().await.map_err(|e| {
+        eprintln!("failed to read the game directory: {e}");
+        ServerError::StoreFailed
+    })?;
     let server_state = lock_state(&state);
-    let mut entries: Vec<RosterEntry> = server_state
-        .games
-        .iter()
-        .map(|(game_id, handle)| RosterEntry {
-            game_id: *game_id,
-            connections: handle.connections.len(),
-            keys: handle.keys.len(),
+    // the directory is ordered by id, which keeps the client's re-render from reshuffling rows
+    // between polls.
+    let entries = listings
+        .into_iter()
+        .map(|listing| {
+            let handle = server_state.games.get(&listing.game_id);
+            RosterEntry {
+                game_id: listing.game_id,
+                connections: handle.map_or(0, |handle| handle.connections.len()),
+                keys: listing.keys,
+                resident: handle.is_some(),
+            }
         })
         .collect();
-    // A stable order keeps the client's re-render from reshuffling rows between polls.
-    entries.sort_by_key(|e| e.game_id);
-    Json(entries)
+    Ok(Json(entries))
 }
 
 #[derive(Deserialize)]
@@ -426,6 +560,15 @@ pub async fn create_game(
     let store = lock_state(&state).store.clone();
     if !is_platform_admin(&store, &body.platform_key).await? {
         return Err(ServerError::InvalidKey);
+    }
+    // reserve the new game's running slot. its task holds the reservation until it registers or
+    // dies, and nothing awaits between here and the spawn below, so the slot always has an owner.
+    {
+        let mut server_state = lock_state(&state);
+        if server_state.at_capacity() {
+            return Err(ServerError::ServerAtCapacity);
+        }
+        server_state.creating += 1;
     }
 
     let creation_pack = vec![ServerInput::Control(AdminControl::Sim(SimControl {
@@ -491,20 +634,21 @@ pub async fn end_game(
         return Err(ServerError::InvalidKey);
     }
 
-    let cancel = {
-        let server_state = lock_state(&state);
-        let Some(game) = server_state.games.get(&game_id) else {
-            return Err(ServerError::InvalidGameId);
-        };
-        game.cancel.clone()
-    };
-
-    // mark it ended so a restart does not try to resume it.
-    if let Err(e) = store.end_game(game_id).await {
-        eprintln!("failed to mark game {game_id} ended: {e}");
+    // mark it ended first, so nothing can wake it again -- a wake already in flight finds no active
+    // row to load and exits.
+    match store.end_game(game_id).await {
+        Ok(true) => {}
+        Ok(false) => return Err(ServerError::InvalidGameId),
+        Err(e) => {
+            eprintln!("failed to mark game {game_id} ended: {e}");
+            return Err(ServerError::StoreFailed);
+        }
     }
 
-    cancel.cancel();
+    // a hibernated game has no task to stop.
+    if let Some(game) = lock_state(&state).games.get_mut(&game_id) {
+        game.close();
+    }
 
     Ok(())
 }

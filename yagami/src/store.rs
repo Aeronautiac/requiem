@@ -45,18 +45,24 @@ pub struct GameMeta {
     pub keys: HashMap<Key, Privileges>,
 }
 
-// everything a restarted server needs to bring a game back: its metadata and its full input log.
+// one game's entry in the platform directory: what may be known about it without it running --
+// that it exists, and how many keys (people) it holds.
+pub struct DirectoryListing {
+    pub game_id: GameId,
+    pub keys: usize,
+}
+
+// everything a waking game needs to come back: its metadata and its full input log.
 pub struct GameRecord {
-    pub id: GameId,
     pub meta: GameMeta,
     pub inputs: Vec<VersionedInput>,
 }
 
 impl Store {
     // connect, then apply any not-yet-applied migrations in order (see sqlx::migrate).
-    pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
+    pub async fn connect(database_url: &str, pool_size: u32) -> Result<Self, sqlx::Error> {
         let pool = PgPoolOptions::new()
-            .max_connections(8)
+            .max_connections(pool_size)
             .connect(database_url)
             .await?;
         sqlx::migrate!("./migrations").run(&pool).await?;
@@ -169,35 +175,70 @@ impl Store {
         Ok(out)
     }
 
-    // every active game and its inputs -- what a restarted server replays to come back up.
-    pub async fn resume(&self) -> Result<Vec<GameRecord>, sqlx::Error> {
-        let rows =
-            sqlx::query("SELECT id, last_reached, clock, clock_wall, keys FROM games WHERE status = 'active' ORDER BY id")
-                .fetch_all(&self.pool)
-                .await?;
-
-        let mut records = Vec::with_capacity(rows.len());
+    // the platform directory: a listing for every active game, running or hibernated. the key
+    // count is taken in SQL so no ledger leaves the store. a fresh row holds the '{}' default until
+    // its first progress write, hence the array check.
+    pub async fn game_directory(&self) -> Result<Vec<DirectoryListing>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT id,
+                    CASE WHEN jsonb_typeof(keys) = 'array' THEN jsonb_array_length(keys) ELSE 0 END
+                        AS key_count
+               FROM games WHERE status = 'active' ORDER BY id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        let mut games = Vec::with_capacity(rows.len());
         for row in rows {
             let id: i64 = row.try_get("id")?;
-            let last_reached: i64 = row.try_get("last_reached")?;
-            let clock: i64 = row.try_get("clock")?;
-            let clock_wall: i64 = row.try_get("clock_wall")?;
-            let keys_json: serde_json::Value = row.try_get("keys")?;
-            let keys = keys_from_json(&keys_json);
-
-            let inputs = self.load_inputs(id as GameId).await?;
-            records.push(GameRecord {
-                id: id as GameId,
-                meta: GameMeta {
-                    last_reached: last_reached as Time,
-                    clock: clock as Time,
-                    clock_wall,
-                    keys,
-                },
-                inputs,
+            let keys: i32 = row.try_get("key_count")?;
+            games.push(DirectoryListing {
+                game_id: id as GameId,
+                keys: keys as usize,
             });
         }
-        Ok(records)
+        Ok(games)
+    }
+
+    // an active game's key ledger, without its log: enough to validate a key before waking it.
+    // None if there is no such active game.
+    pub async fn load_keys(
+        &self,
+        game_id: GameId,
+    ) -> Result<Option<HashMap<Key, Privileges>>, sqlx::Error> {
+        let keys_json: Option<serde_json::Value> =
+            sqlx::query_scalar("SELECT keys FROM games WHERE id = $1 AND status = 'active'")
+                .bind(game_id as i64)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(keys_json.map(|json| keys_from_json(&json)))
+    }
+
+    // an active game's metadata and full input log -- what a waking game replays to come back up.
+    // None if there is no such active game (e.g. it was ended while its wake was in flight).
+    pub async fn load_game(&self, game_id: GameId) -> Result<Option<GameRecord>, sqlx::Error> {
+        let row = sqlx::query(
+            "SELECT last_reached, clock, clock_wall, keys FROM games
+              WHERE id = $1 AND status = 'active'",
+        )
+        .bind(game_id as i64)
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let last_reached: i64 = row.try_get("last_reached")?;
+        let clock: i64 = row.try_get("clock")?;
+        let clock_wall: i64 = row.try_get("clock_wall")?;
+        let keys_json: serde_json::Value = row.try_get("keys")?;
+        Ok(Some(GameRecord {
+            meta: GameMeta {
+                last_reached: last_reached as Time,
+                clock: clock as Time,
+                clock_wall,
+                keys: keys_from_json(&keys_json),
+            },
+            inputs: self.load_inputs(game_id).await?,
+        }))
     }
 
     // remove the tail of a game's log from `from_seq` onward -- the durable half of a
@@ -231,13 +272,14 @@ impl Store {
         Ok(())
     }
 
-    // mark a game ended so a restart does not try to resume it.
-    pub async fn end_game(&self, game_id: GameId) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE games SET status = 'ended' WHERE id = $1")
-            .bind(game_id as i64)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+    // mark a game ended so nothing can wake it again. false if there was no such active game.
+    pub async fn end_game(&self, game_id: GameId) -> Result<bool, sqlx::Error> {
+        let result =
+            sqlx::query("UPDATE games SET status = 'ended' WHERE id = $1 AND status = 'active'")
+                .bind(game_id as i64)
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     // is this a platform admin key (the allowlist that may create/end games)?

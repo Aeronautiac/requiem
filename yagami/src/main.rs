@@ -10,8 +10,6 @@
 //   game      -- one game's coordinator task: the engine child, its log, and fan-out.
 //   delivery  -- who receives which command, in what order. the server-side access control.
 
-mod constants;
-
 mod auth;
 mod delivery;
 mod game;
@@ -20,23 +18,34 @@ mod state;
 mod store;
 mod wire;
 
-use std::{collections::HashMap, sync::{Arc, Mutex}};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     http::{Method, header},
-    routing::{any, post},
+    response::IntoResponse,
+    routing::{any, get, post},
 };
-use lawliet_types::common::{Seed, Time};
-use tokio::{net::TcpListener, sync::mpsc};
-use tokio_util::sync::CancellationToken;
+use lawliet_types::common::Seed;
+use tokio::net::TcpListener;
+use tower_governor::{
+    GovernorError, GovernorLayer, governor::GovernorConfigBuilder,
+    key_extractor::SmartIpKeyExtractor,
+};
 use tower_http::cors::CorsLayer;
 
 use crate::{
-    game::{GameStart, game},
-    http::{Config, create_game, end_game, establish_ws_connection, get_ticket, roster},
-    state::{ServerState, insert_handle},
-    store::{Store, wall_now},
+    http::{
+        Config, ServerError, create_game, end_game, establish_ws_connection, get_ticket, roster,
+    },
+    state::ServerState,
+    store::Store,
 };
 
 // Server-wide primitives, kept at the root because they belong to no one module: the game task
@@ -52,64 +61,76 @@ async fn main() {
     let _ = dotenvy::dotenv();
     let config = Config::from_env().expect("config");
 
-    let store = Store::connect(&config.database_url)
+    let store = Store::connect(&config.database_url, config.database_pool_size)
         .await
         .expect("failed to connect to postgres");
 
+    // nothing is resumed here: after a restart every active game is simply hibernated, and wakes
+    // on the first get_ticket for it like any other sleeping game.
+    let settings = config.settings;
     let server_state = Arc::new(Mutex::new(ServerState {
-        store: store.clone(),
+        store,
         games: HashMap::new(),
+        creating: 0,
+        boot_failures: HashMap::new(),
+        settings,
     }));
-
-    // resume every active game after a restart. each handle is registered synchronously -- before
-    // axum starts serving -- so no connection can race a just-restarted game. the resumed clock
-    // continues at the stored virtual time plus downtime, so game time keeps tracking real time
-    // across the restart.
-    for record in store.resume().await.expect("failed to load active games") {
-        let (inbox, events) = mpsc::unbounded_channel();
-        let cancel = CancellationToken::new();
-        let start_clock =
-            (record.meta.clock as i64 + (wall_now() - record.meta.clock_wall)).max(0) as Time;
-
-        insert_handle(
-            &server_state,
-            record.id,
-            inbox.clone(),
-            cancel.clone(),
-            record.meta.keys.clone(),
-        );
-        tokio::spawn(game(
-            server_state.clone(),
-            GameStart::Resumed {
-                game_id: record.id,
-                inputs: record.inputs,
-                keys: record.meta.keys,
-                start_clock,
-            },
-            events,
-            inbox,
-            cancel,
-        ));
-    }
 
     // REST is cross-origin (client on a different subdomain), so the JSON POST triggers a preflight
     // the browser blocks on until we answer. the WS route is exempt -- same-origin policy doesn't
-    // cover websockets -- so this layer is only about the fetch-based endpoints.
+    // cover websockets -- so this layer is only about the fetch-based endpoints. it is the outermost
+    // layer, so preflights are answered before the rate limit and a RateLimited answer is still
+    // readable by the browser.
     let cors = CorsLayer::new()
         .allow_origin(config.allowed_origin)
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([header::CONTENT_TYPE]);
 
-    let router = Router::new()
+    // per client IP, read from X-Forwarded-For. Caddy overwrites that header with the real peer, so
+    // it is only trustworthy while Caddy is the sole way in: yagami must not be reachable directly.
+    // with no header (local dev, no proxy) it falls back to the socket's peer address.
+    let request_limit = GovernorConfigBuilder::default()
+        .key_extractor(SmartIpKeyExtractor)
+        .period(settings.request_quota.replenish_interval())
+        .burst_size(settings.request_quota.burst_size().get())
+        .finish()
+        .expect("a Quota is never zero");
+    // the limiter keeps a bucket per IP it has seen; forget the ones that have refilled.
+    let request_buckets = request_limit.limiter().clone();
+    tokio::spawn(async move {
+        let mut sweep = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            sweep.tick().await;
+            request_buckets.retain_recent();
+        }
+    });
+    let request_limit = GovernorLayer::new(request_limit).error_handler(|error| match error {
+        GovernorError::TooManyRequests { .. } => ServerError::RateLimited.into_response(),
+        error => error.into(),
+    });
+
+    // the websocket route spends a ticket per connection, so get_ticket's limit already covers it.
+    let rest = Router::new()
         .route("/create_game", post(create_game))
-        .route("/roster", axum::routing::get(roster))
+        .route("/roster", get(roster))
         .route("/game/{id}/end_game", post(end_game))
         .route("/game/{id}/get_ticket", post(get_ticket))
+        .layer(request_limit);
+
+    let router = Router::new()
+        .merge(rest)
         .route("/game/{id}/ws", any(establish_ws_connection))
+        .layer(DefaultBodyLimit::max(settings.max_body_bytes))
         .layer(cors)
         .with_state(server_state.clone());
 
     let listener = TcpListener::bind(config.bind_addr).await.unwrap();
 
-    axum::serve(listener, router).await.unwrap();
+    // connect info gives the rate limiter the peer address to fall back on.
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }

@@ -32,6 +32,8 @@ sqlx = { version = "0.9", features = [
   "json",
   "macros",
 ] }
+governor = "0.10.4"
+tower_governor = { version = "0.8.0", default-features = false, features = ["axum"] }
 
 [dev-dependencies]
 # tests need to mint distinct ActorKey/ViewportKey values by hand; the engine is the only thing

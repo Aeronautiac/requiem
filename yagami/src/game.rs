@@ -30,9 +30,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth::{Key, KeyHandle, Privileges, Ticket, to_flags},
-    constants::{BOOT_MAX_RETRIES, BOOT_RETRY_BASE_MS, ENGINE_TIMEOUT, NULL_TICK_INTERVAL},
     delivery::{History, game_clock_output},
-    state::{GameId, WrappedServerState, insert_handle, lock_state},
+    state::{GameId, ServerState, Settings, WrappedServerState, insert_handle, lock_state},
     store::{GameMeta, Store, wall_now},
     wire::{
         ActionOutcome, AdminControl, ControlOutcome, ControlResponse, ExecOutcome, MetaControl,
@@ -79,8 +78,8 @@ pub enum InitError {
 // and any other creation inputs), boots, and only then writes itself to the DB -- so a game that
 // fails to boot is never written. `creation_reply` carries the result back to create_game: the
 // game id plus the RESPONSES to the creation pack's inputs (one per input that produced one), so
-// the caller can pull e.g. the minted admin key out of them. a resumed game already exists in the
-// DB.
+// the caller can pull e.g. the minted admin key out of them. a resumed game (one being woken)
+// already exists in the DB, and its task loads it from there (see load).
 pub enum GameStart {
     Fresh {
         creation_pack: Vec<ServerInput>,
@@ -88,9 +87,6 @@ pub enum GameStart {
     },
     Resumed {
         game_id: GameId,
-        inputs: Vec<VersionedInput>,
-        keys: HashMap<Key, Privileges>,
-        start_clock: Time,
     },
 }
 
@@ -165,6 +161,7 @@ struct Game {
     game_id: GameId, // sentinel 0 until a fresh game writes its durable row
     server_state: WrappedServerState,
     store: Store,
+    settings: Settings,
     inbox: mpsc::UnboundedSender<GameInput>,
     cancel: CancellationToken,
     events: mpsc::UnboundedReceiver<GameInput>,
@@ -209,6 +206,8 @@ struct Game {
     stdout: Option<Lines<BufReader<ChildStdout>>>,
 
     tick: Interval,
+    // since when the game has had no tickets (claimed or outstanding); None while anyone holds one.
+    idle_since: Option<Instant>,
 }
 
 impl Game {
@@ -219,8 +218,11 @@ impl Game {
         inbox: mpsc::UnboundedSender<GameInput>,
         cancel: CancellationToken,
     ) -> Self {
-        let store = lock_state(&server_state).store.clone();
-        let mut tick = interval(Duration::from_secs(NULL_TICK_INTERVAL));
+        let (store, settings) = {
+            let server_state = lock_state(&server_state);
+            (server_state.store.clone(), server_state.settings)
+        };
+        let mut tick = interval(settings.null_tick_interval);
         tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
         // a fresh game's first accepted input is always InitializeEngine, built here with a seed
@@ -255,18 +257,14 @@ impl Game {
                         Some(creation_reply),
                     )
                 }
-                GameStart::Resumed {
-                    game_id,
-                    inputs,
-                    keys,
-                    start_clock,
-                } => (
+                // the log, keys and clock are placeholders until run() loads them.
+                GameStart::Resumed { game_id } => (
                     game_id,
                     true,
-                    inputs,
+                    Vec::new(),
                     None,
-                    GameClock::at(start_clock),
-                    keys,
+                    GameClock::new(),
+                    HashMap::new(),
                     None,
                 ),
             };
@@ -275,6 +273,7 @@ impl Game {
             game_id,
             server_state,
             store,
+            settings,
             inbox,
             cancel,
             events,
@@ -293,6 +292,7 @@ impl Game {
             stdin: None,
             stdout: None,
             tick,
+            idle_since: None,
         }
     }
 
@@ -305,7 +305,7 @@ impl Game {
         loop {
             match select! {
                 res = stdin.write_all(line.as_bytes()) => res,
-                _ = sleep(Duration::from_secs(ENGINE_TIMEOUT)) => return Err(DispatchError::Write),
+                _ = sleep(self.settings.engine_timeout) => return Err(DispatchError::Write),
             } {
                 Ok(()) => return Ok(()),
                 Err(e) if is_retryable(&e) => continue,
@@ -323,7 +323,7 @@ impl Game {
         loop {
             match select! {
                 res = stdout.next_line() => res,
-                _ = sleep(Duration::from_secs(ENGINE_TIMEOUT)) => return Err(DispatchError::Read),
+                _ = sleep(self.settings.engine_timeout) => return Err(DispatchError::Read),
             } {
                 Ok(Some(text)) => return Ok(text),
                 Ok(None) => return Err(DispatchError::Read), // EOF
@@ -439,7 +439,7 @@ impl Game {
     // everything up to the target, so the replay reconstructs only the timeline that still exists.
     //
     // Retries: on a failed spawn/replay the child is discarded and boot retries with exponential
-    // backoff, giving up entirely after BOOT_MAX_RETRIES -- a game that cannot boot is reported as
+    // backoff, giving up entirely after boot_max_retries -- a game that cannot boot is reported as
     // failed rather than retrying forever. For a FRESH (not-yet-registered) game this is what stops
     // a broken game from ever being written to the DB.
     async fn boot(&mut self, truncate_to: Option<Time>) -> Result<(), ()> {
@@ -542,12 +542,20 @@ impl Game {
             self.stdin = None;
             self.stdout = None;
             attempts += 1;
-            if attempts >= BOOT_MAX_RETRIES {
+            if attempts >= self.settings.boot_max_retries {
+                // a durable game will be woken again by the next get_ticket; hold that off for a
+                // while. a fresh game has no row to wake.
+                if self.registered {
+                    lock_state(&self.server_state).record_boot_failure(self.game_id);
+                }
                 return Err(());
             }
-            // exponential: 500ms, 1s, 2s, ... (capped).
-            let delay = BOOT_RETRY_BASE_MS.saturating_mul(1u64 << attempts.min(30));
-            sleep(Duration::from_millis(delay)).await;
+            // exponential: 2x the base, 4x, 8x, ... (the shift is capped).
+            let delay = self
+                .settings
+                .boot_retry_base
+                .saturating_mul(1u32 << attempts.min(30));
+            sleep(delay).await;
         }
     }
 
@@ -871,7 +879,7 @@ impl Game {
                     // already killed the child; the reboot replays the accepted stream, which does
                     // not contain this null (it was never accepted), so the engine comes back at
                     // the pre-jump state. the clock must be rolled back to match it -- a clock
-                    // wound past a point the engine cannot reach within ENGINE_TIMEOUT would hang
+                    // wound past a point the engine cannot reach within the engine timeout would hang
                     // every subsequent tick the same way, forever.
                     self.clock.go_to(now);
                     self.reboot_after_crash().await;
@@ -888,7 +896,7 @@ impl Game {
         self.last_reached = target;
         if self.boot(Some(target)).await.is_err() {
             // the rebuild never came up; the game cannot serve this timeline.
-            self.cancel.cancel();
+            self.close();
             return;
         }
         // every connection's view of the world was built on a timeline that no longer exists: reset
@@ -920,7 +928,7 @@ impl Game {
                 "failed to truncate inputs for game {} -- tearing down: {e}",
                 self.game_id
             );
-            self.cancel.cancel();
+            self.close();
         }
         self.accepted.retain(keep);
     }
@@ -962,7 +970,6 @@ impl Game {
         }
 
         // fresh handles for keys the sim holds but yagami has no handle for.
-        let cancel = game.cancel.clone();
         let missing: Vec<Key> = game
             .keys
             .keys()
@@ -971,9 +978,9 @@ impl Game {
             .collect();
         for key in missing {
             game.key_handles.insert(
-                key.clone(),
+                key,
                 KeyHandle {
-                    cancel: cancel.child_token(),
+                    cancel: game.cancel.child_token(),
                     tickets: std::collections::HashSet::new(),
                 },
             );
@@ -1092,21 +1099,93 @@ impl Game {
                 "failed to persist progress for game {} -- tearing down: {e}",
                 self.game_id
             );
-            self.cancel.cancel();
+            self.close();
+        }
+    }
+
+    // stop the game from inside (see GameHandle::close).
+    fn close(&self) {
+        match lock_state(&self.server_state).games.get_mut(&self.game_id) {
+            Some(game) => game.close(),
+            // a fresh game that never registered has no handle, only its token.
+            None => self.cancel.cancel(),
         }
     }
 
     // register this game's GameHandle in the shared registry. a fresh game calls this after its
-    // first boot succeeds and its row is written; a resumed game is registered by main() before
-    // its task is spawned.
+    // first boot succeeds and its row is written; a resumed game is registered by wake() before its
+    // task is spawned. the handle takes over the running slot create_game reserved, in the same
+    // lock, so the slot is never counted twice or not at all.
     fn insert_handle(&self, keys: HashMap<Key, Privileges>) {
+        let mut server_state = lock_state(&self.server_state);
+        server_state.creating -= 1;
         insert_handle(
-            &self.server_state,
+            &mut server_state,
             self.game_id,
             self.inbox.clone(),
             self.cancel.clone(),
             keys,
         );
+    }
+
+    // a resumed game's durable state: its accepted log, its keys, and its clock -- continued across
+    // however long it was down or asleep (the stored virtual time plus the wall time since it was
+    // stored), so game time keeps tracking real time. false if it cannot be loaded (ended while the
+    // wake was in flight, or the store unreachable); the task then exits and the game stays asleep.
+    async fn load(&mut self) -> bool {
+        let record = match self.store.load_game(self.game_id).await {
+            Ok(Some(record)) => record,
+            Ok(None) => return false,
+            Err(e) => {
+                eprintln!("failed to load game {} -- staying asleep: {e}", self.game_id);
+                return false;
+            }
+        };
+        let start_clock =
+            (record.meta.clock as i64 + (wall_now() - record.meta.clock_wall)).max(0) as Time;
+        self.clock = GameClock::at(start_clock);
+        self.accepted = record.inputs;
+        self.keys_cache = record.meta.keys;
+        true
+    }
+
+    // ===== HIBERNATION ===== //
+
+    // how long has nobody been on this game -- no connection and no outstanding ticket?
+    fn idle_for(&mut self) -> Duration {
+        let occupied = !lock_state(&self.server_state)
+            .games
+            .get(&self.game_id)
+            .expect("a running game's handle is only removed when its task drops")
+            .tickets
+            .is_empty();
+        if occupied {
+            self.idle_since = None;
+            return Duration::ZERO;
+        }
+        self.idle_since.get_or_insert_with(Instant::now).elapsed()
+    }
+
+    // put an idle game to sleep: checkpoint its progress, then -- in one step, under the lock --
+    // confirm nobody is on it and close its handle. from that instant no ticket can be issued; the
+    // loop exits on the cancel and Drop removes the handle, and the next get_ticket after that wakes
+    // a fresh task, which loads the checkpoint just written. does nothing if someone arrived in the
+    // meantime.
+    //
+    // no ticket means no connection and none about to form, so nothing else holds a sender into
+    // this task's queue -- an empty queue here stays empty, and nothing sent is ever dropped.
+    async fn hibernate(&mut self) {
+        self.persist_progress().await;
+        let mut server_state = lock_state(&self.server_state);
+        let game = server_state
+            .games
+            .get_mut(&self.game_id)
+            .expect("a running game's handle is only removed when its task drops");
+        if !game.tickets.is_empty() || !self.events.is_empty() {
+            self.idle_since = None;
+            return;
+        }
+        game.close();
     }
 
     // make a fresh game durable and report success: write the row + the whole accepted stream (the
@@ -1119,7 +1198,7 @@ impl Game {
                 // the game cannot become durable, so it cannot exist. close it and tell the
                 // create_game caller it failed to boot, rather than leaving the endpoint hanging.
                 eprintln!("failed to write fresh game to the db -- tearing down: {e}");
-                self.cancel.cancel();
+                self.close();
                 if let Some(reply) = self.creation_reply.take() {
                     let _ = reply.send(Err(InitError::BootFailed));
                 }
@@ -1130,9 +1209,6 @@ impl Game {
         self.registered = true;
         self.history.game_id = id;
         self.insert_handle(self.keys_cache.clone());
-        // mint the live key handles (cancel token + tickets) for the rebuilt key set -- get_ticket
-        // needs a handle for the admin key before any connection can form.
-        self.reconcile_key_handles();
         // persist the key cache on creation so it is durable even before any action is performed.
         let meta = self.current_meta();
         if let Err(e) = self.store.persist_progress(self.game_id, &meta).await {
@@ -1140,7 +1216,7 @@ impl Game {
                 "failed to persist keys cache for fresh game {} -- tearing down: {e}",
                 self.game_id
             );
-            self.cancel.cancel();
+            self.close();
             return;
         }
         if let Some(reply) = self.creation_reply.take() {
@@ -1175,7 +1251,7 @@ impl Game {
                     "persist failed for game {} -- tearing down: {e}",
                     self.game_id
                 );
-                self.cancel.cancel();
+                self.close();
                 Err(e)
             }
         }
@@ -1203,7 +1279,7 @@ impl Game {
                 "game {} failed to reboot after crash -- tearing down",
                 self.game_id
             );
-            self.cancel.cancel();
+            self.close();
         }
     }
 
@@ -1212,7 +1288,12 @@ impl Game {
     async fn run(mut self) {
         // FRESH: the first boot both proves the engine can run and collects the creation pack's
         // responses. it is only written to the DB if it succeeds -- a game that fails to boot is
-        // reported as failed and never written. RESUMED: the game is already durable.
+        // reported as failed and never written. RESUMED: the game is already durable, and is loaded
+        // from the DB first. a resumed game that fails to load or boot just exits: its row is
+        // untouched, so it is asleep again and the next get_ticket retries the wake.
+        if self.creation_reply.is_none() && !self.load().await {
+            return;
+        }
         match self.boot(None).await {
             Ok(()) => {
                 if self.creation_reply.is_some() {
@@ -1244,6 +1325,9 @@ impl Game {
                 }
                 _ = self.tick.tick(), if !self.cancel.is_cancelled() => {
                     self.tick().await;
+                    if self.idle_for() >= self.settings.hibernate_after {
+                        self.hibernate().await;
+                    }
                 }
                 _ = self.cancel.cancelled() => {
                     break;
@@ -1251,7 +1335,8 @@ impl Game {
             }
         }
         // dropping `self` runs Drop, which tears the game out of state and cancels it, and dropping
-        // the child reaps the runtime (kill_on_drop).
+        // the child reaps the runtime (kill_on_drop). whether the game ended, hibernated or failed,
+        // that is the same exit: a row still marked active is simply asleep.
     }
 }
 
@@ -1261,11 +1346,41 @@ impl Drop for Game {
     // connections' sockets close (and their clients are told they were disconnected) instead of
     // leaking a half-alive game. Nothing here is async, and the fields needed are sync, so Drop can
     // do this without an async teardown step that a panic would skip.
+    //
+    // Removing the handle drops its `gone` sender, which is what releases a get_ticket waiting out a
+    // closing handle. A fresh game that never registered has no handle, but still holds the running
+    // slot create_game reserved for it.
     fn drop(&mut self) {
+        let mut server_state = lock_state(&self.server_state);
+        if self.registered {
+            server_state.games.remove(&self.game_id);
+        } else {
+            server_state.creating -= 1;
+        }
+        drop(server_state);
         self.cancel.cancel();
-        let mut state = lock_state(&self.server_state);
-        state.games.remove(&self.game_id);
     }
+}
+
+// bring a hibernated game back: register its handle and spawn its task, under the caller's lock, so
+// a concurrent waker finds the handle rather than waking it twice. `keys` is the game's durable key
+// ledger, which the caller has already checked the waking key against.
+pub fn wake(
+    state: &WrappedServerState,
+    server_state: &mut ServerState,
+    game_id: GameId,
+    keys: HashMap<Key, Privileges>,
+) {
+    let (inbox, events) = mpsc::unbounded_channel();
+    let cancel = CancellationToken::new();
+    insert_handle(server_state, game_id, inbox.clone(), cancel.clone(), keys);
+    tokio::spawn(game(
+        state.clone(),
+        GameStart::Resumed { game_id },
+        events,
+        inbox,
+        cancel,
+    ));
 }
 
 // permission enforcement, input executions, live client updates, and runtime process management.
