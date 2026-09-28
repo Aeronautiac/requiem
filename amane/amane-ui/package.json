@@ -1,0 +1,21 @@
+{
+  "name": "amane-ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "requiem's React surface. Components and screens over amane-client; needs a DOM, knows nothing about which host it runs in. Not runnable alone: a host (amane-web, later amane-tauri) mounts <App client={...} />.",
+  "scripts": {
+    "check": "tsc -p ."
+  },
+  "dependencies": {
+    "amane-client": "*",
+    "react": "^19",
+    "react-dom": "^19",
+    "react-virtuoso": "^4"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  }
+}

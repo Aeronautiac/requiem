@@ -571,6 +571,38 @@ mod comms_tests {
         }));
     }
 
+    // A channel is introduced before anything is said about it: its loggability follows the map
+    // on the same viewport, never precedes it.
+    #[test]
+    fn channel_loggability_follows_its_map() {
+        let mut eng = Engine::new();
+
+        let (response, ctx) = eng
+            .execute(ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateGroupchat(CreateGroupchat {}),
+            }, Engine::version())
+            .unwrap();
+
+        let ActionResponse::CreateGroupchat(data) = response else {
+            unreachable!()
+        };
+        let channel_id = get_gc(&eng, data.id).unwrap().channel_id;
+        let position = |matches: &dyn Fn(&Command) -> bool| {
+            ctx.commands.iter().position(|p| matches(&p.cmd))
+        };
+        let map = position(&|cmd| {
+            matches!(cmd, Command::MapChannel { channel_id: cid, .. } if *cid == channel_id)
+        })
+        .expect("the channel is mapped");
+        let loggable = position(&|cmd| {
+            matches!(cmd, Command::SetChannelLoggable { channel_id: cid, .. } if *cid == channel_id)
+        })
+        .expect("the channel's loggability is stated");
+        assert!(map < loggable);
+    }
+
     #[test]
     fn add_to_groupchat_system() {
         let mut eng = Engine::new();

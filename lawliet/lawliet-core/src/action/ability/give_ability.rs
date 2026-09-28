@@ -15,7 +15,10 @@ use crate::{
     },
     chargepool::{ChargeConditions, PoolLink},
     config::ability::{AbilityIdentifier, ConfigPoolLinkDetails},
-    helpers::{get_ability, get_ability_mut, get_actor, get_actor_mut, owner_view_recipient},
+    helpers::{
+        cmd_ability_view, get_ability, get_ability_mut, get_actor, get_actor_mut,
+        owner_view_recipient,
+    },
 };
 
 pub use crate::action::{GiveAbility, GiveAbilityResponse};
@@ -114,23 +117,7 @@ impl ActionInterface for GiveAbility {
             .handle(eng, ctx, actor, version, mutate)?;
 
         if mutate {
-            let ability = get_ability(eng, self.ability_id)?;
-            let (success_usages_remaining, failure_usages_remaining, iterations_to_reset, base_reset) =
-                ability.get_ability_view_counts(eng);
-            ctx.push_cmd(
-                Command::UpdateAbilityView {
-                    ability_name: ability.ability_name,
-                    success_usages_remaining,
-                    failure_usages_remaining,
-                    iterations_to_reset,
-                    base_reset,
-                    unlimited: ability.is_unlimited(),
-                    ability_id: self.ability_id,
-                    owner_id: self.actor_id,
-                },
-                owner_view_recipient(eng, self.actor_id),
-                eng.time,
-            );
+            cmd_ability_view(eng, ctx, self.actor_id, self.ability_id)?;
         }
 
         Ok(ActionResponse::GiveAbility(GiveAbilityResponse {}))

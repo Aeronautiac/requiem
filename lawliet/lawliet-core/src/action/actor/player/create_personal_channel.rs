@@ -5,13 +5,12 @@ use lawliet_types::{
     },
     actor::ActorDisplay,
     channel::{ChannelPerm, FixedPolicy, PermUpdatePolicy},
-    command::Command,
 };
 
 use crate::{
     action::ActionInterface,
     channel::ChannelKind,
-    helpers::{actor_id, cmd_channel, get_player, get_player_mut},
+    helpers::{actor_id, get_player, get_player_mut, map_channel},
 };
 
 impl ActionInterface for CreatePersonalChannel {
@@ -44,17 +43,7 @@ impl ActionInterface for CreatePersonalChannel {
         // Addressed to the channel's own viewport, so only the owner ever sees it, and pushed
         // before the name that puts them in it — the channel has to exist before anything can be
         // said about a name in it.
-        cmd_channel(
-            eng,
-            ctx,
-            Command::MapChannel {
-                channel_id,
-                kind: ChannelKind::Personal,
-            },
-            channel_id,
-            false,
-            None,
-        );
+        map_channel(eng, ctx, channel_id, ChannelKind::Personal);
 
         if mutate {
             let player = get_player_mut(eng, player_id).expect("already validated");

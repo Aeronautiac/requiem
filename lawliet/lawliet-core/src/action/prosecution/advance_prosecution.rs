@@ -57,10 +57,7 @@
 * sweep, and channel perms by the SetMembers that UpdateProsecutionChannels issues.
 */
 
-use lawliet_types::{
-    channel::{BlueprintDisplayKind, PermUpdatePolicy, ProfileBlueprint, TrialPolicy},
-    command::Command,
-};
+use lawliet_types::channel::{BlueprintDisplayKind, PermUpdatePolicy, ProfileBlueprint, TrialPolicy};
 
 use crate::{
     ChannelKey, Time,
@@ -72,7 +69,7 @@ use crate::{
     channel::ChannelKind,
     common::{ProsecutionKey, TimerKey},
     engine::Engine,
-    helpers::{cmd_channel, get_prosecution, get_prosecution_mut},
+    helpers::{get_prosecution, get_prosecution_mut, map_channel},
     poll::{PollOption, PollOptionLabel, PollParent, PollPolicy, PollSubject, VoterPolicy},
     prosecution::{ProsecutionPhase, TrialPhase, TrialSubphase},
 };
@@ -186,17 +183,7 @@ impl ActionInterface for AdvanceProsecution {
                     // Before anyone is seated: seating enters them into the viewport, and a Map
                     // emitted afterwards would arrive behind history they already hold. Same
                     // ordering rule as the lawyer channel.
-                    cmd_channel(
-                        eng,
-                        ctx,
-                        Command::MapChannel {
-                            channel_id,
-                            kind: ChannelKind::Trial(self.prosecution_id),
-                        },
-                        channel_id,
-                        false,
-                        None,
-                    );
+                    map_channel(eng, ctx, channel_id, ChannelKind::Trial(self.prosecution_id));
 
                     let timer = reschedule_advance(
                         eng,

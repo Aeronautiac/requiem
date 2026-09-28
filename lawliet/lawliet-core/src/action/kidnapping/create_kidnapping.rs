@@ -28,7 +28,7 @@ use crate::{
     actor::{modifier::Modifier, state::State},
     common::{KidnappingKey, Version},
     engine::Engine,
-    helpers::{cmd_channel, cmd_world_event, get_ability, get_actor, require_player},
+    helpers::{cmd_world_event, get_ability, get_actor, map_channel, require_player},
     kidnapping::{Kidnapping, KidnappingSource},
 };
 
@@ -81,17 +81,7 @@ impl ActionInterface for CreateKidnapping {
             KidnappingKey::default()
         };
 
-        cmd_channel(
-            eng,
-            ctx,
-            Command::MapChannel {
-                channel_id,
-                kind: ChannelKind::Kidnapping(id),
-            },
-            channel_id,
-            false,
-            None,
-        );
+        map_channel(eng, ctx, channel_id, ChannelKind::Kidnapping(id));
 
         cmd_world_event(
             eng,

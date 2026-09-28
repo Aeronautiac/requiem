@@ -3,12 +3,10 @@
 * Create a channel
 */
 
-use lawliet_types::command::{Command, CommandRecipient};
-
 use crate::{
     action::{ActionInterface, ActionResponse},
     channel::Channel,
-    common::{ChannelKey, ViewportKey},
+    common::ChannelKey,
     helpers::open_viewport,
     viewport::ViewportKind,
 };
@@ -33,33 +31,21 @@ impl ActionInterface for CreateChannel {
         //
         // The log is claimed the same way but never given back. A viewport is an audience and dies
         // with the thing it was an audience for; a record is what was said, and outlives it.
-        let (id, viewport) = if mutate {
+        //
+        // Nothing is announced here. The caller announces the channel through `map_channel` once
+        // it knows what the channel belongs to.
+        let id = if mutate {
             let viewport = open_viewport(eng, ctx, ViewportKind::Channel);
             let log = eng.world.add_log();
-            (
-                eng.world.add_channel(Channel::new(
-                    self.loggable,
-                    viewport,
-                    log,
-                    self.base_profile,
-                )),
+            eng.world.add_channel(Channel::new(
+                self.loggable,
                 viewport,
-            )
+                log,
+                self.base_profile,
+            ))
         } else {
-            (ChannelKey::default(), ViewportKey::default())
+            ChannelKey::default()
         };
-
-        // Announce the channel's initial loggability. Nobody has access to the viewport yet —
-        // this is addressed to it so the first member to enter is told, as part of their
-        // backfill, what the channel is.
-        ctx.push_cmd(
-            Command::SetChannelLoggable {
-                channel_id: id,
-                loggable: self.loggable,
-            },
-            CommandRecipient::Viewport(viewport),
-            eng.time,
-        );
 
         Ok(ActionResponse::CreateChannel(CreateChannelResponse { id }))
     }

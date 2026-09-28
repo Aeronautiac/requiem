@@ -1,0 +1,15 @@
+{
+  "name": "amane-client",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "requiem's client core: networking, the state fold and queries. Plain TypeScript, no framework, no DOM. A host injects transport; a surface (amane-ui, a CLI) reads state and calls actions.",
+  "scripts": {
+    "check": "tsc -p .",
+    "test": "node test/smoke.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5"
+  }
+}

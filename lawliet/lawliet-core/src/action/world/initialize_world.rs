@@ -13,7 +13,7 @@ use crate::{
     },
     channel::ChannelKind,
     common::ViewportKey,
-    helpers::{cmd_channel, get_charge_pool_mut},
+    helpers::{get_charge_pool_mut, map_channel},
     viewport::ViewportKind,
 };
 
@@ -91,17 +91,7 @@ impl ActionInterface for InitializeWorld {
                 let channel_id = data.id;
                 eng.world.world_channel_map.insert(name, channel_id);
 
-                cmd_channel(
-                    eng,
-                    ctx,
-                    Command::MapChannel {
-                        channel_id,
-                        kind: ChannelKind::World(name),
-                    },
-                    channel_id,
-                    false,
-                    None,
-                );
+                map_channel(eng, ctx, channel_id, ChannelKind::World(name));
             }
         }
 

@@ -17,6 +17,7 @@ use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    account::AccountId,
     auth::{Key, KeyHandle, Privileges, Ticket},
     delivery::DeliveryData,
     game::GameInput,
@@ -127,6 +128,17 @@ pub struct Settings {
     pub input_quota: Quota,
     // each client IP's REST budget. over it is answered RateLimited.
     pub request_quota: Quota,
+    // each client IP's budget for signing up and logging in, far tighter than request_quota: every
+    // attempt costs a password hash, and a login is a password guess.
+    pub auth_quota: Quota,
+    // a session dies after this long unused; every authenticated request pushes it out again.
+    pub session_ttl: Duration,
+    pub password_min_len: usize,
+    pub password_max_len: usize,
+    // active games a non-admin account may own at once.
+    pub account_game_quota: usize,
+    // whether creating a game requires a verified account. off until unverified accounts are abused.
+    pub create_requires_verified: bool,
 }
 
 pub struct ServerState {
@@ -135,6 +147,8 @@ pub struct ServerState {
     // fresh games still booting toward registration. each holds a running slot from create_game
     // until its task registers the handle or dies.
     pub creating: usize,
+    // the accounts behind those creations. an account may have only one in flight.
+    pub creators: HashSet<AccountId>,
     // games whose boot gave up, and when. refused a wake until the cooldown passes.
     pub boot_failures: HashMap<GameId, Instant>,
     pub settings: Settings,
@@ -145,6 +159,21 @@ impl ServerState {
     // may no further game start running?
     pub fn at_capacity(&self) -> bool {
         self.games.len() + self.creating >= self.settings.max_resident
+    }
+
+    // the caller has checked capacity and that `creator` has nothing in flight.
+    pub fn reserve_creation(&mut self, creator: Option<AccountId>) {
+        self.creating += 1;
+        if let Some(creator) = creator {
+            self.creators.insert(creator);
+        }
+    }
+
+    pub fn release_creation(&mut self, creator: Option<AccountId>) {
+        self.creating -= 1;
+        if let Some(creator) = creator {
+            self.creators.remove(&creator);
+        }
     }
 
     pub fn record_boot_failure(&mut self, game_id: GameId) {

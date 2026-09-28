@@ -18,7 +18,7 @@ use crate::{
     },
     channel::ChannelKind,
     common::ActorKey,
-    helpers::{cmd_channel, cmd_world_data, get_actor_mut, get_charge_pool_mut},
+    helpers::{cmd_world_data, get_actor_mut, get_charge_pool_mut, map_channel},
 };
 
 use crate::action::ActionActor;
@@ -85,17 +85,7 @@ impl ActionInterface for CreateOrg {
             },
         );
 
-        cmd_channel(
-            eng,
-            ctx,
-            Command::MapChannel {
-                channel_id,
-                kind: ChannelKind::Org(id),
-            },
-            channel_id,
-            false,
-            None,
-        );
+        map_channel(eng, ctx, channel_id, ChannelKind::Org(id));
 
         if mutate {
             // Pools must exist before the abilities that link to them (mirrors add_player).

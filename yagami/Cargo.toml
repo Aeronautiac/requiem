@@ -2,6 +2,8 @@
 name = "yagami"
 version = "0.1.0"
 edition = "2024"
+# src/bin/hash-password is a hand-reset utility; `cargo run -p yagami` still means the server.
+default-run = "yagami"
 
 [dependencies]
 axum = { version = "0.8.9", features = ["ws"] }
@@ -34,6 +36,7 @@ sqlx = { version = "0.9", features = [
 ] }
 governor = "0.10.4"
 tower_governor = { version = "0.8.0", default-features = false, features = ["axum"] }
+argon2 = "0.6.0"
 
 [dev-dependencies]
 # tests need to mint distinct ActorKey/ViewportKey values by hand; the engine is the only thing

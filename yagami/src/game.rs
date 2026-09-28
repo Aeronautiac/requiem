@@ -29,6 +29,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    account::AccountId,
     auth::{Key, KeyHandle, Privileges, Ticket, to_flags},
     delivery::{History, game_clock_output},
     state::{GameId, ServerState, Settings, WrappedServerState, insert_handle, lock_state},
@@ -82,6 +83,9 @@ pub enum InitError {
 // already exists in the DB, and its task loads it from there (see load).
 pub enum GameStart {
     Fresh {
+        // the account that owns the new game, if any. the task inherits the creation reservation
+        // made in its name and releases it on registering or dying.
+        creator: Option<AccountId>,
         creation_pack: Vec<ServerInput>,
         creation_reply: oneshot::Sender<Result<(GameId, Vec<ExecOutcome>), InitError>>,
     },
@@ -170,6 +174,9 @@ struct Game {
     // writes itself to the DB; a resumed game already is. until registered, boot() skips
     // persisting progress (there is no row to update yet).
     registered: bool,
+    // a fresh game's owner (see GameStart::Fresh). None for a resumed game: its handle, inserted by
+    // wake before the boot, holds its slot, so there is no creation reservation to release.
+    creator: Option<AccountId>,
     // the create_game handshake (Fresh only): reports (id, the init responses) on success, or an
     // InitError if boot never came up.
     creation_reply: Option<oneshot::Sender<Result<(GameId, Vec<ExecOutcome>), InitError>>>,
@@ -230,9 +237,10 @@ impl Game {
         // stream is the creation pack the handler supplied (the admin-key minting, etc). the engine
         // version is not known until boot queries the runtime, so a fresh stream is kept raw here
         // and stamped into `accepted` by boot() once the version is learned.
-        let (game_id, registered, accepted, fresh_inputs, clock, keys_cache, creation_reply) =
+        let (game_id, registered, creator, accepted, fresh_inputs, clock, keys_cache, creation_reply) =
             match start {
                 GameStart::Fresh {
+                    creator,
                     creation_pack,
                     creation_reply,
                 } => {
@@ -250,6 +258,7 @@ impl Game {
                     (
                         0,
                         false,
+                        creator,
                         Vec::new(),
                         Some(fresh),
                         GameClock::new(),
@@ -261,6 +270,7 @@ impl Game {
                 GameStart::Resumed { game_id } => (
                     game_id,
                     true,
+                    None,
                     Vec::new(),
                     None,
                     GameClock::new(),
@@ -278,6 +288,7 @@ impl Game {
             cancel,
             events,
             registered,
+            creator,
             creation_reply,
             creation_responses: Vec::new(),
             last_reached: 0,
@@ -1118,7 +1129,7 @@ impl Game {
     // lock, so the slot is never counted twice or not at all.
     fn insert_handle(&self, keys: HashMap<Key, Privileges>) {
         let mut server_state = lock_state(&self.server_state);
-        server_state.creating -= 1;
+        server_state.release_creation(self.creator);
         insert_handle(
             &mut server_state,
             self.game_id,
@@ -1192,7 +1203,12 @@ impl Game {
     // task-generated InitializeEngine + the creation pack) as a group, then hand back the game id
     // and the creation pack's responses.
     async fn register_fresh(&mut self) {
-        let id = match self.store.create_game(&self.accepted).await {
+        let admin_key = minted_key(&self.creation_responses);
+        let id = match self
+            .store
+            .create_game(&self.accepted, self.creator, admin_key.as_ref())
+            .await
+        {
             Ok(id) => id,
             Err(e) => {
                 // the game cannot become durable, so it cannot exist. close it and tell the
@@ -1355,11 +1371,21 @@ impl Drop for Game {
         if self.registered {
             server_state.games.remove(&self.game_id);
         } else {
-            server_state.creating -= 1;
+            server_state.release_creation(self.creator);
         }
         drop(server_state);
         self.cancel.cancel();
     }
+}
+
+// the key a creation pack minted, found among its responses: the new game's admin key.
+pub fn minted_key(responses: &[ExecOutcome]) -> Option<Key> {
+    responses.iter().find_map(|outcome| match outcome {
+        ExecOutcome::Control(ControlOutcome::Ok(ControlResponse::KeyCreated { key })) => {
+            Some(key.clone())
+        }
+        _ => None,
+    })
 }
 
 // bring a hibernated game back: register its handle and spawn its task, under the caller's lock, so

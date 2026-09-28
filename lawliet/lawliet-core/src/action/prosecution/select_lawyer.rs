@@ -17,10 +17,7 @@
 * prosecution snapshot, not from here.
 */
 
-use lawliet_types::{
-    channel::{ContactPolicy, PermUpdatePolicy},
-    command::Command,
-};
+use lawliet_types::channel::{ContactPolicy, PermUpdatePolicy};
 
 use crate::{
     action::{
@@ -31,7 +28,7 @@ use crate::{
     channel::ChannelKind,
     common::Version,
     engine::Engine,
-    helpers::{cmd_channel, get_actor, get_prosecution_mut, player_id, require_player},
+    helpers::{get_actor, get_prosecution_mut, map_channel, player_id, require_player},
     prosecution::{Lawyer, ProsecutionPhase},
 };
 
@@ -88,17 +85,7 @@ impl ActionInterface for SelectLawyer {
             // and a Map emitted afterwards would arrive behind history they already hold. The
             // frontend also indexes `channels` directly on AddMessage, so an unmapped channel is
             // fatal there.
-            cmd_channel(
-                eng,
-                ctx,
-                Command::MapChannel {
-                    channel_id,
-                    kind: ChannelKind::Lawyer(self.prosecution_id),
-                },
-                channel_id,
-                false,
-                None,
-            );
+            map_channel(eng, ctx, channel_id, ChannelKind::Lawyer(self.prosecution_id));
 
             // Both sides, shown to each other as themselves — there is no anonymity between a
             // defendant and their own counsel. A contact line like any other, which is what keeps

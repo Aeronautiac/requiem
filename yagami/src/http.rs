@@ -4,17 +4,17 @@
 // its traffic belongs to the game task, and this module only shuttles bytes between the two.
 
 use std::{
-    env, fmt::Display, future::ready, net::SocketAddr, num::NonZeroU32, str::FromStr,
-    time::Duration,
+    convert::Infallible, env, fmt::Display, future::ready, net::SocketAddr, num::NonZeroU32,
+    str::FromStr, time::Duration,
 };
 
 use axum::{
     Json,
     extract::{
-        Path, Query, State, WebSocketUpgrade,
+        FromRequestParts, OptionalFromRequestParts, Path, Query, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    http::{HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header, request::Parts},
     response::IntoResponse,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -27,15 +27,17 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
+use yagami_wire::{PrivilegeSet, generate_token};
+
 use crate::{
+    account::{Account, AccountId, Role, hash_password, session_token_hash, verify_password},
     auth::{ActorScope, Capability, Key, KeyHandle, Ticket},
     delivery::DeliveryData,
-    game::{GameCommand, GameInput, GameStart, InputEnvelope, game, wake},
+    game::{GameCommand, GameInput, GameStart, InputEnvelope, game, minted_key, wake},
     state::{ConnHandle, GameHandle, GameId, Settings, WrappedServerState, lock_state},
-    store::Store,
+    store::{SignupRejected, Store},
     wire::{
-        AdminControl, Batch, ControlOutcome, ControlResponse, ExecOutcome, ServerInput, SimControl,
-        SimControlData,
+        AdminControl, Batch, ServerInput, SimControl, SimControlData,
     },
 };
 
@@ -98,6 +100,12 @@ impl Config {
                 max_body_bytes: req_parse("YAGAMI_MAX_BODY_BYTES")?,
                 input_quota: req_quota("YAGAMI_INPUT_PERIOD_MS", "YAGAMI_INPUT_BURST")?,
                 request_quota: req_quota("YAGAMI_REQUEST_PERIOD_MS", "YAGAMI_REQUEST_BURST")?,
+                auth_quota: req_quota("YAGAMI_AUTH_PERIOD_MS", "YAGAMI_AUTH_BURST")?,
+                session_ttl: req_secs("YAGAMI_SESSION_TTL_SECS")?,
+                password_min_len: req_parse("YAGAMI_PASSWORD_MIN_LEN")?,
+                password_max_len: req_parse("YAGAMI_PASSWORD_MAX_LEN")?,
+                account_game_quota: req_parse("YAGAMI_ACCOUNT_GAME_QUOTA")?,
+                create_requires_verified: req_parse("YAGAMI_CREATE_REQUIRES_VERIFIED")?,
             },
         })
     }
@@ -118,6 +126,22 @@ pub enum ServerError {
     StoreFailed,
     // this client IP is over its REST budget.
     RateLimited,
+    // no live session came with the request.
+    NotLoggedIn,
+    // no account has this username and password. which of the two was wrong is not said.
+    InvalidCredentials,
+    UsernameTaken,
+    InvalidUsername,
+    // outside the allowed password length.
+    InvalidPassword,
+    // creating games currently requires a verified account.
+    VerificationRequired,
+    // the account already owns as many active games as it may.
+    GameQuotaReached,
+    // the account already has a game being created.
+    CreationInProgress,
+    // only the game's owner or an admin may do this.
+    NotGameOwner,
 }
 
 impl IntoResponse for ServerError {
@@ -131,35 +155,348 @@ impl IntoResponse for ServerError {
             Self::ServerAtCapacity => StatusCode::SERVICE_UNAVAILABLE,
             Self::StoreFailed => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+            Self::NotLoggedIn => StatusCode::UNAUTHORIZED,
+            Self::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            Self::UsernameTaken => StatusCode::CONFLICT,
+            Self::InvalidUsername => StatusCode::BAD_REQUEST,
+            Self::InvalidPassword => StatusCode::BAD_REQUEST,
+            Self::VerificationRequired => StatusCode::FORBIDDEN,
+            Self::GameQuotaReached => StatusCode::FORBIDDEN,
+            Self::CreationInProgress => StatusCode::CONFLICT,
+            Self::NotGameOwner => StatusCode::FORBIDDEN,
         };
         (status, Json(self)).into_response()
     }
 }
+
+// ===== ACCOUNTS ===== //
+
+// the __Host- prefix makes the browser refuse the cookie unless it is Secure, host-only and Path=/,
+// so no other subdomain can set or shadow it.
+const SESSION_COOKIE: &str = "__Host-session";
+
+// the cookie only carries the token. the session's real lifetime is its row's expiry, pushed out on
+// every use, so the cookie asks for the longest life browsers grant (they cap it at 400 days).
+const SESSION_COOKIE_MAX_AGE_SECS: u64 = 400 * 24 * 60 * 60;
+
+fn session_cookie(token: &str, max_age_secs: u64) -> HeaderValue {
+    HeaderValue::from_str(&format!(
+        "{SESSION_COOKIE}={token}; Max-Age={max_age_secs}; Path=/; Secure; HttpOnly; SameSite=Lax"
+    ))
+    .expect("a hex token is a valid header value")
+}
+
+fn session_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';'))
+        .find_map(|pair| pair.trim().strip_prefix(SESSION_COOKIE)?.strip_prefix('='))
+}
+
+// the session cookie resolved to its account, with the session's expiry pushed out. None without a
+// live session.
+async fn session_account(
+    headers: &HeaderMap,
+    state: &WrappedServerState,
+) -> Result<Option<Account>, ServerError> {
+    let Some(token) = session_token(headers) else {
+        return Ok(None);
+    };
+    let (store, ttl) = {
+        let server_state = lock_state(state);
+        (server_state.store.clone(), server_state.settings.session_ttl)
+    };
+    store
+        .session_account(&session_token_hash(token), ttl)
+        .await
+        .map_err(|e| {
+            eprintln!("failed to resolve a session: {e}");
+            ServerError::StoreFailed
+        })
+}
+
+// an endpoint that requires a login: rejected NotLoggedIn without a live session.
+impl FromRequestParts<WrappedServerState> for Account {
+    type Rejection = ServerError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &WrappedServerState,
+    ) -> Result<Self, ServerError> {
+        session_account(&parts.headers, state)
+            .await?
+            .ok_or(ServerError::NotLoggedIn)
+    }
+}
+
+// an endpoint that only benefits from a login. it never fails because of one: a missing, stale or
+// unresolvable session is just None.
+impl OptionalFromRequestParts<WrappedServerState> for Account {
+    type Rejection = Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &WrappedServerState,
+    ) -> Result<Option<Self>, Infallible> {
+        Ok(session_account(&parts.headers, state).await.unwrap_or(None))
+    }
+}
+
+#[derive(Deserialize)]
+pub struct Credentials {
+    username: String,
+    password: String,
+}
+
+type SessionCookie = [(HeaderName, HeaderValue); 1];
+
+// log an account in: mint a session and hand its token to the browser as the session cookie.
+async fn start_session(
+    store: &Store,
+    account_id: AccountId,
+    ttl: Duration,
+) -> Result<SessionCookie, ServerError> {
+    let token = generate_token();
+    if let Err(e) = store
+        .create_session(&session_token_hash(&token), account_id, ttl)
+        .await
+    {
+        eprintln!("failed to create a session for account {account_id}: {e}");
+        return Err(ServerError::StoreFailed);
+    }
+    Ok([(
+        header::SET_COOKIE,
+        session_cookie(&token, SESSION_COOKIE_MAX_AGE_SECS),
+    )])
+}
+
+fn check_password_length(password: &str, settings: Settings) -> Result<(), ServerError> {
+    let length = password.chars().count();
+    if length < settings.password_min_len || length > settings.password_max_len {
+        return Err(ServerError::InvalidPassword);
+    }
+    Ok(())
+}
+
+// create an account and log it in. the username rules live in the accounts table's CHECK.
+pub async fn signup(
+    State(state): State<WrappedServerState>,
+    Json(body): Json<Credentials>,
+) -> Result<SessionCookie, ServerError> {
+    let (store, settings) = {
+        let server_state = lock_state(&state);
+        (server_state.store.clone(), server_state.settings)
+    };
+    check_password_length(&body.password, settings)?;
+    let password_hash = hash_password(body.password).await;
+    let account_id = match store.create_account(&body.username, &password_hash).await {
+        Ok(Ok(account_id)) => account_id,
+        Ok(Err(SignupRejected::UsernameTaken)) => return Err(ServerError::UsernameTaken),
+        Ok(Err(SignupRejected::InvalidUsername)) => return Err(ServerError::InvalidUsername),
+        Err(e) => {
+            eprintln!("failed to create an account: {e}");
+            return Err(ServerError::StoreFailed);
+        }
+    };
+    start_session(&store, account_id, settings.session_ttl).await
+}
+
+pub async fn login(
+    State(state): State<WrappedServerState>,
+    Json(body): Json<Credentials>,
+) -> Result<SessionCookie, ServerError> {
+    let (store, settings) = {
+        let server_state = lock_state(&state);
+        (server_state.store.clone(), server_state.settings)
+    };
+    let (account_id, password_hash) = match store.load_credentials(&body.username).await {
+        Ok(Some(credentials)) => credentials,
+        Ok(None) => return Err(ServerError::InvalidCredentials),
+        Err(e) => {
+            eprintln!("failed to load credentials: {e}");
+            return Err(ServerError::StoreFailed);
+        }
+    };
+    if !verify_password(body.password, password_hash).await {
+        return Err(ServerError::InvalidCredentials);
+    }
+    start_session(&store, account_id, settings.session_ttl).await
+}
+
+// end this session and clear its cookie. succeeds without a session, so a stale client can always
+// get back to a clean state.
+pub async fn logout(
+    State(state): State<WrappedServerState>,
+    headers: HeaderMap,
+) -> Result<SessionCookie, ServerError> {
+    if let Some(token) = session_token(&headers) {
+        let store = lock_state(&state).store.clone();
+        if let Err(e) = store.delete_session(&session_token_hash(token)).await {
+            eprintln!("failed to delete a session: {e}");
+            return Err(ServerError::StoreFailed);
+        }
+    }
+    Ok([(header::SET_COOKIE, session_cookie("", 0))])
+}
+
+#[derive(Deserialize)]
+pub struct PasswordChange {
+    current: String,
+    new: String,
+}
+
+// change the password, then end every other session: a password is usually changed because someone
+// else might know the old one. this session stays logged in.
+pub async fn change_password(
+    State(state): State<WrappedServerState>,
+    headers: HeaderMap,
+    account: Account,
+    Json(body): Json<PasswordChange>,
+) -> Result<(), ServerError> {
+    let (store, settings) = {
+        let server_state = lock_state(&state);
+        (server_state.store.clone(), server_state.settings)
+    };
+    check_password_length(&body.new, settings)?;
+    let current_hash = match store.load_credentials(&account.username).await {
+        Ok(Some((_, current_hash))) => current_hash,
+        Ok(None) => return Err(ServerError::NotLoggedIn), // deleted since the session resolved
+        Err(e) => {
+            eprintln!("failed to load credentials: {e}");
+            return Err(ServerError::StoreFailed);
+        }
+    };
+    if !verify_password(body.current, current_hash).await {
+        return Err(ServerError::InvalidCredentials);
+    }
+    let token = session_token(&headers).ok_or(ServerError::NotLoggedIn)?;
+    let new_hash = hash_password(body.new).await;
+    if let Err(e) = store
+        .change_password(account.id, &new_hash, &session_token_hash(token))
+        .await
+    {
+        eprintln!("failed to change account {}'s password: {e}", account.id);
+        return Err(ServerError::StoreFailed);
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+pub struct AccountPacket {
+    #[serde(flatten)]
+    account: Account,
+    // active games it owns.
+    games: Vec<GameId>,
+    // keys it has joined with, for the quick-join menus, each with what it permits so a menu can say
+    // what joining with it gets you.
+    keys: Vec<AccountKey>,
+}
+
+// which saved key: how a client names one to forget it.
+#[derive(Serialize, Deserialize)]
+pub struct SavedKey {
+    game_id: GameId,
+    key: Key,
+}
+
+#[derive(Serialize)]
+pub struct AccountKey {
+    #[serde(flatten)]
+    saved: SavedKey,
+    privileges: PrivilegeSet,
+}
+
+// the account this session is logged in as, with its games and saved keys. how a client learns, on
+// load, whether it is logged in; refetched after anything that changes it.
+pub async fn account(
+    State(state): State<WrappedServerState>,
+    account: Account,
+) -> Result<Json<AccountPacket>, ServerError> {
+    let store = lock_state(&state).store.clone();
+    let id = account.id;
+    let failed = |e: sqlx::Error| {
+        eprintln!("failed to load account {id}'s games and keys: {e}");
+        ServerError::StoreFailed
+    };
+    let games = store.owned_games(id).await.map_err(failed)?;
+    let keys = store
+        .saved_keys(id)
+        .await
+        .map_err(failed)?
+        .into_iter()
+        .map(|(game_id, key, privileges)| AccountKey {
+            saved: SavedKey { game_id, key },
+            privileges,
+        })
+        .collect();
+    Ok(Json(AccountPacket {
+        account,
+        games,
+        keys,
+    }))
+}
+
+// remove a saved key from the account's menus. the key itself is untouched.
+pub async fn forget_key(
+    State(state): State<WrappedServerState>,
+    account: Account,
+    Json(body): Json<SavedKey>,
+) -> Result<(), ServerError> {
+    let store = lock_state(&state).store.clone();
+    store
+        .forget_key(account.id, body.game_id, &body.key)
+        .await
+        .map_err(|e| {
+            eprintln!("failed to forget a key for account {}: {e}", account.id);
+            ServerError::StoreFailed
+        })
+}
+
+// ===== TICKETS ===== //
 
 #[derive(Deserialize)]
 pub struct TicketRequest {
     key: Key,
 }
 
+// joining needs only a key. a logged-in caller also gets the key saved to their account, for the
+// quick-join menus; the ticket is theirs either way, so a failed save is only logged.
+pub async fn get_ticket(
+    State(state): State<WrappedServerState>,
+    Path(game_id): Path<GameId>,
+    account: Option<Account>,
+    Json(body): Json<TicketRequest>,
+) -> Result<Ticket, ServerError> {
+    let ticket = ticket_for_key(&state, game_id, body.key.clone()).await?;
+    if let Some(account) = account {
+        let store = lock_state(&state).store.clone();
+        if let Err(e) = store.save_key(account.id, game_id, &body.key).await {
+            eprintln!("failed to save a key for account {}: {e}", account.id);
+        }
+    }
+    Ok(ticket)
+}
+
 // a running game answers from its handle. a hibernated one has no handle: its key is checked
 // against the durable ledger first -- so no key can wake a game it does not belong to -- and then
 // the game is woken and the ticket issued against its fresh handle. a game caught mid-hibernation is
 // waited out and then woken, so the caller never sees the difference.
-pub async fn get_ticket(
-    State(state): State<WrappedServerState>,
-    Path(game_id): Path<GameId>,
-    Json(body): Json<TicketRequest>,
+async fn ticket_for_key(
+    state: &WrappedServerState,
+    game_id: GameId,
+    key: Key,
 ) -> Result<Ticket, ServerError> {
-    let key = body.key;
     loop {
         // subscribed under the lock, while the handle still exists, so its removal cannot be missed.
         let closing = {
-            let mut server_state = lock_state(&state);
+            let mut server_state = lock_state(state);
             let settings = server_state.settings;
             match server_state.games.get_mut(&game_id) {
                 Some(game_state) if game_state.closing => Some(game_state.gone.subscribe()),
                 Some(game_state) => {
-                    return issue_ticket(&state, settings, game_state, game_id, key);
+                    return issue_ticket(state, settings, game_state, game_id, key);
                 }
                 None => None,
             }
@@ -171,7 +508,7 @@ pub async fn get_ticket(
             continue;
         }
 
-        let store = lock_state(&state).store.clone();
+        let store = lock_state(state).store.clone();
         let keys = match store.load_keys(game_id).await {
             Ok(Some(keys)) => keys,
             Ok(None) => return Err(ServerError::InvalidGameId),
@@ -184,7 +521,7 @@ pub async fn get_ticket(
             return Err(ServerError::InvalidKey);
         }
 
-        let mut server_state = lock_state(&state);
+        let mut server_state = lock_state(state);
         // another request may have woken it while the ledger was loading: go again against its
         // handle.
         if server_state.games.contains_key(&game_id) {
@@ -196,13 +533,13 @@ pub async fn get_ticket(
         if server_state.at_capacity() {
             return Err(ServerError::ServerAtCapacity);
         }
-        wake(&state, &mut server_state, game_id, keys);
+        wake(state, &mut server_state, game_id, keys);
         let settings = server_state.settings;
         let game_state = server_state
             .games
             .get_mut(&game_id)
             .expect("just woken, under this lock");
-        return issue_ticket(&state, settings, game_state, game_id, key);
+        return issue_ticket(state, settings, game_state, game_id, key);
     }
 }
 
@@ -529,46 +866,87 @@ pub async fn roster(
     Ok(Json(entries))
 }
 
-#[derive(Deserialize)]
-pub struct CreateGame {
-    platform_key: String, // these are strings because they are created explicitly by a platform admin
-}
-
 #[derive(Serialize)]
 pub struct GameCreationPacket {
     game_id: GameId,
     admin_key: Key,
 }
 
-// a platform admin is not a game admin. this gives you access to PLATFORM CONTROLS like creating
-// and killing games. the allowlist lives in the `platform_keys` table, editable in the DB UI.
-async fn is_platform_admin(store: &Store, platform_key: &str) -> Result<bool, ServerError> {
-    store
-        .is_platform_admin(platform_key)
-        .await
-        .map_err(|_| ServerError::InvalidKey)
+// a fresh game's hold on a running slot (and on its creator's one creation in flight), from
+// create_game's checks until the game task takes it over. dropped before hand_off -- the handler
+// bailed, or was cancelled mid-await by its client going away -- it gives both back.
+struct CreationReservation {
+    state: WrappedServerState,
+    creator: Option<AccountId>,
+    held: bool,
 }
 
-// to create a game, you must have a platform key
-// returns the id of the game created and the admin key
-// must create the game entry in the REST endpoint, but cleanup can be handled outside of it (games
-// are guaranteed to be created after auth, so there is no failure case with a weird cleanup scenario).
-pub async fn create_game(
-    State(state): State<WrappedServerState>,
-    Json(body): Json<CreateGame>,
-) -> Result<Json<GameCreationPacket>, ServerError> {
-    let store = lock_state(&state).store.clone();
-    if !is_platform_admin(&store, &body.platform_key).await? {
-        return Err(ServerError::InvalidKey);
-    }
-    // reserve the new game's running slot. its task holds the reservation until it registers or
-    // dies, and nothing awaits between here and the spawn below, so the slot always has an owner.
-    {
-        let mut server_state = lock_state(&state);
+impl CreationReservation {
+    fn take(
+        state: &WrappedServerState,
+        creator: Option<AccountId>,
+    ) -> Result<Self, ServerError> {
+        let mut server_state = lock_state(state);
+        if let Some(creator) = creator
+            && server_state.creators.contains(&creator)
+        {
+            return Err(ServerError::CreationInProgress);
+        }
         if server_state.at_capacity() {
             return Err(ServerError::ServerAtCapacity);
         }
-        server_state.creating += 1;
+        server_state.reserve_creation(creator);
+        Ok(Self {
+            state: state.clone(),
+            creator,
+            held: true,
+        })
+    }
+
+    // the game task releases it from here on: on registering, or in its Drop.
+    fn hand_off(mut self) -> Option<AccountId> {
+        self.held = false;
+        self.creator
+    }
+}
+
+impl Drop for CreationReservation {
+    fn drop(&mut self) {
+        if self.held {
+            lock_state(&self.state).release_creation(self.creator);
+        }
+    }
+}
+
+// create a game owned by the caller. returns its id and its admin key, which is also saved to the
+// account. a game is only written to the DB once it boots, so a failure here leaves nothing behind.
+pub async fn create_game(
+    State(state): State<WrappedServerState>,
+    account: Account,
+) -> Result<Json<GameCreationPacket>, ServerError> {
+    let (store, settings) = {
+        let server_state = lock_state(&state);
+        (server_state.store.clone(), server_state.settings)
+    };
+    let admin = account.role == Role::Admin;
+    if settings.create_requires_verified && !account.verified && !admin {
+        return Err(ServerError::VerificationRequired);
+    }
+
+    // reserve first, count second: while the reservation is held nothing else can create for this
+    // account, and the task writes the owner row before releasing it, so the count can't go stale.
+    let reservation = CreationReservation::take(&state, Some(account.id))?;
+    if !admin {
+        match store.owned_games(account.id).await {
+            Ok(owned) if owned.len() >= settings.account_game_quota => {
+                return Err(ServerError::GameQuotaReached);
+            }
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("failed to count account {}'s games: {e}", account.id);
+                return Err(ServerError::StoreFailed);
+            }
+        }
     }
 
     let creation_pack = vec![ServerInput::Control(AdminControl::Sim(SimControl {
@@ -589,6 +967,7 @@ pub async fn create_game(
     tokio::spawn(game(
         state.clone(),
         GameStart::Fresh {
+            creator: reservation.hand_off(),
             creation_pack,
             creation_reply: reply_tx,
         },
@@ -602,24 +981,13 @@ pub async fn create_game(
         _ => return Err(ServerError::GameBootFailed),
     };
 
-    let admin_key = responses.into_iter().find_map(|outcome| match outcome {
-        ExecOutcome::Control(ControlOutcome::Ok(ControlResponse::KeyCreated { key })) => Some(key),
-        _ => None,
-    });
-
-    match admin_key {
-        Some(admin_key) => Ok(Json(GameCreationPacket { game_id, admin_key })),
-        None => Err(ServerError::GameBootFailed),
-    }
+    let Some(admin_key) = minted_key(&responses) else {
+        return Err(ServerError::GameBootFailed);
+    };
+    Ok(Json(GameCreationPacket { game_id, admin_key }))
 }
 
-#[derive(Deserialize)]
-pub struct EndGameRequest {
-    platform_key: String,
-}
-
-// the platform admin's teardown path. the game admin's equivalent is GameControl::EndGame over their
-// socket; both converge on cancelling the one token.
+// the one way a game ends, for its owner or an admin.
 //
 // this only ASKS. it does not remove the registry entry, close sockets or reap the child -- the game
 // task owns all of that and does it once, on its way out, no matter which path started it. so a
@@ -627,11 +995,19 @@ pub struct EndGameRequest {
 pub async fn end_game(
     State(state): State<WrappedServerState>,
     Path(game_id): Path<GameId>,
-    Json(body): Json<EndGameRequest>,
+    account: Account,
 ) -> Result<(), ServerError> {
     let store = lock_state(&state).store.clone();
-    if !is_platform_admin(&store, &body.platform_key).await? {
-        return Err(ServerError::InvalidKey);
+    let owner = match store.game_owner(game_id).await {
+        Ok(Some(owner)) => owner,
+        Ok(None) => return Err(ServerError::InvalidGameId),
+        Err(e) => {
+            eprintln!("failed to load game {game_id}'s owner: {e}");
+            return Err(ServerError::StoreFailed);
+        }
+    };
+    if account.role != Role::Admin && owner != Some(account.id) {
+        return Err(ServerError::NotGameOwner);
     }
 
     // mark it ended first, so nothing can wake it again -- a wake already in flight finds no active

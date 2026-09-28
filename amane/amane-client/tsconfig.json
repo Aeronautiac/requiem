@@ -1,0 +1,23 @@
+{
+  // No DOM in `lib`: the core must run in Node as well as a browser, and leaving the DOM types out
+  // is what makes reaching for `window` or `document` a compile error rather than a runtime one.
+  //
+  // Imports carry their `.ts` extension and use only erasable syntax, so Node can run the core
+  // straight from source (type stripping) for scripts and tests, with no build step.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}

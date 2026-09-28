@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // that and gates the viewport from its own visibility rule, never the other way round.
 //
 // Everything an object gates is addressed to the object's viewport, including the command that
-// introduces the object itself (a channel's SetChannelLoggable, a bug's NewBug). Since gaining
+// introduces the object itself (a channel's MapChannel, a bug's NewBug). Since gaining
 // access backfills everything previously addressed there, a client always learns which object a
 // viewport belongs to from the content it receives through it.
 //

@@ -3,8 +3,6 @@
 * Use an ability
 */
 
-use lawliet_types::command::Command;
-
 use crate::{
     ability::{AbilityInterface, AbilityStatus},
     action::{
@@ -13,8 +11,8 @@ use crate::{
     actor::{modifier::Modifier, state::State},
     chargepool::{ChargeCondition, PoolLinkType},
     helpers::{
-        actor_id, get_ability, get_ability_config, get_ability_mut, get_actor, get_charge_pool_mut,
-        owner_view_recipient, require_running,
+        actor_id, cmd_ability_view, get_ability, get_ability_config, get_ability_mut, get_actor,
+        get_charge_pool_mut, require_running,
     },
 };
 
@@ -108,24 +106,7 @@ impl ActionInterface for UseAbility {
         if mutate {
             let actor_data = get_actor(eng, actor_id)?;
             for ability_id in actor_data.abilities.iter() {
-                let ability = get_ability(eng, *ability_id)?;
-                let ability_name = ability.ability_name;
-                let (success_usages_remaining, failure_usages_remaining, iterations_to_reset, base_reset) =
-                    ability.get_ability_view_counts(eng);
-                ctx.push_cmd(
-                    Command::UpdateAbilityView {
-                        ability_name,
-                        success_usages_remaining,
-                        failure_usages_remaining,
-                        iterations_to_reset,
-                        base_reset,
-                        unlimited: ability.is_unlimited(),
-                        ability_id: *ability_id,
-                        owner_id: actor_id,
-                    },
-                    owner_view_recipient(eng, actor_id),
-                    eng.time,
-                );
+                cmd_ability_view(eng, ctx, actor_id, *ability_id)?;
             }
         }
 

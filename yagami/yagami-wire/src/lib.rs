@@ -32,6 +32,10 @@ impl Key {
     pub fn from_token(token: Token) -> Self {
         Self(token)
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 pub fn generate_token() -> Token {

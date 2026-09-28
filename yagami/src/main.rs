@@ -10,6 +10,7 @@
 //   game      -- one game's coordinator task: the engine child, its log, and fan-out.
 //   delivery  -- who receives which command, in what order. the server-side access control.
 
+mod account;
 mod auth;
 mod delivery;
 mod game;
@@ -19,7 +20,7 @@ mod store;
 mod wire;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     net::SocketAddr,
     sync::{Arc, Mutex},
     time::Duration,
@@ -27,13 +28,15 @@ use std::{
 
 use axum::{
     Router,
+    body::Body,
     extract::DefaultBodyLimit,
     http::{Method, header},
     response::IntoResponse,
-    routing::{any, get, post},
+    routing::{any, delete, get, post, put},
 };
 use lawliet_types::common::Seed;
 use tokio::net::TcpListener;
+use governor::{Quota, middleware::NoOpMiddleware};
 use tower_governor::{
     GovernorError, GovernorLayer, governor::GovernorConfigBuilder,
     key_extractor::SmartIpKeyExtractor,
@@ -42,7 +45,8 @@ use tower_http::cors::CorsLayer;
 
 use crate::{
     http::{
-        Config, ServerError, create_game, end_game, establish_ws_connection, get_ticket, roster,
+        Config, ServerError, account, change_password, create_game, end_game,
+        establish_ws_connection, forget_key, get_ticket, login, logout, roster, signup,
     },
     state::ServerState,
     store::Store,
@@ -54,6 +58,31 @@ pub fn generate_seed() -> Seed {
     let mut bytes = [0u8; size_of::<Seed>()];
     getrandom::fill(&mut bytes).expect("OS CSPRNG unavailable");
     Seed::from_le_bytes(bytes)
+}
+
+// a per-client-IP limit, read from X-Forwarded-For. Caddy overwrites that header with the real peer,
+// so it is only trustworthy while Caddy is the sole way in: yagami must not be reachable directly.
+// with no header (local dev, no proxy) it falls back to the socket's peer address.
+fn ip_limit(quota: Quota) -> GovernorLayer<SmartIpKeyExtractor, NoOpMiddleware, Body> {
+    let config = GovernorConfigBuilder::default()
+        .key_extractor(SmartIpKeyExtractor)
+        .period(quota.replenish_interval())
+        .burst_size(quota.burst_size().get())
+        .finish()
+        .expect("a Quota is never zero");
+    // the limiter keeps a bucket per IP it has seen; forget the ones that have refilled.
+    let buckets = config.limiter().clone();
+    tokio::spawn(async move {
+        let mut sweep = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            sweep.tick().await;
+            buckets.retain_recent();
+        }
+    });
+    GovernorLayer::new(config).error_handler(|error| match error {
+        GovernorError::TooManyRequests { .. } => ServerError::RateLimited.into_response(),
+        error => error.into(),
+    })
 }
 
 #[tokio::main]
@@ -72,6 +101,7 @@ async fn main() {
         store,
         games: HashMap::new(),
         creating: 0,
+        creators: HashSet::new(),
         boot_failures: HashMap::new(),
         settings,
     }));
@@ -80,34 +110,13 @@ async fn main() {
     // the browser blocks on until we answer. the WS route is exempt -- same-origin policy doesn't
     // cover websockets -- so this layer is only about the fetch-based endpoints. it is the outermost
     // layer, so preflights are answered before the rate limit and a RateLimited answer is still
-    // readable by the browser.
+    // readable by the browser. credentials let the session cookie ride along; the browser only
+    // allows that with an explicit origin, never a wildcard.
     let cors = CorsLayer::new()
         .allow_origin(config.allowed_origin)
-        .allow_methods([Method::GET, Method::POST])
-        .allow_headers([header::CONTENT_TYPE]);
-
-    // per client IP, read from X-Forwarded-For. Caddy overwrites that header with the real peer, so
-    // it is only trustworthy while Caddy is the sole way in: yagami must not be reachable directly.
-    // with no header (local dev, no proxy) it falls back to the socket's peer address.
-    let request_limit = GovernorConfigBuilder::default()
-        .key_extractor(SmartIpKeyExtractor)
-        .period(settings.request_quota.replenish_interval())
-        .burst_size(settings.request_quota.burst_size().get())
-        .finish()
-        .expect("a Quota is never zero");
-    // the limiter keeps a bucket per IP it has seen; forget the ones that have refilled.
-    let request_buckets = request_limit.limiter().clone();
-    tokio::spawn(async move {
-        let mut sweep = tokio::time::interval(Duration::from_secs(60));
-        loop {
-            sweep.tick().await;
-            request_buckets.retain_recent();
-        }
-    });
-    let request_limit = GovernorLayer::new(request_limit).error_handler(|error| match error {
-        GovernorError::TooManyRequests { .. } => ServerError::RateLimited.into_response(),
-        error => error.into(),
-    });
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_headers([header::CONTENT_TYPE])
+        .allow_credentials(true);
 
     // the websocket route spends a ticket per connection, so get_ticket's limit already covers it.
     let rest = Router::new()
@@ -115,10 +124,21 @@ async fn main() {
         .route("/roster", get(roster))
         .route("/game/{id}/end_game", post(end_game))
         .route("/game/{id}/get_ticket", post(get_ticket))
-        .layer(request_limit);
+        .route("/auth/logout", post(logout))
+        .route("/account", get(account))
+        .route("/account/keys", delete(forget_key))
+        .layer(ip_limit(settings.request_quota));
+
+    // everything that checks a password.
+    let auth = Router::new()
+        .route("/auth/signup", post(signup))
+        .route("/auth/login", post(login))
+        .route("/account/password", put(change_password))
+        .layer(ip_limit(settings.auth_quota));
 
     let router = Router::new()
         .merge(rest)
+        .merge(auth)
         .route("/game/{id}/ws", any(establish_ws_connection))
         .layer(DefaultBodyLimit::max(settings.max_body_bytes))
         .layer(cors)

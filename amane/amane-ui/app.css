@@ -1,0 +1,32 @@
+@import "tailwindcss";
+@import "./theme.css";
+
+/* Tailwind scans the BUILD root (the host) by default, and every class-bearing file lives here in
+   amane-ui. Relative to this file. */
+@source "./**/*.{ts,tsx}";
+
+* {
+  box-sizing: border-box;
+}
+
+/* The app is exactly the viewport and never scrolls as a whole: every scrolling region is a
+   `Scroll` inside it. `dvh` rather than `vh` so a phone's collapsing address bar doesn't push the
+   bottom bar off screen. */
+html,
+body,
+#app {
+  height: 100dvh;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+dialog::backdrop {
+  background: var(--color-backdrop);
+}

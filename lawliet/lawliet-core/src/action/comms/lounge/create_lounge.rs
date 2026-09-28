@@ -8,7 +8,7 @@
 */
 
 use indexmap::{IndexSet, indexset};
-use lawliet_types::{command::Command, lounge::AnonymousLoungeRoleDisplay};
+use lawliet_types::lounge::AnonymousLoungeRoleDisplay;
 use smallvec::{SmallVec, smallvec};
 
 use lawliet_types::channel::{ContactPolicy, PermUpdatePolicy};
@@ -18,7 +18,7 @@ use crate::{
     actor::ActorDisplay,
     channel::ChannelKind,
     common::{ActorKey, LoungeKey},
-    helpers::{cmd_channel, cmd_contact_log, get_player, get_player_mut},
+    helpers::{cmd_contact_log, get_player, get_player_mut, map_channel},
     lounge::{Lounge, LoungeVariant},
     passive::{ContactEvent, ContactLog},
     world::ContactChannel,
@@ -139,6 +139,18 @@ impl ActionInterface for CreateLounge {
                 .world
                 .register_contact_channel(ContactChannel::Lounge(lounge_id));
 
+            // Before the names that seat anyone: a name enters its holder into the viewport, and
+            // the channel has to exist before anything is said about a name in it.
+            map_channel(
+                eng,
+                ctx,
+                channel_id,
+                ChannelKind::Lounge {
+                    lounge_id,
+                    contact_id,
+                },
+            );
+
             cmd_contact_log(
                 eng,
                 ctx,
@@ -171,21 +183,6 @@ impl ActionInterface for CreateLounge {
                 let player_data = get_player_mut(eng, participant.id)
                     .expect("expected lounge participant to be a valid player");
                 player_data.add_lounge(lounge_id);
-
-                cmd_channel(
-                    eng,
-                    ctx,
-                    Command::MapChannel {
-                        channel_id,
-                        kind: ChannelKind::Lounge {
-                            lounge_id,
-                            contact_id,
-                        },
-                    },
-                    channel_id,
-                    false,
-                    None,
-                );
             }
 
             lounge_id

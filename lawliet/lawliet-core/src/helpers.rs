@@ -21,7 +21,7 @@ use crate::{
         state::{State, Status, Statuses},
     },
     bug::{Bug, BugSource},
-    channel::{Channel, ProfileOwners},
+    channel::{Channel, ChannelKind, ProfileOwners},
     chargepool::ChargePool,
     common::{
         AbilityKey, ActorKey, BugKey, ChannelKey, ChargePoolKey, GroupchatKey, IncarcerationKey,
@@ -616,6 +616,25 @@ pub fn cmd_channel(
     ctx.push_cmd(cmd, CommandRecipient::Viewport(viewport), eng.time);
 }
 
+// Introduce a channel to its viewport: what it belongs to, then every fact about the channel
+// itself. The one way a channel is announced, so a client never receives a fact about a channel
+// before the channel.
+//
+// Called by whoever created the channel rather than by CreateChannel, because the kind names an
+// object (an org, a lounge) that can only be built once the channel's id exists.
+pub fn map_channel(eng: &mut Engine, ctx: &mut ActionContext, channel_id: ChannelKey, kind: ChannelKind) {
+    if !ctx.mutate {
+        return;
+    }
+    cmd_channel(eng, ctx, Command::MapChannel { channel_id, kind }, channel_id, false, None);
+    let loggable = eng
+        .world
+        .get_channel(channel_id)
+        .expect("channel mapped before it was created: engine invariant violated")
+        .loggable;
+    cmd_channel(eng, ctx, Command::SetChannelLoggable { channel_id, loggable }, channel_id, false, None);
+}
+
 // Tell everyone who can see a channel which names are in it.
 //
 // Synchronised. The whole visible set, directed at each viewer.
@@ -931,6 +950,35 @@ pub fn owner_view_recipient(eng: &Engine, owner_id: ActorKey) -> CommandRecipien
         ),
         Err(_) => CommandRecipient::Actor(owner_id),
     }
+}
+
+// Tell an ability's owner where it stands now: its usages, countdown and period. Sent whenever
+// any of those can have moved — a grant, a use, a day turning — so the owner's view is never left
+// showing charges the pools no longer hold.
+pub fn cmd_ability_view(
+    eng: &Engine,
+    ctx: &mut ActionContext,
+    owner_id: ActorKey,
+    ability_id: AbilityKey,
+) -> Result<(), ActionError> {
+    let ability = get_ability(eng, ability_id)?;
+    let (success_usages_remaining, failure_usages_remaining, iterations_to_reset, base_reset) =
+        ability.get_ability_view_counts(eng);
+    ctx.push_cmd(
+        Command::UpdateAbilityView {
+            ability_name: ability.ability_name,
+            success_usages_remaining,
+            failure_usages_remaining,
+            iterations_to_reset,
+            base_reset,
+            unlimited: ability.is_unlimited(),
+            ability_id,
+            owner_id,
+        },
+        owner_view_recipient(eng, owner_id),
+        eng.time,
+    );
+    Ok(())
 }
 
 // Bring a viewport into existence: allocate it and announce what it belongs to, on itself.

@@ -31,26 +31,9 @@ impl ActionInterface for SetNotebookPossession {
     ) -> ActionResult {
         let notebook = get_notebook(eng, self.notebook_id)?;
         let channel_id = notebook.channel_id;
-
         // Callers finalize the notebook's ownership fields before this action, so the borrow flag
         // reflects the post-transfer state.
-        //
-        // The holder is told "the book in your hands is not yours"; System mirrors it for the admin
-        // overview, exactly as the fake status does. Nobody else — it is a fact about one person,
-        // and no part of what the channel carried, so it never reaches the record.
         let borrowed = notebook.borrowed.is_some();
-        if let Some(holder) = self.to {
-            for recipient in [CommandRecipient::Actor(holder), CommandRecipient::System] {
-                ctx.push_cmd(
-                    Command::NotebookBorrowingStatus {
-                        notebook_id: self.notebook_id,
-                        borrowed,
-                    },
-                    recipient,
-                    eng.time,
-                );
-            }
-        }
 
         if let Some(from) = self.from {
             if mutate {
@@ -82,6 +65,23 @@ impl ActionInterface for SetNotebookPossession {
                 perm_policy: PermUpdatePolicy::Alive(AlivePolicy {}),
             })
             .handle(eng, ctx, &ActionActor::System, version, mutate)?;
+
+            // After the seat, which is what hands the holder the notebook's channel: a fact about
+            // the book must not arrive before the book.
+            //
+            // The holder is told "the book in your hands is not yours"; System mirrors it for the
+            // admin overview, exactly as the fake status does. Nobody else — it is a fact about
+            // one person, and no part of what the channel carried, so it never reaches the record.
+            for recipient in [CommandRecipient::Actor(to), CommandRecipient::System] {
+                ctx.push_cmd(
+                    Command::NotebookBorrowingStatus {
+                        notebook_id: self.notebook_id,
+                        borrowed,
+                    },
+                    recipient,
+                    eng.time,
+                );
+            }
         }
 
         Ok(ActionResponse::SetNotebookPossession(

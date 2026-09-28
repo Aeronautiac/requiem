@@ -3,10 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Workspace root. amane-core is the client core; amane-webhost is the browser host that consumes it. core-old is the pre-sandbox core, kept only as a reference to diff against.",
+  "description": "Workspace root. amane-client is the client core; amane-ui is the React surface; amane-web is the browser host.",
   "workspaces": [
-    "amane/core-old",
-    "amane/amane-core",
-    "amane/amane-webhost"
+    "amane/amane-client",
+    "amane/amane-ui",
+    "amane/amane-web"
   ]
 }
