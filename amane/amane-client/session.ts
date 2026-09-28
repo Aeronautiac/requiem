@@ -28,10 +28,12 @@ export class Session {
   // What our own key permits, as the server states it. Null until stated, and null reads as
   // "nothing", which is the safe way round. A fact about this connection, not the game.
   privileges: PrivilegeSet | null = null;
+  // Bumps the client's version. Called after every batch; a surface that changes game state itself
+  // (a view's outbox) calls it too, so what it changed is drawn.
+  readonly changed: () => void;
 
   #connection: GameConnection;
   #observers: Observer[];
-  #changed: () => void;
   // Oldest first. Correlation is positional: the server replies to a connection strictly in the
   // order it submitted, so the n-th reply belongs to the n-th thing sent.
   #waiting: Waiter[] = [];
@@ -49,7 +51,7 @@ export class Session {
     this.key = key;
     this.#connection = connection;
     this.#observers = observers;
-    this.#changed = changed;
+    this.changed = changed;
     this.game = new Game(observers);
     connection.onBatch((batch) => this.#ingest(batch));
   }
@@ -82,7 +84,7 @@ export class Session {
     // A Live terminal may carry the reply to one of this connection's own inputs, settled only
     // after its commands are applied.
     if (live && kind.Live) this.#waiting.shift()?.(kind.Live.response);
-    this.#changed();
+    this.changed();
   }
 
   // Everything this session sends goes through here. Resolves once the reply has been applied,

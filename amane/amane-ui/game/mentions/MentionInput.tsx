@@ -355,7 +355,7 @@ export function MentionInput({
         onClick={refresh}
         onBlur={() => setOpen(false)}
         data-placeholder={placeholder}
-        className={`min-h-9 max-h-48 w-full overflow-y-auto whitespace-pre-wrap break-words border border-edge bg-panel px-2.5 py-2 text-sm text-ink focus:outline-none ${value === "" ? "before:pointer-events-none before:float-left before:h-0 before:text-ink-dim before:content-[attr(data-placeholder)]" : ""} ${disabled ? "opacity-50" : ""}`}
+        className={`min-h-9 max-h-48 w-full overflow-y-auto whitespace-pre-wrap break-words border border-edge bg-panel px-2.5 py-2 text-sm pointer-coarse:text-base text-ink focus:outline-none ${value === "" ? "before:pointer-events-none before:float-left before:h-0 before:text-ink-dim before:content-[attr(data-placeholder)]" : ""} ${disabled ? "opacity-50" : ""}`}
       />
     </div>
   );

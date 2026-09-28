@@ -11,13 +11,23 @@
 
 /* The app is exactly the viewport and never scrolls as a whole: every scrolling region is a
    `Scroll` inside it. `dvh` rather than `vh` so a phone's collapsing address bar doesn't push the
-   bottom bar off screen. */
+   bottom bar off screen. The app itself is pinned over the visible area with any keyboard taken
+   out (`--app-height`, `--app-top`: see useFitVisualViewport), so an open keyboard shortens the
+   app instead of covering it or scrolling it away. */
 html,
 body,
 #app {
   height: 100dvh;
   margin: 0;
   overflow: hidden;
+}
+
+#app {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  height: var(--app-height, 100dvh);
+  transform: translateY(var(--app-top, 0px));
 }
 
 body {

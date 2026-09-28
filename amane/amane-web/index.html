@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- resizes-content: an open keyboard shrinks the page rather than covering it (Chrome, Firefox).
+         maximum-scale=1: iOS Safari stops zooming in on a focused field. It still allows pinch-zoom
+         there, but Chrome on Android honours it and blocks pinch-zoom. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>requiem</title>
   </head>
   <body>

@@ -20,10 +20,12 @@ import type {
   PollOutcome,
   PollParent,
   PollSubject,
+  ProfileKey,
   ProsecutionPhaseView,
   Role,
   TapInOutcome,
 } from "../bindings.ts";
+import type { ExecError } from "../host.ts";
 
 export type WorldEvent = {
   // Iteration 1 is the host starting the game, so this is also how a viewer learns play has begun.
@@ -201,6 +203,19 @@ export type Channel = {
 export type Message = {
   sender_display: ActorDisplay,
   content: string,
+}
+
+// A message this view sent that the server has not answered yet (`error` null), or refused. The
+// surface puts it in the view's outbox itself; the server never said it. See View.outbox.
+export type Outgoing = {
+  channel_id: string,
+  // Null is an admin speaking as nobody.
+  profile_id: ProfileKey | null,
+  sender_display: ActorDisplay,
+  content: string,
+  // Game time when sent, for the row's stamp.
+  timestamp: number,
+  error: ExecError | null,
 }
 
 // Entries that render inside a read-only Info channel. Kept separate from WorldEvent so a directed

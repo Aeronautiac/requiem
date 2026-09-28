@@ -5,8 +5,10 @@ import type { ComponentProps } from "react";
 // No width here. Each field is full width unless the caller's `className` says otherwise: two
 // width utilities on one element don't override each other by order, so the default has to be
 // replaced, not added to.
+//
+// 16px on a touch screen: iOS zooms the whole page in on focusing a field smaller than that.
 const FIELD =
-  "min-w-0 border border-edge bg-panel px-3 text-sm text-ink placeholder:text-ink-dim focus:outline-none focus:ring-1 focus:ring-edge disabled:opacity-50";
+  "min-w-0 border border-edge bg-panel px-3 text-sm pointer-coarse:text-base text-ink placeholder:text-ink-dim focus:outline-none focus:ring-1 focus:ring-edge disabled:opacity-50";
 
 export function Input({ className = "w-full", ...rest }: ComponentProps<"input">) {
   return <input className={`h-9 ${FIELD} ${className}`} {...rest} />;

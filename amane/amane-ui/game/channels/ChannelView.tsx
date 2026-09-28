@@ -1,13 +1,15 @@
 // The main column: header, optional top-panel strip, the virtualized event list, and the composer.
 // News is a selection with no backing channel of its own — world events render regardless of
 // whether the News channel is held, since they live on the view rather than on the channel.
-import type { ProfileKey } from "amane-client/bindings.ts";
+import type { ChannelProfileView } from "amane-client/bindings.ts";
 import { slotKeyFromString, slotKeyToString } from "amane-client/bindings.ts";
-import type { GameEvent } from "amane-client/game/types.ts";
+import type { GameEvent, Outgoing } from "amane-client/game/types.ts";
+import type { View } from "amane-client/game/view.ts";
 import { PERM_SEND, ownPerms } from "amane-client/game/perms.ts";
 import { feedEvents } from "amane-client/queries/feed.ts";
 import { viewActor } from "amane-client/queries/session.ts";
-import { channelLabel, displayKey, mentionsViewer, refFromDisplay, refLabel } from "amane-client/text.ts";
+import type { Session } from "amane-client/session.ts";
+import { channelLabel, displayKey, execErrorText, mentionsViewer, refFromDisplay, refLabel } from "amane-client/text.ts";
 import { useEffect, useRef, useState } from "react";
 import type { VirtuosoHandle } from "react-virtuoso";
 import { Virtuoso } from "react-virtuoso";
@@ -31,6 +33,27 @@ function isGroupedMessage(prev: GameEvent | undefined, curr: GameEvent): boolean
   if (!prev || !("Message" in prev.data) || !("Message" in curr.data)) return false;
   if (displayKey(prev.data.Message.sender_display) !== displayKey(curr.data.Message.sender_display)) return false;
   return curr.timestamp - prev.timestamp <= GROUP_WINDOW_MS;
+}
+
+// A row of the list: something the view was told, or one of its own unconfirmed sends.
+type Row = { event: GameEvent; outgoing?: Outgoing };
+
+// Sends an outbox entry, or resends a refused one. Outlives the component: a send settles even
+// after the channel is switched away from, so it works on the view and session it was handed.
+async function deliver(session: Session, view: View, entry: Outgoing) {
+  entry.error = null;
+  if (!view.outbox.includes(entry)) view.outbox.push(entry);
+  session.changed();
+  const reply = await session.submit_action({
+    actor: viewActor(view.own_key),
+    timestamp: Date.now(),
+    payload: {
+      SendMessage: { channel_id: slotKeyFromString(entry.channel_id), profile_id: entry.profile_id, content: entry.content },
+    },
+  });
+  if (reply.ok) view.outbox = view.outbox.filter((e) => e !== entry);
+  else entry.error = reply.error;
+  session.changed();
 }
 
 export function ChannelView() {
@@ -104,21 +127,41 @@ export function ChannelView() {
   const now = view.game_time_now();
   const events = ui.selected ? feedEvents(view, ui.selected, now) : [];
 
-  function senderProfile(): ProfileKey | null {
+  // The messages this view sent here that the server hasn't confirmed, drawn after everything it
+  // has, as rows shaped like the real thing so grouping treats them the same.
+  const rows: Row[] = [
+    ...events.map((event) => ({ event })),
+    ...view.outbox
+      .filter((entry) => entry.channel_id === backing_channel_id)
+      .map((entry) => ({
+        event: { timestamp: entry.timestamp, data: { Message: { content: entry.content, sender_display: entry.sender_display } } },
+        outgoing: entry,
+      })),
+  ];
+
+  function senderProfile(): ChannelProfileView | null {
     if (ui.viewer === "System") return null;
-    return sendable_profiles.find((p) => slotKeyToString(p.profile_id) === effective_profile_key)?.profile_id ?? null;
+    return sendable_profiles.find((p) => slotKeyToString(p.profile_id) === effective_profile_key) ?? null;
   }
 
-  async function sendMessage() {
+  // Shows at once, dim, and clears the box without waiting for the server.
+  function sendMessage() {
     if (!backing_channel_id || !message_content.trim()) return;
-    await session.submit_action({
-      actor: viewActor(ui.viewer),
-      timestamp: Date.now(),
-      payload: {
-        SendMessage: { channel_id: slotKeyFromString(backing_channel_id), profile_id: senderProfile(), content: message_content.trim() },
-      },
+    const profile = senderProfile();
+    void deliver(session, view, {
+      channel_id: backing_channel_id,
+      profile_id: profile?.profile_id ?? null,
+      sender_display: profile?.display ?? "System",
+      content: message_content.trim(),
+      timestamp: view.game_time_now(),
+      error: null,
     });
     setMessageContent("");
+  }
+
+  function dismiss(entry: Outgoing) {
+    view.outbox = view.outbox.filter((e) => e !== entry);
+    session.changed();
   }
 
   async function toggleNotebookFake() {
@@ -199,22 +242,37 @@ export function ChannelView() {
           <Virtuoso
             ref={virtuoso}
             className="min-h-0 flex-1"
-            data={events}
+            data={rows}
             followOutput="auto"
-            computeItemKey={(index, event) => `${index}-${event.timestamp}`}
-            itemContent={(index, event) => {
+            computeItemKey={(index, row) => `${row.outgoing ? "out" : index}-${row.event.timestamp}`}
+            itemContent={(index, { event, outgoing }) => {
               if ("Message" in event.data) {
                 const msg = event.data.Message;
+                const next = rows[index + 1]?.event;
                 return (
-                  <Message
-                    senderDisplay={msg.sender_display}
-                    content={msg.content}
-                    view={view}
-                    timestamp={event.timestamp}
-                    grouped={isGroupedMessage(events[index - 1], event)}
-                    last={!events[index + 1] || !isGroupedMessage(event, events[index + 1])}
-                    mentioned={mentionsViewer(view, msg.content)}
-                  />
+                  <>
+                    <Message
+                      senderDisplay={msg.sender_display}
+                      content={msg.content}
+                      view={view}
+                      timestamp={event.timestamp}
+                      grouped={isGroupedMessage(rows[index - 1]?.event, event)}
+                      last={!next || !isGroupedMessage(event, next)}
+                      mentioned={mentionsViewer(view, msg.content)}
+                      pending={outgoing !== undefined}
+                    />
+                    {outgoing?.error && (
+                      <div className="flex flex-wrap items-center gap-2 px-4 pb-1.5 text-sm text-danger-text">
+                        <span>Not sent: {execErrorText(outgoing.error)}</span>
+                        <Button variant="ghost" size="sm" onClick={() => void deliver(session, view, outgoing)}>
+                          Retry
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => dismiss(outgoing)}>
+                          Dismiss
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 );
               }
               return <EventAnnouncement event={event} view={view} timestamp={event.timestamp} />;

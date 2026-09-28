@@ -12,6 +12,9 @@
 //
 // Plain data. Handlers write it, queries and surfaces read it, and nothing here notifies anyone:
 // the session bumps the client's version once per batch.
+//
+// One exception to "only what it was delivered": the outbox, the surface's own copy of messages
+// this actor sent that the server hasn't answered. It is dropped with the view on a resync.
 import type { PrivilegeSet, ProsecutionSide, Role, Statuses } from "../bindings.ts";
 import type {
   AbilityView,
@@ -22,6 +25,7 @@ import type {
   InfoEvent,
   Notebook,
   Org,
+  Outgoing,
   PassiveView,
   Player,
   PollData,
@@ -88,6 +92,11 @@ export class View {
   owned_gcs = new Set<string>();
   // Personal: the rest of the org is never told who is an OG.
   og_orgs = new Set<string>();
+  // Written by the surface, never a handler, oldest first. Retiring a sent message needs no
+  // matching: a reply settles only after the commands it caused are applied, so when a send
+  // succeeds the real message is already in the channel. A refused one stays, with its error,
+  // until retried or dismissed.
+  outbox: Outgoing[] = [];
 
   // ---- System only ----
   // The whole key ledger, replaced wholesale on every delivery.

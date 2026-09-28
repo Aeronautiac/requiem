@@ -23,6 +23,46 @@ export function useSession(): Session {
   return session;
 }
 
+// Whether a media query matches, followed live. For layout that differs in STRUCTURE by screen,
+// where CSS alone would have to mount both versions (and both copies' dialogs and state).
+export function useMedia(query: string): boolean {
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const list = matchMedia(query);
+      list.addEventListener("change", listener);
+      return () => list.removeEventListener("change", listener);
+    },
+    [query],
+  );
+  return useSyncExternalStore(subscribe, () => matchMedia(query).matches);
+}
+
+// Pin the app over the part of the screen actually visible: its height and where it starts, as
+// `--app-height` and `--app-top` (read in app.css). When a phone keyboard opens, iOS both shrinks
+// the visible area and slides it down the page to reveal the focused box, whatever the viewport
+// meta asks, and nothing undoes the slide. So the app follows it instead: the composer sits on the
+// keyboard and nothing above it moves. A pinch-zoom moves the visible area too; the app is left
+// alone while zoomed, or zooming in would chase itself.
+export function useFitVisualViewport() {
+  useEffect(() => {
+    const visual = window.visualViewport;
+    if (!visual) return;
+    const root = document.documentElement.style;
+    const fit = () => {
+      if (visual.scale > 1.01) return;
+      root.setProperty("--app-height", `${visual.height}px`);
+      root.setProperty("--app-top", `${visual.offsetTop}px`);
+    };
+    fit();
+    visual.addEventListener("resize", fit);
+    visual.addEventListener("scroll", fit);
+    return () => {
+      visual.removeEventListener("resize", fit);
+      visual.removeEventListener("scroll", fit);
+    };
+  }, []);
+}
+
 // The current time, re-read every `ms`. For what moves with the clock rather than with state: the
 // game clock, and death beats whose moment arrives with nothing new delivered.
 export function useNow(ms: number): number {

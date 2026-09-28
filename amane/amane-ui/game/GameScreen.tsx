@@ -9,11 +9,12 @@ import { useEffect, useRef, useState } from "react";
 import type { Delivered } from "amane-client/game/game.ts";
 import { administers, viewers } from "amane-client/queries/session.ts";
 import { formatTime, playerLabel } from "amane-client/text.ts";
-import { useClient, useNow, useSession } from "../hooks.ts";
+import { useClient, useMedia, useNow, useSession } from "../hooks.ts";
 import { Button } from "../kit/Button.tsx";
 import { Drawer } from "../kit/Drawer.tsx";
 import { ErrorBoundary } from "../kit/ErrorBoundary.tsx";
 import { Select } from "../kit/Input.tsx";
+import { Modal } from "../kit/Modal.tsx";
 import { ResizableRail } from "../kit/ResizableRail.tsx";
 import { notificationObserver } from "../notifications.ts";
 import { AbilityMenu } from "./abilities/AbilityMenu.tsx";
@@ -141,41 +142,81 @@ export function GameScreen() {
   );
 }
 
-// Wraps rather than scrolls sideways, so a phone gets two rows instead of a clipped bar.
+// On a wide screen, everything in one bar. On a phone, one row of what is used mid-play (abilities,
+// passives, your own statuses, the clock), with the rest behind "More": a bar holding all of it
+// would wrap into rows and eat the screen.
 function BottomBar() {
   const client = useClient();
   const session = useSession();
   const ui = useGameUi();
+  const wide = useMedia("(min-width: 64rem)"); // Tailwind's `lg`, where the rails show
+  const [more, setMore] = useState(false);
+
+  const admin = administers(session) && (
+    <ErrorBoundary name="Admin">
+      <AdminPanel />
+    </ErrorBoundary>
+  );
+  const settings = (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        title={ui.notifications ? "Notifications on: click to mute popups" : "Notifications muted"}
+        className={ui.notifications ? "" : "text-danger-text line-through"}
+        onClick={() => ui.setNotifications(!ui.notifications)}
+      >
+        {ui.notifications ? "Notifications" : "Muted"}
+      </Button>
+      <Button variant="ghost" size="sm" title="Disconnect and return to the menu" onClick={() => client.leave()}>
+        Menu
+      </Button>
+    </>
+  );
+
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-edge px-3 py-1.5">
-      <ViewSelect />
+    <div className="flex shrink-0 items-center gap-2 border-t border-edge px-3 py-1.5 lg:flex-wrap">
+      {wide && <ViewSelect />}
       <ErrorBoundary name="Abilities">
         <AbilityMenu />
       </ErrorBoundary>
       <ErrorBoundary name="Passives">
         <PassivesPanel />
       </ErrorBoundary>
-      {administers(session) && (
-        <ErrorBoundary name="Admin">
-          <AdminPanel />
-        </ErrorBoundary>
-      )}
-      <StatusBadges />
-      <div className="ml-auto flex items-center gap-2">
-        <GameClock />
-        <Button
-          variant="ghost"
-          size="sm"
-          title={ui.notifications ? "Notifications on: click to mute popups" : "Notifications muted"}
-          className={ui.notifications ? "" : "text-danger-text line-through"}
-          onClick={() => ui.setNotifications(!ui.notifications)}
-        >
-          {ui.notifications ? "Notifications" : "Muted"}
-        </Button>
-        <Button variant="ghost" size="sm" title="Disconnect and return to the menu" onClick={() => client.leave()}>
-          Menu
-        </Button>
+      {wide && admin}
+      <div className="min-w-0">
+        <StatusBadges />
       </div>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <GameClock />
+        {wide ? (
+          settings
+        ) : (
+          <Button variant="ghost" size="sm" onClick={() => setMore(true)}>
+            More
+          </Button>
+        )}
+      </div>
+
+      {!wide && (
+        <Modal open={more} onClose={() => setMore(false)} title="Game">
+          <div className="flex flex-col gap-4">
+            {viewers(session).length > 1 && (
+              <label className="flex flex-col gap-1 text-xs text-ink-dim">
+                Viewing as
+                <ViewSelect />
+              </label>
+            )}
+            {admin && (
+              <div className="flex flex-col gap-1 text-xs text-ink-dim">
+                Admin
+                {admin}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">{settings}</div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

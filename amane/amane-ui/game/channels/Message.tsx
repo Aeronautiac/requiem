@@ -20,6 +20,7 @@ export function Message({
   grouped = false,
   mentioned = false,
   last = false,
+  pending = false,
 }: {
   senderDisplay: ActorDisplay;
   content: string;
@@ -33,6 +34,8 @@ export function Message({
   // the tail of a chain carries the block's bottom spacing, so a header isn't shoved away from its
   // own continuation lines.
   last?: boolean;
+  // Sent from here and not (yet) in the game: drawn dim until the server confirms it.
+  pending?: boolean;
 }) {
   // The sender's public status, shown beside their name in the header. Only a player has one.
   const senderPlayer = senderDisplay !== "Mysterious" && senderDisplay !== "System" && "Raw" in senderDisplay
@@ -66,7 +69,7 @@ export function Message({
         </div>
       )}
       <div className="flex items-baseline gap-2">
-        <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm text-ink">
+        <div className={`min-w-0 flex-1 whitespace-pre-wrap break-words text-sm ${pending ? "text-ink-dim" : "text-ink"}`}>
           <MentionText content={content} view={view} />
         </div>
         {grouped && (

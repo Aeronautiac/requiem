@@ -1,11 +1,12 @@
 // The root of the React surface. A host builds the Client and mounts this with it.
 import type { Client } from "amane-client/client.ts";
-import { ClientContext, useClient } from "./hooks.ts";
+import { ClientContext, useClient, useFitVisualViewport } from "./hooks.ts";
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
 import { GameScreen } from "./game/GameScreen.tsx";
 import { Platform } from "./platform/Platform.tsx";
 
 export function App({ client }: { client: Client }) {
+  useFitVisualViewport();
   return (
     <ClientContext.Provider value={client}>
       <Root />
