@@ -143,8 +143,10 @@ export function TimelineViewer() {
         Timeline
       </Button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Action Timeline" width="42rem">
-        <div className="flex h-full min-h-0 flex-col gap-2">
+      <Modal open={open} onClose={() => setOpen(false)} title="Action Timeline" width="42rem" scroll="content">
+        {/* A definite height, not h-full: Virtuoso has no height of its own (it renders only the rows
+            that fit its box), so inside a content-sized modal the list would collapse to nothing. */}
+        <div className="flex h-[70dvh] min-h-0 flex-col gap-2">
           <p className="shrink-0 text-sm text-ink-dim">
             Every action requested by a connection, and how it came out — newest at the bottom, like a chat.
             Server-initiated work (ticks, time skips) is not shown.
