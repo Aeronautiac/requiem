@@ -209,7 +209,7 @@ pub fn default_org_config() -> OrganizationConfigMap {
                     },
                     require_roles: vec![],
                     require_members: 0,
-                    usage_policies: OrgAbilityPolicies::empty(),
+                    usage_policies: OrgAbilityPolicy::RequireLeader.into(),
                 },
                 OrgConfigAbility {
                     identifier: AbilityIdentifier {
