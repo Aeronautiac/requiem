@@ -1,13 +1,13 @@
 use lawliet_types::channel::{ContactPolicy, PermUpdatePolicy};
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::{
         Action, ActionActor, ActionError, ActionInterface, ActionResponse, CreateAndGiveProfile,
         SetGroupchatOwner,
     },
     actor::{ActorDisplay, modifier::Modifier},
+    common::Version,
     config::ability::AbilityName,
     helpers::{actor_id, get_actor, get_gc, get_gc_mut, get_player_mut},
 };

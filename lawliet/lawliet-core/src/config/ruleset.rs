@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 pub struct Ruleset {
     game_continues_after_l_death: bool,
     kira_requires_kills: bool,

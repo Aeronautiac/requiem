@@ -29,16 +29,19 @@ mod contact_log_tests {
         contactor: ActorKey,
         contacted: ActorKey,
     ) -> ActionContext {
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreateLounge(crate::action::CreateLounge {
-                variant: LoungeVariant::Basic {
-                    contactor_id: contactor,
-                    contacted_id: contacted,
-                },
-            }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateLounge(crate::action::CreateLounge {
+                    variant: LoungeVariant::Basic {
+                        contactor_id: contactor,
+                        contacted_id: contacted,
+                    },
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .1
     }
@@ -104,19 +107,22 @@ mod contact_log_tests {
         let b = add_player(&mut eng, 0, Role::Civilian, "b");
 
         let ctx = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 1,
-                payload: Action::CreateLounge(crate::action::CreateLounge {
-                    variant: LoungeVariant::Anonymous {
-                        contactor_id: a,
-                        contacted_id: b,
-                        role_display: lawliet_types::lounge::AnonymousLoungeRoleDisplay::Static(
-                            Role::Kira,
-                        ),
-                    },
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 1,
+                    payload: Action::CreateLounge(crate::action::CreateLounge {
+                        variant: LoungeVariant::Anonymous {
+                            contactor_id: a,
+                            contacted_id: b,
+                            role_display: lawliet_types::lounge::AnonymousLoungeRoleDisplay::Static(
+                                Role::Kira,
+                            ),
+                        },
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap()
             .1;
 
@@ -229,7 +235,13 @@ mod contact_log_tests {
 
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Viewport(full)
-                && matches!(&p.cmd, Command::AddContactLog { kind: ContactLogType::Full, .. })
+                && matches!(
+                    &p.cmd,
+                    Command::AddContactLog {
+                        kind: ContactLogType::Full,
+                        ..
+                    }
+                )
         }));
     }
 
@@ -252,10 +264,7 @@ mod contact_log_tests {
             p.recipient == CommandRecipient::Viewport(full)
                 && matches!(&p.cmd, Command::AddContactLog { .. })
         }));
-        assert!(
-            !members(&eng, full).contains(&latecomer),
-            "no route in yet"
-        );
+        assert!(!members(&eng, full).contains(&latecomer), "no route in yet");
 
         // Only now does the latecomer gain a Full contact-log passive.
         quick_passive(

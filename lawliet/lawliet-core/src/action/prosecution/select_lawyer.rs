@@ -85,7 +85,12 @@ impl ActionInterface for SelectLawyer {
             // and a Map emitted afterwards would arrive behind history they already hold. The
             // frontend also indexes `channels` directly on AddMessage, so an unmapped channel is
             // fatal there.
-            map_channel(eng, ctx, channel_id, ChannelKind::Lawyer(self.prosecution_id));
+            map_channel(
+                eng,
+                ctx,
+                channel_id,
+                ChannelKind::Lawyer(self.prosecution_id),
+            );
 
             // Both sides, shown to each other as themselves — there is no anonymity between a
             // defendant and their own counsel. A contact line like any other, which is what keeps

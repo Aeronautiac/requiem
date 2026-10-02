@@ -4,9 +4,9 @@
 use lawliet_types::ability::{AbilityName, ForceInvite};
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, AddToOrg},
+    common::Version,
     helpers::{actor_id, get_player},
 };
 

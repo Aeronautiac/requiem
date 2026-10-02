@@ -589,4 +589,3 @@ fn keys_from_json(value: &serde_json::Value) -> HashMap<Key, Privileges> {
         })
         .collect()
 }
-

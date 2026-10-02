@@ -12,9 +12,9 @@ use lawliet_types::{
 };
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::ActionInterface,
+    common::Version,
     helpers::{actor_id, get_player},
 };
 
@@ -109,14 +109,17 @@ mod tests {
     // irrelevant here, only that it exists to relay through.
     fn bug_on(eng: &mut Engine, time: crate::Time, target: ActorKey) -> ViewportKey {
         let data = eng
-            .execute(crate::action::ActionRequest {
-                actor: crate::action::ActionActor::System,
-                timestamp: time,
-                payload: crate::action::Action::CreateBug(crate::action::CreateBug {
-                    target_id: target,
-                    source: crate::bug::BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                crate::action::ActionRequest {
+                    actor: crate::action::ActionActor::System,
+                    timestamp: time,
+                    payload: crate::action::Action::CreateBug(crate::action::CreateBug {
+                        target_id: target,
+                        source: crate::bug::BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap()
             .0;
         let crate::action::ActionResponse::CreateBug(response) = data else {
@@ -131,16 +134,19 @@ mod tests {
         contactor: ActorKey,
         contacted: ActorKey,
     ) -> ActionContext {
-        eng.execute(crate::action::ActionRequest {
-            actor: crate::action::ActionActor::System,
-            timestamp: time,
-            payload: crate::action::Action::CreateLounge(crate::action::CreateLounge {
-                variant: crate::lounge::LoungeVariant::Basic {
-                    contactor_id: contactor,
-                    contacted_id: contacted,
-                },
-            }),
-        }, Engine::version())
+        eng.execute(
+            crate::action::ActionRequest {
+                actor: crate::action::ActionActor::System,
+                timestamp: time,
+                payload: crate::action::Action::CreateLounge(crate::action::CreateLounge {
+                    variant: crate::lounge::LoungeVariant::Basic {
+                        contactor_id: contactor,
+                        contacted_id: contacted,
+                    },
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .1
     }

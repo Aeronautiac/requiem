@@ -160,6 +160,8 @@ impl GameClock {
     }
 }
 
+type CreationPackResult = Result<(GameId, Vec<ExecOutcome>), InitError>;
+
 struct Game {
     // identity / routing
     game_id: GameId, // sentinel 0 until a fresh game writes its durable row
@@ -179,7 +181,7 @@ struct Game {
     creator: Option<AccountId>,
     // the create_game handshake (Fresh only): reports (id, the init responses) on success, or an
     // InitError if boot never came up.
-    creation_reply: Option<oneshot::Sender<Result<(GameId, Vec<ExecOutcome>), InitError>>>,
+    creation_reply: Option<oneshot::Sender<CreationPackResult>>,
     // the responses the runtime produced for the creation pack's inputs during the first boot.
     creation_responses: Vec<ExecOutcome>,
 
@@ -237,47 +239,53 @@ impl Game {
         // stream is the creation pack the handler supplied (the admin-key minting, etc). the engine
         // version is not known until boot queries the runtime, so a fresh stream is kept raw here
         // and stamped into `accepted` by boot() once the version is learned.
-        let (game_id, registered, creator, accepted, fresh_inputs, clock, keys_cache, creation_reply) =
-            match start {
-                GameStart::Fresh {
+        let (
+            game_id,
+            registered,
+            creator,
+            accepted,
+            fresh_inputs,
+            clock,
+            keys_cache,
+            creation_reply,
+        ) = match start {
+            GameStart::Fresh {
+                creator,
+                creation_pack,
+                creation_reply,
+            } => {
+                let init = ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::InitializeEngine(lawliet_types::action::InitializeEngine {
+                        seed: crate::generate_seed(),
+                    }),
+                };
+                let mut fresh = vec![ServerInput::Action(init)];
+                fresh.extend(creation_pack);
+                (
+                    0,
+                    false,
                     creator,
-                    creation_pack,
-                    creation_reply,
-                } => {
-                    let init = ActionRequest {
-                        actor: ActionActor::System,
-                        timestamp: 0,
-                        payload: Action::InitializeEngine(
-                            lawliet_types::action::InitializeEngine {
-                                seed: crate::generate_seed(),
-                            },
-                        ),
-                    };
-                    let mut fresh = vec![ServerInput::Action(init)];
-                    fresh.extend(creation_pack);
-                    (
-                        0,
-                        false,
-                        creator,
-                        Vec::new(),
-                        Some(fresh),
-                        GameClock::new(),
-                        HashMap::new(),
-                        Some(creation_reply),
-                    )
-                }
-                // the log, keys and clock are placeholders until run() loads them.
-                GameStart::Resumed { game_id } => (
-                    game_id,
-                    true,
-                    None,
                     Vec::new(),
-                    None,
+                    Some(fresh),
                     GameClock::new(),
                     HashMap::new(),
-                    None,
-                ),
-            };
+                    Some(creation_reply),
+                )
+            }
+            // the log, keys and clock are placeholders until run() loads them.
+            GameStart::Resumed { game_id } => (
+                game_id,
+                true,
+                None,
+                Vec::new(),
+                None,
+                GameClock::new(),
+                HashMap::new(),
+                None,
+            ),
+        };
 
         Self {
             game_id,
@@ -481,9 +489,7 @@ impl Game {
                 None => ok = false,
             }
 
-            if ok
-                && let Some(fresh) = self.fresh_inputs.take()
-            {
+            if ok && let Some(fresh) = self.fresh_inputs.take() {
                 self.accepted = fresh
                     .into_iter()
                     .map(|input| VersionedInput {
@@ -1148,7 +1154,10 @@ impl Game {
             Ok(Some(record)) => record,
             Ok(None) => return false,
             Err(e) => {
-                eprintln!("failed to load game {} -- staying asleep: {e}", self.game_id);
+                eprintln!(
+                    "failed to load game {} -- staying asleep: {e}",
+                    self.game_id
+                );
                 return false;
             }
         };

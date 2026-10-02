@@ -36,9 +36,7 @@ use crate::{
     game::{GameCommand, GameInput, GameStart, InputEnvelope, game, minted_key, wake},
     state::{ConnHandle, GameHandle, GameId, Settings, WrappedServerState, lock_state},
     store::{SignupRejected, Store},
-    wire::{
-        AdminControl, Batch, ServerInput, SimControl, SimControlData,
-    },
+    wire::{AdminControl, Batch, ServerInput, SimControl, SimControlData},
 };
 
 pub fn req(key: &str) -> Result<String, String> {
@@ -206,7 +204,10 @@ async fn session_account(
     };
     let (store, ttl) = {
         let server_state = lock_state(state);
-        (server_state.store.clone(), server_state.settings.session_ttl)
+        (
+            server_state.store.clone(),
+            server_state.settings.session_ttl,
+        )
     };
     store
         .session_account(&session_token_hash(token), ttl)
@@ -882,10 +883,7 @@ struct CreationReservation {
 }
 
 impl CreationReservation {
-    fn take(
-        state: &WrappedServerState,
-        creator: Option<AccountId>,
-    ) -> Result<Self, ServerError> {
+    fn take(state: &WrappedServerState, creator: Option<AccountId>) -> Result<Self, ServerError> {
         let mut server_state = lock_state(state);
         if let Some(creator) = creator
             && server_state.creators.contains(&creator)

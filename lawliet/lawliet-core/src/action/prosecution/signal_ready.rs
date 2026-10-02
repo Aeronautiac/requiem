@@ -118,40 +118,31 @@ impl ActionInterface for SignalReady {
         //
         // Debate is matched as a nested pattern so a trial in any other subphase falls through to
         // `_` and errors — it is not a signallable phase.
-        let prosecutor_signalled;
-        let defense_signalled;
-        let timer;
         // Some only in a debate, carrying the trial's channel — also the only phase where
         // signalling shortens a clock.
-        let debate_channel;
-
-        match &prosecution.phase {
-            ProsecutionPhase::Custody {
-                prosecutor_ready,
-                defense_ready,
-                timer: phase_timer,
-            } => {
-                prosecutor_signalled = *prosecutor_ready;
-                defense_signalled = *defense_ready;
-                timer = *phase_timer;
-                debate_channel = None;
-            }
-            ProsecutionPhase::Trial {
-                phase:
-                    TrialPhase::Debate {
-                        prosecutor_done,
-                        defense_done,
-                    },
-                channel_id,
-                timer: phase_timer,
-            } => {
-                prosecutor_signalled = *prosecutor_done;
-                defense_signalled = *defense_done;
-                timer = *phase_timer;
-                debate_channel = Some(*channel_id);
-            }
-            _ => return Err(ActionError::IncompatiblePhase),
-        }
+        let (prosecutor_signalled, defense_signalled, timer, debate_channel) =
+            match &prosecution.phase {
+                ProsecutionPhase::Custody {
+                    prosecutor_ready,
+                    defense_ready,
+                    timer: phase_timer,
+                } => (*prosecutor_ready, *defense_ready, *phase_timer, None),
+                ProsecutionPhase::Trial {
+                    phase:
+                        TrialPhase::Debate {
+                            prosecutor_done,
+                            defense_done,
+                        },
+                    channel_id,
+                    timer: phase_timer,
+                } => (
+                    *prosecutor_done,
+                    *defense_done,
+                    *phase_timer,
+                    Some(*channel_id),
+                ),
+                _ => return Err(ActionError::IncompatiblePhase),
+            };
 
         if (is_prosecutor && prosecutor_signalled) || (is_defendant && defense_signalled) {
             return Err(ActionError::AlreadySignalled);

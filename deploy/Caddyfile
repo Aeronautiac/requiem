@@ -1,0 +1,3 @@
+api.requiem-dn.dev {
+	reverse_proxy localhost:39173
+}

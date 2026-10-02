@@ -20,10 +20,10 @@ use lawliet_types::{
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, DestroyPassive},
     common::PassiveKey,
+    common::Version,
     config::role::Role,
     helpers::{actor_id, cmd_channel, get_actor, get_lounge, get_passive, get_player},
     lounge::LoungeVariant,

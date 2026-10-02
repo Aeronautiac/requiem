@@ -36,10 +36,8 @@ impl ActionInterface for SetNotebookPossession {
         let borrowed = notebook.borrowed.is_some();
 
         if let Some(from) = self.from {
-            if mutate {
-                if let Ok(a) = get_actor_mut(eng, from) {
-                    a.remove_notebook(self.notebook_id);
-                }
+            if mutate && let Ok(a) = get_actor_mut(eng, from) {
+                a.remove_notebook(self.notebook_id);
             }
             Action::RemoveFromChannel(RemoveFromChannel {
                 channel_id,

@@ -42,16 +42,19 @@ mod tests {
         duration: Option<Time>,
     ) -> (KidnappingKey, ActionContext) {
         let (data, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: time,
-                payload: Action::CreateKidnapping(CreateKidnapping {
-                    victim_id,
-                    kidnapping_type: KidnappingType::Anonymous,
-                    source: KidnappingSource::None,
-                    duration,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: time,
+                    payload: Action::CreateKidnapping(CreateKidnapping {
+                        victim_id,
+                        kidnapping_type: KidnappingType::Anonymous,
+                        source: KidnappingSource::None,
+                        duration,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let crate::action::ActionResponse::CreateKidnapping(response) = data else {
             unreachable!()
@@ -301,14 +304,17 @@ mod tests {
             KidnappingSource::None,
         );
 
-        let result = eng.execute(ActionRequest {
-            actor: ActionActor::Player(other),
-            timestamp: 1,
-            payload: Action::ReleaseKidnapping(ReleaseKidnapping {
-                kidnapping_id: kid_id,
-                forced: false,
-            }),
-        }, Engine::version());
+        let result = eng.execute(
+            ActionRequest {
+                actor: ActionActor::Player(other),
+                timestamp: 1,
+                payload: Action::ReleaseKidnapping(ReleaseKidnapping {
+                    kidnapping_id: kid_id,
+                    forced: false,
+                }),
+            },
+            Engine::version(),
+        );
         assert!(matches!(
             result,
             Err((ActionError::InsufficientPermissions, _))
@@ -342,14 +348,17 @@ mod tests {
             KidnappingSource::Ability(ab),
         );
 
-        let result = eng.execute(ActionRequest {
-            actor: ActionActor::Player(owner),
-            timestamp: 1,
-            payload: Action::ReleaseKidnapping(ReleaseKidnapping {
-                kidnapping_id: kid_id,
-                forced: false,
-            }),
-        }, Engine::version());
+        let result = eng.execute(
+            ActionRequest {
+                actor: ActionActor::Player(owner),
+                timestamp: 1,
+                payload: Action::ReleaseKidnapping(ReleaseKidnapping {
+                    kidnapping_id: kid_id,
+                    forced: false,
+                }),
+            },
+            Engine::version(),
+        );
         assert!(result.is_ok());
         assert!(get_kidnapping(&eng, kid_id).is_err());
     }
@@ -361,18 +370,21 @@ mod tests {
         let victim = add_player(&mut eng, 0, Role::Civilian, "victim");
         quick_kill(&mut eng, 0, false, false, false, victim);
 
-        let result = eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 1,
-            payload: Action::CreateKidnapping(
-                crate::action::kidnapping::create_kidnapping::CreateKidnapping {
-                    victim_id: victim,
-                    kidnapping_type: KidnappingType::Anonymous,
-                    source: KidnappingSource::None,
-                    duration: None,
-                },
-            ),
-        }, Engine::version());
+        let result = eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 1,
+                payload: Action::CreateKidnapping(
+                    crate::action::kidnapping::create_kidnapping::CreateKidnapping {
+                        victim_id: victim,
+                        kidnapping_type: KidnappingType::Anonymous,
+                        source: KidnappingSource::None,
+                        duration: None,
+                    },
+                ),
+            },
+            Engine::version(),
+        );
         assert!(matches!(result, Err((ActionError::UserNotPresent, _))));
     }
 
@@ -389,18 +401,21 @@ mod tests {
             KidnappingSource::None,
         );
 
-        let result = eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 1,
-            payload: Action::CreateKidnapping(
-                crate::action::kidnapping::create_kidnapping::CreateKidnapping {
-                    victim_id: victim,
-                    kidnapping_type: KidnappingType::Anonymous,
-                    source: KidnappingSource::None,
-                    duration: None,
-                },
-            ),
-        }, Engine::version());
+        let result = eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 1,
+                payload: Action::CreateKidnapping(
+                    crate::action::kidnapping::create_kidnapping::CreateKidnapping {
+                        victim_id: victim,
+                        kidnapping_type: KidnappingType::Anonymous,
+                        source: KidnappingSource::None,
+                        duration: None,
+                    },
+                ),
+            },
+            Engine::version(),
+        );
         assert!(matches!(result, Err((ActionError::UserNotPresent, _))));
     }
 
@@ -411,18 +426,21 @@ mod tests {
         let victim = add_player(&mut eng, 0, Role::Civilian, "victim");
         add_state(&mut eng, 0, victim, State::Ipp);
 
-        let result = eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 1,
-            payload: Action::CreateKidnapping(
-                crate::action::kidnapping::create_kidnapping::CreateKidnapping {
-                    victim_id: victim,
-                    kidnapping_type: KidnappingType::Anonymous,
-                    source: KidnappingSource::None,
-                    duration: None,
-                },
-            ),
-        }, Engine::version());
+        let result = eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 1,
+                payload: Action::CreateKidnapping(
+                    crate::action::kidnapping::create_kidnapping::CreateKidnapping {
+                        victim_id: victim,
+                        kidnapping_type: KidnappingType::Anonymous,
+                        source: KidnappingSource::None,
+                        duration: None,
+                    },
+                ),
+            },
+            Engine::version(),
+        );
         assert!(matches!(
             result,
             Err((ActionError::ActorHasStrengthenedPresence, _))

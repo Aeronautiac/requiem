@@ -349,15 +349,18 @@ mod notebook_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateAndGiveNotebook(CreateAndGiveNotebook {
-                    fake: true,
-                    actor_id: p1,
-                    volatile: false,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateAndGiveNotebook(CreateAndGiveNotebook {
+                        fake: true,
+                        actor_id: p1,
+                        volatile: false,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         let recipients = fake_status(&ctx);
@@ -379,16 +382,19 @@ mod notebook_tests {
 
         // p2 writes p1's true name in their own real book: p1 dies and the fake book falls to p2.
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::Player(p2),
-                timestamp: 0,
-                payload: Action::WriteName(WriteName {
-                    true_name: "p1".into(),
-                    death_message: None,
-                    notebook_id: p2_book,
-                    delay: 0,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::Player(p2),
+                    timestamp: 0,
+                    payload: Action::WriteName(WriteName {
+                        true_name: "p1".into(),
+                        death_message: None,
+                        notebook_id: p2_book,
+                        delay: 0,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         assert!(get_actor(&eng, p1).unwrap().has_state(State::Dead));
@@ -405,14 +411,17 @@ mod notebook_tests {
         let book_id = quick_notebook(&mut eng, 0, p1, true);
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::Admin,
-                timestamp: 0,
-                payload: Action::SetNotebookFake(SetNotebookFake {
-                    notebook_id: book_id,
-                    fake: false,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::Admin,
+                    timestamp: 0,
+                    payload: Action::SetNotebookFake(SetNotebookFake {
+                        notebook_id: book_id,
+                        fake: false,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         let recipients = fake_status(&ctx);

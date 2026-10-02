@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    common::{ActorKey, LoungeKey, ID},
+    common::{ActorKey, ID, LoungeKey},
     organization::OrgMemberView,
     role::Role,
 };

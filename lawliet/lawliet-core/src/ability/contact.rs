@@ -1,11 +1,11 @@
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::{
         Action, ActionActor, ActionError, ActionInterface,
         comms::lounge::create_lounge::CreateLounge,
     },
     actor::modifier::Modifier,
+    common::Version,
     config::ability::AbilityName,
     helpers::{actor_id, get_actor},
     lounge::LoungeVariant,

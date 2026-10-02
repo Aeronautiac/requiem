@@ -25,4 +25,3 @@ pub enum WorldChannelName {
     Prison,
     LAndWatari,
 }
-

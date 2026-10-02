@@ -8,10 +8,10 @@ use lawliet_types::{
 };
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, ResignLeadership},
     actor::organization::LeadershipTransferPolicy,
+    common::Version,
     helpers::{actor_id, get_org},
 };
 

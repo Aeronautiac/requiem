@@ -169,6 +169,12 @@ pub struct Simulation {
     true_names: NamePool,
 }
 
+impl Default for Simulation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Simulation {
     pub fn new() -> Self {
         // seeded afresh by the InitializeEngine action; the sim RNG is re-seeded from the same seed
@@ -371,10 +377,10 @@ impl Simulation {
                 if is_key_change {
                     outputs.push(self.key_roster_output(time));
                 }
-                if matches!(control.data, SimControlData::SetProfile { .. }) {
-                    if let Some(out) = self.profile_roster_output(time) {
-                        outputs.push(out);
-                    }
+                if matches!(control.data, SimControlData::SetProfile { .. })
+                    && let Some(out) = self.profile_roster_output(time)
+                {
+                    outputs.push(out);
                 }
                 (ControlOutcome::Ok(response), outputs)
             }

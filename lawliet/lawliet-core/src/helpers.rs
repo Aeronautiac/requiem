@@ -622,17 +622,39 @@ pub fn cmd_channel(
 //
 // Called by whoever created the channel rather than by CreateChannel, because the kind names an
 // object (an org, a lounge) that can only be built once the channel's id exists.
-pub fn map_channel(eng: &mut Engine, ctx: &mut ActionContext, channel_id: ChannelKey, kind: ChannelKind) {
+pub fn map_channel(
+    eng: &mut Engine,
+    ctx: &mut ActionContext,
+    channel_id: ChannelKey,
+    kind: ChannelKind,
+) {
     if !ctx.mutate {
         return;
     }
-    cmd_channel(eng, ctx, Command::MapChannel { channel_id, kind }, channel_id, false, None);
+    cmd_channel(
+        eng,
+        ctx,
+        Command::MapChannel { channel_id, kind },
+        channel_id,
+        false,
+        None,
+    );
     let loggable = eng
         .world
         .get_channel(channel_id)
         .expect("channel mapped before it was created: engine invariant violated")
         .loggable;
-    cmd_channel(eng, ctx, Command::SetChannelLoggable { channel_id, loggable }, channel_id, false, None);
+    cmd_channel(
+        eng,
+        ctx,
+        Command::SetChannelLoggable {
+            channel_id,
+            loggable,
+        },
+        channel_id,
+        false,
+        None,
+    );
 }
 
 // Tell everyone who can see a channel which names are in it.

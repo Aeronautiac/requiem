@@ -107,7 +107,10 @@ mod org_tests {
         add_to_org(&mut eng, 1, o1, p3, false, false).unwrap();
 
         // All present, so all three are effective.
-        assert_eq!(get_org(&eng, o1).unwrap().last_effective, indexset! {p1, p2, p3});
+        assert_eq!(
+            get_org(&eng, o1).unwrap().last_effective,
+            indexset! {p1, p2, p3}
+        );
 
         // Incarceration carries NoPresence; the sweep re-broadcasts the effective set without p2,
         // who nonetheless remains a member.
@@ -649,16 +652,19 @@ mod org_tests {
         };
 
         let (response, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateAndGiveOrgAbility(CreateAndGiveOrgAbility {
-                    ability_name: AbilityName::Gun,
-                    variant: 0,
-                    org_id: o1,
-                    settings: settings.clone(),
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateAndGiveOrgAbility(CreateAndGiveOrgAbility {
+                        ability_name: AbilityName::Gun,
+                        variant: 0,
+                        org_id: o1,
+                        settings: settings.clone(),
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateAndGiveOrgAbility(data) = response else {
             unreachable!()

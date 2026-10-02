@@ -74,13 +74,14 @@ pub fn default_defaults() -> DefaultConfig {
         silent_prosecution_death_message:
             "They were executed without a trial. The paperwork was filed the following morning."
                 .into(),
-        revival_message: "Through some kind of divine intervention, they have returned to this world."
-            .into(),
-        pseudocide_revival_message: "They were found half-naked and unconscious in the middle of a \
+        revival_message:
+            "Through some kind of divine intervention, they have returned to this world.".into(),
+        pseudocide_revival_message:
+            "They were found half-naked and unconscious in the middle of a \
 crowded street in Tokyo. When questioned, they claimed to have no recollection of how they arrived \
 there. Their death appears to have been staged using an uncannily perfect replica dummy. \
 Authorities have now allowed them to re-enter society."
-            .into(),
+                .into(),
         pseudocide_duration: hrs(24),
         notebook_successes_per_day: 1,
         notebook_failures_per_day: 3,

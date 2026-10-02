@@ -34,9 +34,9 @@ use axum::{
     response::IntoResponse,
     routing::{any, delete, get, post, put},
 };
+use governor::{Quota, middleware::NoOpMiddleware};
 use lawliet_types::common::Seed;
 use tokio::net::TcpListener;
-use governor::{Quota, middleware::NoOpMiddleware};
 use tower_governor::{
     GovernorError, GovernorLayer, governor::GovernorConfigBuilder,
     key_extractor::SmartIpKeyExtractor,

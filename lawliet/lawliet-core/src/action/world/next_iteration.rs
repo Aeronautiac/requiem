@@ -49,7 +49,11 @@ impl ActionInterface for NextIteration {
             for (owner_id, owner) in eng.world.actors.iter() {
                 for &ability_id in owner.abilities.iter() {
                     let ability = get_ability(eng, ability_id)?;
-                    if ability.pool_links.iter().any(|l| ticked.contains(&l.link.link_dest)) {
+                    if ability
+                        .pool_links
+                        .iter()
+                        .any(|l| ticked.contains(&l.link.link_dest))
+                    {
                         stale.push((owner_id, ability_id));
                     }
                 }
@@ -189,8 +193,14 @@ mod tests {
     fn the_day_turning_resends_a_used_abilitys_view() {
         let mut eng = Engine::new();
         let (user, ability) = world(&mut eng);
-        use_ability(&mut eng, 1, user, ability, AbilityBehaviour::UnderTheRadar(UnderTheRadar {}))
-            .unwrap();
+        use_ability(
+            &mut eng,
+            1,
+            user,
+            ability,
+            AbilityBehaviour::UnderTheRadar(UnderTheRadar {}),
+        )
+        .unwrap();
 
         let ctx = turn_day(&mut eng, 2);
 
@@ -206,9 +216,16 @@ mod tests {
         else {
             unreachable!()
         };
-        let now = get_ability(&eng, ability).unwrap().get_ability_view_counts(&eng);
+        let now = get_ability(&eng, ability)
+            .unwrap()
+            .get_ability_view_counts(&eng);
         assert_eq!(
-            (*success_usages_remaining, *failure_usages_remaining, *iterations_to_reset, *base_reset),
+            (
+                *success_usages_remaining,
+                *failure_usages_remaining,
+                *iterations_to_reset,
+                *base_reset
+            ),
             now
         );
     }

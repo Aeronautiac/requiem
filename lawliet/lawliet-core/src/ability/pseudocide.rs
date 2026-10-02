@@ -1,12 +1,12 @@
 use smallvec::SmallVec;
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::{
         Action, ActionActor, ActionContext, ActionError, ActionInterface,
         actor::player::{kill::Kill, revive::Revive, schedule_revive::ScheduleRevive},
     },
+    common::Version,
     common::{AbilityKey, ActorKey},
     config::ability::AbilityName,
     helpers::cmd_world_event,

@@ -117,19 +117,22 @@ mod presence_tests {
 
     // quick_kill is silent (no announcement), so these need a real one.
     fn announced_kill(eng: &mut Engine, target: ActorKey) -> (ActionResponse, ActionContext) {
-        eng.execute(ActionRequest {
-            timestamp: 0,
-            actor: ActionActor::System,
-            payload: Action::Kill(Kill {
-                target_id: target,
-                killer_id: None,
-                death_message: None,
-                silent: false,
-                set_books_dormant: false,
-                allow_link_chaining: true,
-                sever_links: true,
-            }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                timestamp: 0,
+                actor: ActionActor::System,
+                payload: Action::Kill(Kill {
+                    target_id: target,
+                    killer_id: None,
+                    death_message: None,
+                    silent: false,
+                    set_books_dormant: false,
+                    allow_link_chaining: true,
+                    sever_links: true,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap()
     }
 

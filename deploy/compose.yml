@@ -1,0 +1,36 @@
+services:
+  yagami:
+    image: ghcr.io/aeronautiac/requiem/yagami:${YAGAMI_TAG}
+    env_file: yagami.env
+    ports:
+      - "127.0.0.1:39173:39173"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    init: true
+
+  postgres:
+    image: postgres:18.4
+    env_file: postgres.env
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 2s
+      retries: 15
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.11.4
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

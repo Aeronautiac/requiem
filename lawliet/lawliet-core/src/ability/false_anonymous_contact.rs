@@ -2,9 +2,9 @@
 // contactor's real role, it displays a role of their choosing to the contacted player.
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, comms::lounge::create_lounge::CreateLounge},
+    common::Version,
     config::ability::AbilityName,
     helpers::actor_id,
     lounge::LoungeVariant,

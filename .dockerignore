@@ -1,0 +1,11 @@
+# The server image needs only the Rust workspace. Everything is excluded by default so a new file
+# (a secret, a build dir) stays out of the build context until it is opted in here.
+*
+!Cargo.toml
+!Cargo.lock
+!lawliet
+!yagami
+
+# patterns are anchored at the context root, so nested copies need **/
+**/target
+**/.env

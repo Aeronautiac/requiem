@@ -84,21 +84,24 @@ mod comms_tests {
         let ch = create_channel(&mut eng, 0, false);
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
-                    channel_id: ch,
-                    player_id: p1,
-                    display: ActorDisplay::Raw(p1),
-                    visible: true,
-                    shared: false,
-                    transferrable: false,
-                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
-                        perms: ChannelPerm::Send | ChannelPerm::View,
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                        channel_id: ch,
+                        player_id: p1,
+                        display: ActorDisplay::Raw(p1),
+                        visible: true,
+                        shared: false,
+                        transferrable: false,
+                        perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                            perms: ChannelPerm::Send | ChannelPerm::View,
+                        }),
                     }),
-                }),
-            }, Engine::version())
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         assert!(ctx.commands.iter().any(|p| {
@@ -125,21 +128,24 @@ mod comms_tests {
         let ch = create_channel(&mut eng, 0, false);
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
-                    channel_id: ch,
-                    player_id: p1,
-                    display: ActorDisplay::Raw(p1),
-                    visible: true,
-                    shared: false,
-                    transferrable: false,
-                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
-                        perms: ChannelPerm::Send | ChannelPerm::View,
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                        channel_id: ch,
+                        player_id: p1,
+                        display: ActorDisplay::Raw(p1),
+                        visible: true,
+                        shared: false,
+                        transferrable: false,
+                        perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                            perms: ChannelPerm::Send | ChannelPerm::View,
+                        }),
                     }),
-                }),
-            }, Engine::version())
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         assert!(!ctx.commands.iter().any(|p| {
@@ -159,21 +165,24 @@ mod comms_tests {
         join_channel(&mut eng, 0, p2, ch);
 
         let (response, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
-                    channel_id: ch,
-                    player_id: p1,
-                    display: ActorDisplay::Mysterious,
-                    visible: false,
-                    shared: false,
-                    transferrable: false,
-                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
-                        perms: ChannelPerm::Send | ChannelPerm::View,
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                        channel_id: ch,
+                        player_id: p1,
+                        display: ActorDisplay::Mysterious,
+                        visible: false,
+                        shared: false,
+                        transferrable: false,
+                        perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                            perms: ChannelPerm::Send | ChannelPerm::View,
+                        }),
                     }),
-                }),
-            }, Engine::version())
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateAndGiveProfile(data) = response else {
             unreachable!()
@@ -222,21 +231,24 @@ mod comms_tests {
         let ch = create_channel(&mut eng, 0, false);
 
         let (response, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
-                    channel_id: ch,
-                    player_id: p1,
-                    display: ActorDisplay::Mysterious,
-                    visible: true,
-                    shared: false,
-                    transferrable: false,
-                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
-                        perms: ChannelPerm::Send | ChannelPerm::View,
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                        channel_id: ch,
+                        player_id: p1,
+                        display: ActorDisplay::Mysterious,
+                        visible: true,
+                        shared: false,
+                        transferrable: false,
+                        perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                            perms: ChannelPerm::Send | ChannelPerm::View,
+                        }),
                     }),
-                }),
-            }, Engine::version())
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateAndGiveProfile(data) = response else {
             unreachable!()
@@ -288,16 +300,19 @@ mod comms_tests {
         let ch = create_channel(&mut eng, 0, false);
         let seat = join_channel(&mut eng, 0, p1, ch);
 
-        let result = eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 0,
-            payload: Action::SetProfileAccess(SetProfileAccess {
-                channel_id: ch,
-                profile_id: seat,
-                player_id: p2,
-                granted: true,
-            }),
-        }, Engine::version());
+        let result = eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::SetProfileAccess(SetProfileAccess {
+                    channel_id: ch,
+                    profile_id: seat,
+                    player_id: p2,
+                    granted: true,
+                }),
+            },
+            Engine::version(),
+        );
 
         assert!(matches!(result, Err((ActionError::ProfileNotShareable, _))));
     }
@@ -312,21 +327,24 @@ mod comms_tests {
 
         let bound = join_channel(&mut eng, 0, p1, ch);
         let passed = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
-                    channel_id: ch,
-                    player_id: p1,
-                    display: ActorDisplay::Mysterious,
-                    visible: true,
-                    shared: false,
-                    transferrable: true,
-                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
-                        perms: ChannelPerm::Send | ChannelPerm::View,
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                        channel_id: ch,
+                        player_id: p1,
+                        display: ActorDisplay::Mysterious,
+                        visible: true,
+                        shared: false,
+                        transferrable: true,
+                        perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                            perms: ChannelPerm::Send | ChannelPerm::View,
+                        }),
                     }),
-                }),
-            }, Engine::version())
+                },
+                Engine::version(),
+            )
             .unwrap()
             .0;
         let ActionResponse::CreateAndGiveProfile(passed) = passed else {
@@ -369,14 +387,17 @@ mod comms_tests {
 
         assert!(!get_channel(&eng, ch).unwrap().loggable);
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 0,
-            payload: Action::SetLoggable(SetLoggable {
-                channel_id: ch,
-                loggable: true,
-            }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::SetLoggable(SetLoggable {
+                    channel_id: ch,
+                    loggable: true,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap();
 
         assert!(get_channel(&eng, ch).unwrap().loggable);
@@ -480,7 +501,9 @@ mod comms_tests {
             Err((ActionError::ProfileRequired, _))
         ));
 
-        let (_, ctx) = eng.execute(nameless(ActionActor::System), Engine::version()).unwrap();
+        let (_, ctx) = eng
+            .execute(nameless(ActionActor::System), Engine::version())
+            .unwrap();
         assert!(ctx.commands.iter().any(|p| {
             matches!(&p.cmd, Command::AddMessage { sender_display, .. }
                 if *sender_display == ActorDisplay::System)
@@ -494,21 +517,24 @@ mod comms_tests {
         let ch = create_channel(&mut eng, 0, false);
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
-                    channel_id: ch,
-                    player_id: p1,
-                    display: ActorDisplay::Raw(p1),
-                    visible: true,
-                    shared: false,
-                    transferrable: false,
-                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
-                        perms: ChannelPerm::Send | ChannelPerm::View,
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                        channel_id: ch,
+                        player_id: p1,
+                        display: ActorDisplay::Raw(p1),
+                        visible: true,
+                        shared: false,
+                        transferrable: false,
+                        perm_policy: PermUpdatePolicy::Fixed(FixedPolicy {
+                            perms: ChannelPerm::Send | ChannelPerm::View,
+                        }),
                     }),
-                }),
-            }, Engine::version())
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         assert!(
@@ -551,11 +577,14 @@ mod comms_tests {
         let mut eng = Engine::new();
 
         let (response, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateGroupchat(CreateGroupchat {}),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateGroupchat(CreateGroupchat {}),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         let ActionResponse::CreateGroupchat(data) = response else {
@@ -578,23 +607,25 @@ mod comms_tests {
         let mut eng = Engine::new();
 
         let (response, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateGroupchat(CreateGroupchat {}),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateGroupchat(CreateGroupchat {}),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         let ActionResponse::CreateGroupchat(data) = response else {
             unreachable!()
         };
         let channel_id = get_gc(&eng, data.id).unwrap().channel_id;
-        let position = |matches: &dyn Fn(&Command) -> bool| {
-            ctx.commands.iter().position(|p| matches(&p.cmd))
-        };
-        let map = position(&|cmd| {
-            matches!(cmd, Command::MapChannel { channel_id: cid, .. } if *cid == channel_id)
-        })
+        let position =
+            |matches: &dyn Fn(&Command) -> bool| ctx.commands.iter().position(|p| matches(&p.cmd));
+        let map = position(
+            &|cmd| matches!(cmd, Command::MapChannel { channel_id: cid, .. } if *cid == channel_id),
+        )
         .expect("the channel is mapped");
         let loggable = position(&|cmd| {
             matches!(cmd, Command::SetChannelLoggable { channel_id: cid, .. } if *cid == channel_id)
@@ -755,16 +786,19 @@ mod comms_tests {
         let p2 = add_player(&mut eng, 0, Role::Civilian, "p2");
 
         let (response, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateLounge(CreateLounge {
-                    variant: LoungeVariant::Basic {
-                        contactor_id: p1,
-                        contacted_id: p2,
-                    },
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateLounge(CreateLounge {
+                        variant: LoungeVariant::Basic {
+                            contactor_id: p1,
+                            contacted_id: p2,
+                        },
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         let ActionResponse::CreateLounge(data) = response else {
@@ -840,14 +874,17 @@ mod comms_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
@@ -862,14 +899,17 @@ mod comms_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
@@ -884,14 +924,17 @@ mod comms_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let (response, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
@@ -913,14 +956,17 @@ mod comms_tests {
         let mut eng = Engine::new();
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(p1)
@@ -947,14 +993,17 @@ mod comms_tests {
             },
         );
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Ability(ab),
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Ability(ab),
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         assert!(ctx.commands.iter().any(|p| {
             p.recipient == CommandRecipient::Actor(p1)
@@ -972,14 +1021,17 @@ mod comms_tests {
         let mut eng = Engine::new();
 
         assert!(
-            eng.execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: ActorKey::default(),
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            eng.execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: ActorKey::default(),
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version()
+            )
             .is_err()
         );
     }
@@ -990,14 +1042,17 @@ mod comms_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         assert!(
-            eng.execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Ability(AbilityKey::default()),
-                }),
-            }, Engine::version())
+            eng.execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Ability(AbilityKey::default()),
+                    }),
+                },
+                Engine::version()
+            )
             .is_err()
         );
     }
@@ -1008,14 +1063,17 @@ mod comms_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
@@ -1023,11 +1081,14 @@ mod comms_tests {
 
         assert!(get_bug(&eng, data.id).unwrap().enabled);
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 0,
-            payload: Action::ArchiveBug(ArchiveBug { bug_id: data.id }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::ArchiveBug(ArchiveBug { bug_id: data.id }),
+            },
+            Engine::version(),
+        )
         .unwrap();
 
         assert!(!get_bug(&eng, data.id).unwrap().enabled);
@@ -1039,27 +1100,33 @@ mod comms_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(create_data) = response else {
             unreachable!()
         };
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::ArchiveBug(ArchiveBug {
-                    bug_id: create_data.id,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::ArchiveBug(ArchiveBug {
+                        bug_id: create_data.id,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         // Archiving leaves the bug (and its viewport) in place — it only stops the relay — so
@@ -1077,13 +1144,16 @@ mod comms_tests {
         let mut eng = Engine::new();
 
         assert!(
-            eng.execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::ArchiveBug(ArchiveBug {
-                    bug_id: BugKey::default(),
-                }),
-            }, Engine::version())
+            eng.execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::ArchiveBug(ArchiveBug {
+                        bug_id: BugKey::default(),
+                    }),
+                },
+                Engine::version()
+            )
             .is_err()
         );
     }
@@ -1094,24 +1164,30 @@ mod comms_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
         };
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 0,
-            payload: Action::ArchiveBug(ArchiveBug { bug_id: data.id }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::ArchiveBug(ArchiveBug { bug_id: data.id }),
+            },
+            Engine::version(),
+        )
         .unwrap();
 
         assert!(get_bug(&eng, data.id).is_ok());
@@ -1123,24 +1199,30 @@ mod comms_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
         };
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 0,
-            payload: Action::DestroyBug(DestroyBug { bug_id: data.id }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::DestroyBug(DestroyBug { bug_id: data.id }),
+            },
+            Engine::version(),
+        )
         .unwrap();
 
         assert!(get_bug(&eng, data.id).is_err());
@@ -1152,24 +1234,30 @@ mod comms_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(data) = response else {
             unreachable!()
         };
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 0,
-            payload: Action::DestroyBug(DestroyBug { bug_id: data.id }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::DestroyBug(DestroyBug { bug_id: data.id }),
+            },
+            Engine::version(),
+        )
         .unwrap();
 
         assert!(!get_player(&eng, p1).unwrap().bugs.contains(&data.id));
@@ -1181,27 +1269,33 @@ mod comms_tests {
         let p1 = add_player(&mut eng, 0, Role::Civilian, "p1");
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(create_data) = response else {
             unreachable!()
         };
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::DestroyBug(DestroyBug {
-                    bug_id: create_data.id,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::DestroyBug(DestroyBug {
+                        bug_id: create_data.id,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         // Destroying a bug archives it rather than deleting it, and the notice is addressed to
@@ -1217,13 +1311,16 @@ mod comms_tests {
         let mut eng = Engine::new();
 
         assert!(
-            eng.execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::DestroyBug(DestroyBug {
-                    bug_id: BugKey::default(),
-                }),
-            }, Engine::version())
+            eng.execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::DestroyBug(DestroyBug {
+                        bug_id: BugKey::default(),
+                    }),
+                },
+                Engine::version()
+            )
             .is_err()
         );
     }
@@ -1236,14 +1333,17 @@ mod comms_tests {
         let seat = join_channel(&mut eng, 0, p1, ch);
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(bug_data) = response else {
             unreachable!()
@@ -1266,14 +1366,17 @@ mod comms_tests {
         let ch = create_channel(&mut eng, 0, false);
         let seat = join_channel(&mut eng, 0, p1, ch);
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 0,
-            payload: Action::CreateBug(CreateBug {
-                target_id: p1,
-                source: BugSource::Custody,
-            }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateBug(CreateBug {
+                    target_id: p1,
+                    source: BugSource::Custody,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap();
 
         let (_, ctx) = send_message(&mut eng, 0, p1, ch, seat, "hello").unwrap();
@@ -1293,26 +1396,32 @@ mod comms_tests {
         let seat = join_channel(&mut eng, 0, p1, ch);
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(bug_data) = response else {
             unreachable!()
         };
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 0,
-            payload: Action::ArchiveBug(ArchiveBug {
-                bug_id: bug_data.id,
-            }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::ArchiveBug(ArchiveBug {
+                    bug_id: bug_data.id,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap();
 
         let (_, ctx) = send_message(&mut eng, 0, p1, ch, seat, "hello").unwrap();
@@ -1332,14 +1441,17 @@ mod comms_tests {
         let seat = join_channel(&mut eng, 0, p1, ch);
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: p1,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: p1,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(bug_data) = response else {
             unreachable!()
@@ -1373,14 +1485,17 @@ mod comms_tests {
         );
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: target,
-                    source: BugSource::Ability(ab),
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: target,
+                        source: BugSource::Ability(ab),
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         let bug_viewport = only_bug_viewport(&eng);
@@ -1397,29 +1512,35 @@ mod comms_tests {
         let target = add_player(&mut eng, 0, Role::Civilian, "target");
 
         let (response, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::AddAbility(AddAbility {
-                    ability_name: AbilityName::Gun,
-                    variant: 0,
-                    transferrable: false,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::AddAbility(AddAbility {
+                        ability_name: AbilityName::Gun,
+                        variant: 0,
+                        transferrable: false,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::AddAbility(ab_data) = response else {
             unreachable!()
         };
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: target,
-                    source: BugSource::Ability(ab_data.id),
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: target,
+                        source: BugSource::Ability(ab_data.id),
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         let bug_viewport = only_bug_viewport(&eng);
@@ -1445,26 +1566,32 @@ mod comms_tests {
             },
         );
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 0,
-            payload: Action::CreateBug(CreateBug {
-                target_id: target,
-                source: BugSource::Ability(ab),
-            }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateBug(CreateBug {
+                    target_id: target,
+                    source: BugSource::Ability(ab),
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap();
 
         // Incarcerated gives NoPresence — visibility update is triggered inside AddState
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::AddState(AddState {
-                    actor_id: owner,
-                    state: State::Incarcerated,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::AddState(AddState {
+                        actor_id: owner,
+                        state: State::Incarcerated,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         let bug_viewport = only_bug_viewport(&eng);
@@ -1489,14 +1616,17 @@ mod comms_tests {
         );
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: target,
-                    source: BugSource::Custody,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: target,
+                        source: BugSource::Custody,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         let bug_viewport = only_bug_viewport(&eng);
@@ -1525,14 +1655,17 @@ mod comms_tests {
         );
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: target,
-                    source: BugSource::Ability(ab),
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: target,
+                        source: BugSource::Ability(ab),
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         // Everything the bug's viewport says about itself must land there before anyone is

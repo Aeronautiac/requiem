@@ -6,9 +6,9 @@ use lawliet_types::{
 };
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::ActionInterface,
+    common::Version,
     helpers::{actor_id, get_player, require_no_blackout},
 };
 
@@ -65,7 +65,9 @@ mod tests {
         config::role::Role,
         engine::Engine,
         helpers::get_prosecution,
-        test_helpers::{add_player, init_engine, quick_ability, set_blackout, started_engine, use_ability},
+        test_helpers::{
+            add_player, init_engine, quick_ability, set_blackout, started_engine, use_ability,
+        },
     };
 
     // Filing anonymously says who the prosecutor is SHOWN as. It is not a way to opt a trial out of

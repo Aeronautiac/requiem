@@ -41,9 +41,7 @@ impl ActionInterface for UpdatePressConference {
             .press_conf
             .iter()
             .copied()
-            .filter(|id| {
-                get_actor(eng, *id).map_or(true, |a| a.has_modifier(Modifier::NoPresence))
-            })
+            .filter(|id| get_actor(eng, *id).map_or(true, |a| a.has_modifier(Modifier::NoPresence)))
             .collect();
 
         for id in to_remove {

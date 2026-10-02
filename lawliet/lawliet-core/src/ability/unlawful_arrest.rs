@@ -9,7 +9,8 @@ use lawliet_types::{
 };
 
 use crate::{
-    common::Version,ability::AbilityInterface, action::ActionInterface, helpers::get_player};
+    ability::AbilityInterface, action::ActionInterface, common::Version, helpers::get_player,
+};
 
 impl AbilityInterface for UnlawfulArrest {
     fn ability_name(&self) -> AbilityName {

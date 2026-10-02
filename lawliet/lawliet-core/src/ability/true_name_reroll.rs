@@ -9,9 +9,9 @@
 use lawliet_types::ability::{AbilityName, TrueNameReroll};
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, SetTrueName},
+    common::Version,
     helpers::require_alive,
 };
 

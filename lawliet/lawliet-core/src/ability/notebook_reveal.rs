@@ -12,8 +12,8 @@ use lawliet_types::{
 };
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
+    common::Version,
     helpers::{actor_get_effective_passive, actor_id, get_actor, get_player, get_player_mut},
 };
 

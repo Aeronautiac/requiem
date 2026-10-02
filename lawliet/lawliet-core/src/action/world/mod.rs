@@ -83,14 +83,17 @@ mod world_tests {
             Err((ActionError::GameNotStarted, _))
         ));
         // Not quick_lend, which unwraps and so cannot express a rejection.
-        let lend = eng.execute(ActionRequest {
-            actor: ActionActor::Player(p1),
-            timestamp: 1,
-            payload: Action::LendNotebook(LendNotebook {
-                notebook_id: notebook,
-                target_id: p2,
-            }),
-        }, Engine::version());
+        let lend = eng.execute(
+            ActionRequest {
+                actor: ActionActor::Player(p1),
+                timestamp: 1,
+                payload: Action::LendNotebook(LendNotebook {
+                    notebook_id: notebook,
+                    target_id: p2,
+                }),
+            },
+            Engine::version(),
+        );
         assert!(matches!(lend, Err((ActionError::GameNotStarted, _))));
         assert!(
             send_message(&mut eng, 1, p1, channel, seat, "hello").is_ok(),
@@ -263,14 +266,17 @@ mod world_tests {
         init_engine(&mut eng);
 
         let (response, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 0,
-                payload: Action::AddPlayer(AddPlayer {
-                    true_name: "p1".into(),
-                    starting_role: Role::Civilian,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 0,
+                    payload: Action::AddPlayer(AddPlayer {
+                        true_name: "p1".into(),
+                        starting_role: Role::Civilian,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::AddPlayer(data) = response else {
             unreachable!()

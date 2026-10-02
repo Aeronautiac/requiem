@@ -9,9 +9,9 @@ use lawliet_types::{
 };
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, AddToOrg, StartProsecution},
+    common::Version,
     helpers::actor_id,
 };
 

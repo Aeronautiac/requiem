@@ -33,7 +33,7 @@ impl PartialOrd for QueueEntry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Jobs {
     jobs: IndexMap<JobID, Job>,
     job_queue: BinaryHeap<QueueEntry>,
@@ -43,12 +43,7 @@ pub struct Jobs {
 
 impl Jobs {
     pub fn new() -> Self {
-        Jobs {
-            jobs: IndexMap::new(),
-            job_queue: BinaryHeap::new(),
-            cancelled_count: 0,
-            next_job_id: 0,
-        }
+        Jobs::default()
     }
 
     pub fn cancel_all_cond<F>(&mut self, cond: F, mutate: bool) -> usize

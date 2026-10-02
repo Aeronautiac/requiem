@@ -22,8 +22,8 @@ use lawliet_types::{
 };
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
+    common::Version,
     helpers::{
         actor_id, cmd_channel, get_ability, get_channel, get_gc, get_lounge, owner_view_recipient,
     },
@@ -167,16 +167,19 @@ mod tests {
         let a = add_player(eng, 0, Role::Civilian, "alice");
         let b = add_player(eng, 0, Role::Civilian, "bob");
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 0,
-            payload: Action::CreateLounge(CreateLounge {
-                variant: LoungeVariant::Basic {
-                    contactor_id: a,
-                    contacted_id: b,
-                },
-            }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateLounge(CreateLounge {
+                    variant: LoungeVariant::Basic {
+                        contactor_id: a,
+                        contacted_id: b,
+                    },
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap();
 
         let ability = quick_ability(
@@ -279,14 +282,17 @@ mod tests {
         let (tapper, ability, contact_id) = world(&mut eng, 0);
         let channel_id = channel_of(&eng, contact_id);
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 1,
-            payload: Action::SetLoggable(SetLoggable {
-                channel_id,
-                loggable: false,
-            }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 1,
+                payload: Action::SetLoggable(SetLoggable {
+                    channel_id,
+                    loggable: false,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap();
 
         let ctx = tap(&mut eng, 2, tapper, ability, contact_id);
@@ -368,17 +374,20 @@ mod tests {
         let alice = add_player(eng, 0, Role::Civilian, "alice");
         let bob = add_player(eng, 0, Role::Civilian, "bob");
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 0,
-            payload: Action::CreateLounge(CreateLounge {
-                variant: LoungeVariant::Fake {
-                    creator_id: creator,
-                    contacted_id: bob,
-                    contactor_id: alice,
-                },
-            }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 0,
+                payload: Action::CreateLounge(CreateLounge {
+                    variant: LoungeVariant::Fake {
+                        creator_id: creator,
+                        contacted_id: bob,
+                        contactor_id: alice,
+                    },
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap();
 
         let ability = quick_ability(

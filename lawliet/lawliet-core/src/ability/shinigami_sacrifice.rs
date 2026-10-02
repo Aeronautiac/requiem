@@ -9,9 +9,9 @@
 use lawliet_types::{ability::AbilityName, action::ActionError, command::Command};
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, Kill},
+    common::Version,
     helpers::{actor_id, cmd_channel, get_org, get_player, require_alive},
 };
 

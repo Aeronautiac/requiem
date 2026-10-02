@@ -1,9 +1,9 @@
 pub use lawliet_types::ability::{AbilityBehaviour, AbilityName};
 
 use crate::{
-    common::Version,
     action::{ActionActor, ActionContext, ActionError},
     chargepool::{ChargeCondition, ChargeConditions, PoolLink, PoolLinkType},
+    common::Version,
     common::{AbilityKey, ChargeCount, ChargePoolKey, LinkWeight, Variant},
     engine::Engine,
     ownership::OwnershipStruct,
@@ -314,10 +314,10 @@ impl Ability {
                 .world
                 .get_charge_pool(link_container.link.link_dest)
                 .expect("expected valid link destination");
-            if min_reset.map_or(true, |r| pool.iterations_to_reset < r) {
+            if min_reset.is_none_or(|r| pool.iterations_to_reset < r) {
                 min_reset = Some(pool.iterations_to_reset);
             }
-            if min_base_reset.map_or(true, |r| pool.base_reset_time < r) {
+            if min_base_reset.is_none_or(|r| pool.base_reset_time < r) {
                 min_base_reset = Some(pool.base_reset_time);
             }
         }
@@ -356,15 +356,15 @@ impl Ability {
                     if !pool.can_use(link) {
                         usable = false;
                     }
-                    if gate_limit.map_or(true, |g| usages < g) {
+                    if gate_limit.is_none_or(|g| usages < g) {
                         gate_limit = Some(usages);
                     }
-                    if consumed && lowest_consumed.map_or(true, |l| usages < l) {
+                    if consumed && lowest_consumed.is_none_or(|l| usages < l) {
                         lowest_consumed = Some(usages);
                     }
                 }
                 PoolLinkType::Permissive => {
-                    if consumed && highest_permissive.map_or(true, |h| usages > h) {
+                    if consumed && highest_permissive.is_none_or(|h| usages > h) {
                         highest_permissive = Some(usages);
                     }
                 }

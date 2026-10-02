@@ -7,9 +7,9 @@
 // this is low priority right now.
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::{Action, ActionActor, ActionInterface, comms::lounge::create_lounge::CreateLounge},
+    common::Version,
     config::ability::AbilityName,
     helpers::{actor_id, get_player},
     lounge::LoungeVariant,

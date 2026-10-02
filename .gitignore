@@ -1,10 +1,6 @@
 target
 armonia/src-tauri/gen/**
 armonia/src-tauri/binaries
-# any depth: npm workspaces hoist to the repo root, so the old armonia/node_modules
-# rule missed the root one entirely
 node_modules/
 dist/
 .env
-# working design notes, not part of the deliverable
-RECIPIENTS.md

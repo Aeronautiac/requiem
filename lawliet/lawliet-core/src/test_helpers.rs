@@ -88,14 +88,17 @@ pub fn add_player(
     true_name: &str,
 ) -> ActorKey {
     let data = eng
-        .execute(ActionRequest {
-            timestamp,
-            actor: ActionActor::System,
-            payload: Action::AddPlayer(AddPlayer {
-                true_name: String::from(true_name),
-                starting_role,
-            }),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                timestamp,
+                actor: ActionActor::System,
+                payload: Action::AddPlayer(AddPlayer {
+                    true_name: String::from(true_name),
+                    starting_role,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::AddPlayer(response) = data else {
@@ -112,33 +115,39 @@ pub fn quick_kill(
     set_books_dormant: bool,
     target: ActorKey,
 ) {
-    eng.execute(ActionRequest {
-        timestamp,
-        actor: ActionActor::System,
-        payload: Action::Kill(Kill {
-            target_id: target,
-            killer_id: None,
-            death_message: None,
-            silent: true,
-            set_books_dormant,
-            allow_link_chaining,
-            sever_links,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            timestamp,
+            actor: ActionActor::System,
+            payload: Action::Kill(Kill {
+                target_id: target,
+                killer_id: None,
+                death_message: None,
+                silent: true,
+                set_books_dormant,
+                allow_link_chaining,
+                sever_links,
+            }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
 pub fn quick_revive(eng: &mut Engine, timestamp: Time, ignore_links: bool, target: ActorKey) {
-    eng.execute(ActionRequest {
-        timestamp,
-        actor: ActionActor::System,
-        payload: Action::Revive(Revive {
-            target_id: target,
-            ignore_links,
-            silent: true,
-            revival_message: None,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            timestamp,
+            actor: ActionActor::System,
+            payload: Action::Revive(Revive {
+                target_id: target,
+                ignore_links,
+                silent: true,
+                revival_message: None,
+            }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
@@ -150,16 +159,19 @@ pub fn quick_write(
     true_name: &str,
     delay: Time,
 ) -> ActionResult {
-    let result = eng.execute(ActionRequest {
-        actor: ActionActor::Player(writer),
-        timestamp,
-        payload: Action::WriteName(WriteName {
-            true_name: true_name.into(),
-            death_message: None,
-            notebook_id,
-            delay,
-        }),
-    }, Engine::version());
+    let result = eng.execute(
+        ActionRequest {
+            actor: ActionActor::Player(writer),
+            timestamp,
+            payload: Action::WriteName(WriteName {
+                true_name: true_name.into(),
+                death_message: None,
+                notebook_id,
+                delay,
+            }),
+        },
+        Engine::version(),
+    );
     match result {
         Ok(response) => Ok(response.0),
         Err((err, _)) => Err(err),
@@ -167,29 +179,38 @@ pub fn quick_write(
 }
 
 pub fn next_iteration(eng: &mut Engine, time: Time) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::NextIteration(crate::action::NextIteration {}),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::NextIteration(crate::action::NextIteration {}),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
 pub fn set_blackout(eng: &mut Engine, time: Time, active: bool) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::SetBlackout(crate::action::SetBlackout { active }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::SetBlackout(crate::action::SetBlackout { active }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
 pub fn null_action(eng: &mut Engine, time: Time) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::Null(Null {}),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::Null(Null {}),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
@@ -200,28 +221,34 @@ pub fn quick_lend(
     player_lending: ActorKey,
     lend_to: ActorKey,
 ) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::Player(player_lending),
-        timestamp: time,
-        payload: Action::LendNotebook(LendNotebook {
-            notebook_id,
-            target_id: lend_to,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::Player(player_lending),
+            timestamp: time,
+            payload: Action::LendNotebook(LendNotebook {
+                notebook_id,
+                target_id: lend_to,
+            }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
 pub fn quick_notebook(eng: &mut Engine, time: Time, player: ActorKey, fake: bool) -> NotebookKey {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreateAndGiveNotebook(CreateAndGiveNotebook {
-                fake,
-                actor_id: player,
-                volatile: false,
-            }),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateAndGiveNotebook(CreateAndGiveNotebook {
+                    fake,
+                    actor_id: player,
+                    volatile: false,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::CreateAndGiveNotebook(response) = data else {
@@ -238,16 +265,19 @@ pub fn quick_passive(
     transferrable: bool,
 ) -> PassiveKey {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreateAndGivePassive(CreateAndGivePassive {
-                passive_type,
-                transferrable,
-                actor_id: player,
-                volatile: false,
-            }),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateAndGivePassive(CreateAndGivePassive {
+                    passive_type,
+                    transferrable,
+                    actor_id: player,
+                    volatile: false,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::CreateAndGivePassive(response) = data else {
@@ -258,11 +288,14 @@ pub fn quick_passive(
 
 pub fn create_poll(eng: &mut Engine, time: Time, action: CreatePoll) -> PollKey {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreatePoll(action),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreatePoll(action),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::CreatePoll(response) = data else {
@@ -283,11 +316,14 @@ pub fn add_vote(
     voter_id: ActorKey,
     option: PollOptionIndex,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::Player(voter_id),
-        timestamp: time,
-        payload: Action::AddVote(AddVote { poll_id, option }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::Player(voter_id),
+            timestamp: time,
+            payload: Action::AddVote(AddVote { poll_id, option }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn remove_vote(
@@ -296,11 +332,14 @@ pub fn remove_vote(
     poll_id: PollKey,
     voter_id: ActorKey,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::Player(voter_id),
-        timestamp: time,
-        payload: Action::RemoveVote(RemoveVote { poll_id }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::Player(voter_id),
+            timestamp: time,
+            payload: Action::RemoveVote(RemoveVote { poll_id }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn default_kill(id: ActorKey) -> Action {
@@ -317,11 +356,14 @@ pub fn default_kill(id: ActorKey) -> Action {
 
 pub fn quick_ability(eng: &mut Engine, time: Time, args: CreateAndGiveAbility) -> AbilityKey {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreateAndGiveAbility(args),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateAndGiveAbility(args),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::CreateAndGiveAbility(response) = data else {
@@ -337,23 +379,29 @@ pub fn use_ability(
     ability_id: AbilityKey,
     args: AbilityBehaviour,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::Player(user_id),
-        timestamp: time,
-        payload: Action::UseAbility(UseAbility {
-            ability_id,
-            ability_args: args,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::Player(user_id),
+            timestamp: time,
+            payload: Action::UseAbility(UseAbility {
+                ability_id,
+                ability_args: args,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn quick_pool(eng: &mut Engine, time: Time, args: AddChargePool) -> ChargePoolKey {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::AddChargePool(args),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::AddChargePool(args),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::AddChargePool(response) = data else {
@@ -370,28 +418,34 @@ pub fn quick_link(
     link_type: PoolLinkType,
     weight: LinkWeight,
 ) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::AddLink(AddLink {
-            ability_id,
-            pool_id,
-            weight,
-            link_type,
-            volatile: false,
-            // test helper: subtract on any outcome, matching the pre-conditional behavior
-            condition: crate::chargepool::ChargeConditions::all(),
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::AddLink(AddLink {
+                ability_id,
+                pool_id,
+                weight,
+                link_type,
+                volatile: false,
+                // test helper: subtract on any outcome, matching the pre-conditional behavior
+                condition: crate::chargepool::ChargeConditions::all(),
+            }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
 pub fn quick_clear_links(eng: &mut Engine, time: Time, ability_id: AbilityKey) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::ClearLinks(ClearLinks { ability_id }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::ClearLinks(ClearLinks { ability_id }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
@@ -404,11 +458,14 @@ pub fn init_engine(eng: &mut Engine) {
 }
 
 pub fn init_engine_unstarted(eng: &mut Engine) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: 0,
-        payload: Action::InitializeEngine(InitializeEngine { seed: 0 }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: 0,
+            payload: Action::InitializeEngine(InitializeEngine { seed: 0 }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
@@ -424,20 +481,26 @@ pub fn started_engine() -> Engine {
 }
 
 pub fn start_game(eng: &mut Engine, time: Time) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::StartGame(StartGame {}),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::StartGame(StartGame {}),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn add_org(eng: &mut Engine, time: Time, org: OrganizationName) -> ActorKey {
     let data = eng
-        .execute(ActionRequest {
-            timestamp: time,
-            actor: ActionActor::System,
-            payload: Action::CreateOrg(CreateOrg { name: org }),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                timestamp: time,
+                actor: ActionActor::System,
+                payload: Action::CreateOrg(CreateOrg { name: org }),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::CreateOrg(response) = data else {
@@ -453,15 +516,18 @@ pub fn set_blacklist_status(
     actor: ActorKey,
     blacklisted: bool,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::SetBlacklistStatus(SetBlacklistStatus {
-            actor_id: actor,
-            org_id: org,
-            blacklisted,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::SetBlacklistStatus(SetBlacklistStatus {
+                actor_id: actor,
+                org_id: org,
+                blacklisted,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn set_og_status(
@@ -471,15 +537,18 @@ pub fn set_og_status(
     actor: ActorKey,
     og: bool,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::SetOgStatus(SetOgStatus {
-            actor_id: actor,
-            org_id: org,
-            og,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::SetOgStatus(SetOgStatus {
+                actor_id: actor,
+                org_id: org,
+                og,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn add_to_org(
@@ -490,16 +559,19 @@ pub fn add_to_org(
     leader: bool,
     og: bool,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::AddToOrg(AddToOrg {
-            actor_id: actor,
-            leader,
-            og,
-            org_id: org,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::AddToOrg(AddToOrg {
+                actor_id: actor,
+                leader,
+                og,
+                org_id: org,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn remove_from_org(
@@ -508,14 +580,17 @@ pub fn remove_from_org(
     org: ActorKey,
     actor: ActorKey,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::RemoveFromOrg(RemoveFromOrg {
-            actor_id: actor,
-            org_id: org,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::RemoveFromOrg(RemoveFromOrg {
+                actor_id: actor,
+                org_id: org,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn set_leadership(
@@ -524,14 +599,17 @@ pub fn set_leadership(
     org: ActorKey,
     policies: Option<LeadershipTransferPolicies>,
 ) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::SetLeadership(SetLeadership {
-            policies,
-            org_id: org,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::SetLeadership(SetLeadership {
+                policies,
+                org_id: org,
+            }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
@@ -541,14 +619,17 @@ pub fn change_leader(
     org: ActorKey,
     actor: Option<ActorKey>,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::ChangeOrgLeader(ChangeOrgLeader {
-            org_id: org,
-            new_leader: actor,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::ChangeOrgLeader(ChangeOrgLeader {
+                org_id: org,
+                new_leader: actor,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn quick_org_ability(
@@ -557,11 +638,14 @@ pub fn quick_org_ability(
     args: CreateAndGiveOrgAbility,
 ) -> AbilityKey {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreateAndGiveOrgAbility(args),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateAndGiveOrgAbility(args),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::CreateAndGiveOrgAbility(response) = data else {
@@ -578,15 +662,18 @@ pub fn use_org_ability(
     ability_id: AbilityKey,
     args: AbilityBehaviour,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::Player(user_id),
-        timestamp: time,
-        payload: Action::UseOrgAbility(UseOrgAbility {
-            ability_id,
-            ability_args: args,
-            org_id,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::Player(user_id),
+            timestamp: time,
+            payload: Action::UseOrgAbility(UseOrgAbility {
+                ability_id,
+                ability_args: args,
+                org_id,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn force_charges(eng: &mut Engine, _time: Time, ability_id: AbilityKey, charges: ChargeCount) {
@@ -607,11 +694,14 @@ pub fn add_state(
     actor_id: ActorKey,
     state: State,
 ) -> (ActionResponse, ActionContext) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::AddState(AddState { actor_id, state }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::AddState(AddState { actor_id, state }),
+        },
+        Engine::version(),
+    )
     .unwrap()
 }
 
@@ -621,24 +711,30 @@ pub fn remove_state(
     actor_id: ActorKey,
     state: State,
 ) -> (ActionResponse, ActionContext) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::RemoveState(RemoveState { actor_id, state }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::RemoveState(RemoveState { actor_id, state }),
+        },
+        Engine::version(),
+    )
     .unwrap()
 }
 
 pub fn create_channel(eng: &mut Engine, time: Time, loggable: bool) -> ChannelKey {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreateChannel(CreateChannel {
-                loggable,
-                base_profile: None,
-            }),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateChannel(CreateChannel {
+                    loggable,
+                    base_profile: None,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::CreateChannel(response) = data else {
@@ -648,11 +744,14 @@ pub fn create_channel(eng: &mut Engine, time: Time, loggable: bool) -> ChannelKe
 }
 
 pub fn destroy_channel(eng: &mut Engine, time: Time, channel_id: ChannelKey) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::DestroyChannel(DestroyChannel { channel_id }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::DestroyChannel(DestroyChannel { channel_id }),
+        },
+        Engine::version(),
+    )
 }
 
 // Put a name in a channel and hand it to somebody, with permissions that will not move under the
@@ -666,19 +765,22 @@ pub fn give_profile(
     perms: ChannelPermSet,
 ) -> ProfileKey {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
-                channel_id,
-                player_id,
-                display,
-                visible: true,
-                shared: false,
-                transferrable: false,
-                perm_policy: PermUpdatePolicy::Fixed(FixedPolicy { perms }),
-            }),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateAndGiveProfile(CreateAndGiveProfile {
+                    channel_id,
+                    player_id,
+                    display,
+                    visible: true,
+                    shared: false,
+                    transferrable: false,
+                    perm_policy: PermUpdatePolicy::Fixed(FixedPolicy { perms }),
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::CreateAndGiveProfile(response) = data else {
@@ -713,15 +815,18 @@ pub fn set_profile_perms(
     profile_id: ProfileKey,
     perms: ChannelPermSet,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::SetProfilePolicy(SetProfilePolicy {
-            channel_id,
-            profile_id,
-            perm_policy: PermUpdatePolicy::Fixed(FixedPolicy { perms }),
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::SetProfilePolicy(SetProfilePolicy {
+                channel_id,
+                profile_id,
+                perm_policy: PermUpdatePolicy::Fixed(FixedPolicy { perms }),
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn remove_from_channel(
@@ -730,14 +835,17 @@ pub fn remove_from_channel(
     player_id: ActorKey,
     channel_id: ChannelKey,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::RemoveFromChannel(RemoveFromChannel {
-            channel_id,
-            player_id,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::RemoveFromChannel(RemoveFromChannel {
+                channel_id,
+                player_id,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn send_message(
@@ -748,24 +856,30 @@ pub fn send_message(
     profile_id: ProfileKey,
     content: &str,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::Player(player_id),
-        timestamp: time,
-        payload: Action::SendMessage(SendMessage {
-            channel_id,
-            profile_id: Some(profile_id),
-            content: content.into(),
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::Player(player_id),
+            timestamp: time,
+            payload: Action::SendMessage(SendMessage {
+                channel_id,
+                profile_id: Some(profile_id),
+                content: content.into(),
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn create_gc(eng: &mut Engine, time: Time) -> GroupchatKey {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreateGroupchat(CreateGroupchat {}),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateGroupchat(CreateGroupchat {}),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::CreateGroupchat(response) = data else {
@@ -782,15 +896,18 @@ pub fn add_to_gc(
     player_id: ActorKey,
     owner: bool,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor,
-        timestamp: time,
-        payload: Action::AddToGroupchat(AddToGroupchat {
-            groupchat_id: gc_id,
-            player_id,
-            owner,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor,
+            timestamp: time,
+            payload: Action::AddToGroupchat(AddToGroupchat {
+                groupchat_id: gc_id,
+                player_id,
+                owner,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn remove_from_gc(
@@ -800,14 +917,17 @@ pub fn remove_from_gc(
     gc_id: GroupchatKey,
     player_id: ActorKey,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor,
-        timestamp: time,
-        payload: Action::RemoveFromGroupchat(RemoveFromGroupchat {
-            groupchat_id: gc_id,
-            player_id,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor,
+            timestamp: time,
+            payload: Action::RemoveFromGroupchat(RemoveFromGroupchat {
+                groupchat_id: gc_id,
+                player_id,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn set_gc_owner(
@@ -817,14 +937,17 @@ pub fn set_gc_owner(
     gc_id: GroupchatKey,
     owner: Option<ActorKey>,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor,
-        timestamp: time,
-        payload: Action::SetGroupchatOwner(SetGroupchatOwner {
-            groupchat_id: gc_id,
-            owner,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor,
+            timestamp: time,
+            payload: Action::SetGroupchatOwner(SetGroupchatOwner {
+                groupchat_id: gc_id,
+                owner,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn create_lounge(
@@ -833,11 +956,14 @@ pub fn create_lounge(
     variant: LoungeVariant,
 ) -> (LoungeKey, ChannelKey) {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreateLounge(CreateLounge { variant }),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateLounge(CreateLounge { variant }),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::CreateLounge(response) = data else {
@@ -852,11 +978,14 @@ pub fn leave_lounge(
     player_id: ActorKey,
     lounge_id: LoungeKey,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::Player(player_id),
-        timestamp: time,
-        payload: Action::LeaveLounge(LeaveLounge { lounge_id }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::Player(player_id),
+            timestamp: time,
+            payload: Action::LeaveLounge(LeaveLounge { lounge_id }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn remove_from_lounge(
@@ -865,43 +994,55 @@ pub fn remove_from_lounge(
     player_id: ActorKey,
     lounge_id: LoungeKey,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::RemoveFromLounge(RemoveFromLounge {
-            lounge_id,
-            player_id,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::RemoveFromLounge(RemoveFromLounge {
+                lounge_id,
+                player_id,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn give_role(eng: &mut Engine, time: Time, target_id: ActorKey, role: Role) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::GiveRole(GiveRole { target_id, role }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::GiveRole(GiveRole { target_id, role }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
 pub fn set_news_anchor(eng: &mut Engine, time: Time, target_id: Option<ActorKey>) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::SetNewsAnchor(SetNewsAnchor { target_id }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::SetNewsAnchor(SetNewsAnchor { target_id }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
 pub fn press_conf_access(eng: &mut Engine, time: Time, target_id: ActorKey, has_access: bool) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::PressConfAccess(PressConfAccess {
-            target_id,
-            has_access,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::PressConfAccess(PressConfAccess {
+                target_id,
+                has_access,
+            }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
@@ -913,16 +1054,19 @@ pub fn create_kidnapping(
     source: KidnappingSource,
 ) -> (KidnappingKey, ChannelKey) {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreateKidnapping(CreateKidnapping {
-                victim_id,
-                kidnapping_type,
-                source,
-                duration: None,
-            }),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateKidnapping(CreateKidnapping {
+                    victim_id,
+                    kidnapping_type,
+                    source,
+                    duration: None,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::CreateKidnapping(r) = data else {
@@ -933,14 +1077,17 @@ pub fn create_kidnapping(
 }
 
 pub fn release_kidnapping(eng: &mut Engine, time: Time, kidnapping_id: KidnappingKey) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::ReleaseKidnapping(ReleaseKidnapping {
-            kidnapping_id,
-            forced: false,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::ReleaseKidnapping(ReleaseKidnapping {
+                kidnapping_id,
+                forced: false,
+            }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
@@ -965,18 +1112,21 @@ pub fn start_prosecution_with(
     autonomous: bool,
 ) -> ProsecutionKey {
     let data = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::StartProsecution(StartProsecution {
-                source: ProsecutionSource::None,
-                prosecutor_id,
-                prosecutor_display: ActorDisplay::Raw(prosecutor_id),
-                defendant_id,
-                defendant_display: ActorDisplay::Raw(defendant_id),
-                autonomous,
-            }),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::StartProsecution(StartProsecution {
+                    source: ProsecutionSource::None,
+                    prosecutor_id,
+                    prosecutor_display: ActorDisplay::Raw(prosecutor_id),
+                    defendant_id,
+                    defendant_display: ActorDisplay::Raw(defendant_id),
+                    autonomous,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap()
         .0;
     let ActionResponse::StartProsecution(response) = data else {
@@ -993,11 +1143,14 @@ pub fn signal_ready(
     caller: ActorKey,
     prosecution_id: ProsecutionKey,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::Player(caller),
-        timestamp: time,
-        payload: Action::SignalReady(SignalReady { prosecution_id }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::Player(caller),
+            timestamp: time,
+            payload: Action::SignalReady(SignalReady { prosecution_id }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn select_lawyer(
@@ -1007,24 +1160,30 @@ pub fn select_lawyer(
     prosecution_id: ProsecutionKey,
     lawyer_id: ActorKey,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::Player(defendant),
-        timestamp: time,
-        payload: Action::SelectLawyer(SelectLawyer {
-            prosecution_id,
-            lawyer_id,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::Player(defendant),
+            timestamp: time,
+            payload: Action::SelectLawyer(SelectLawyer {
+                prosecution_id,
+                lawyer_id,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 // An automatic advance, as a timer or a completed pair of signals would produce it. A
 // non-autonomous prosecution holds against this.
 pub fn advance_prosecution(eng: &mut Engine, time: Time, prosecution_id: ProsecutionKey) {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }),
+        },
+        Engine::version(),
+    )
     .unwrap();
 }
 
@@ -1034,11 +1193,14 @@ pub fn host_advance_prosecution(
     time: Time,
     prosecution_id: ProsecutionKey,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::Admin,
-        timestamp: time,
-        payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::Admin,
+            timestamp: time,
+            payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id }),
+        },
+        Engine::version(),
+    )
 }
 
 pub fn terminate_prosecution(
@@ -1046,14 +1208,17 @@ pub fn terminate_prosecution(
     time: Time,
     prosecution_id: ProsecutionKey,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::TerminateProsecution(TerminateProsecution {
-            prosecution_id,
-            verdict: None,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::TerminateProsecution(TerminateProsecution {
+                prosecution_id,
+                verdict: None,
+            }),
+        },
+        Engine::version(),
+    )
 }
 
 // ---- incarcerations ----
@@ -1065,15 +1230,18 @@ pub fn incarcerate(
     duration: Option<Time>,
 ) -> (IncarcerationKey, ActionContext) {
     let (data, ctx) = eng
-        .execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: time,
-            payload: Action::CreateIncarceration(CreateIncarceration {
-                victim_id,
-                source: IncarcerationSource::None,
-                duration,
-            }),
-        }, Engine::version())
+        .execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: time,
+                payload: Action::CreateIncarceration(CreateIncarceration {
+                    victim_id,
+                    source: IncarcerationSource::None,
+                    duration,
+                }),
+            },
+            Engine::version(),
+        )
         .unwrap();
     let ActionResponse::CreateIncarceration(response) = data else {
         unreachable!()
@@ -1086,12 +1254,15 @@ pub fn release_incarceration(
     time: Time,
     incarceration_id: IncarcerationKey,
 ) -> ExecutionResult {
-    eng.execute(ActionRequest {
-        actor: ActionActor::System,
-        timestamp: time,
-        payload: Action::ReleaseIncarceration(ReleaseIncarceration {
-            incarceration_id,
-            forced: false,
-        }),
-    }, Engine::version())
+    eng.execute(
+        ActionRequest {
+            actor: ActionActor::System,
+            timestamp: time,
+            payload: Action::ReleaseIncarceration(ReleaseIncarceration {
+                incarceration_id,
+                forced: false,
+            }),
+        },
+        Engine::version(),
+    )
 }

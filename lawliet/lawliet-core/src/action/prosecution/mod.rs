@@ -287,14 +287,19 @@ mod prosecution_tests {
         prosecution_id: crate::ProsecutionKey,
         success: bool,
     ) -> (crate::action::ActionResponse, crate::action::ActionContext) {
-        eng.execute(crate::action::ActionRequest {
-            actor: crate::action::ActionActor::System,
-            timestamp: time,
-            payload: crate::action::Action::ProsecutionVoteRes(crate::action::ProsecutionVoteRes {
-                prosecution_id,
-                success,
-            }),
-        }, Engine::version())
+        eng.execute(
+            crate::action::ActionRequest {
+                actor: crate::action::ActionActor::System,
+                timestamp: time,
+                payload: crate::action::Action::ProsecutionVoteRes(
+                    crate::action::ProsecutionVoteRes {
+                        prosecution_id,
+                        success,
+                    },
+                ),
+            },
+            Engine::version(),
+        )
         .unwrap()
     }
 
@@ -697,11 +702,14 @@ mod prosecution_tests {
         let (_, _, _, id) = trial(&mut eng);
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 1,
-                payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id: id }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 1,
+                    payload: Action::AdvanceProsecution(AdvanceProsecution { prosecution_id: id }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         let channel = trial_channel(&eng, id);
@@ -1068,19 +1076,22 @@ mod prosecution_tests {
         let defendant = add_player(&mut eng, 0, Role::Civilian, "defendant");
 
         let (_, ctx) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: 1,
-                payload: Action::StartProsecution(crate::action::StartProsecution {
-                    source: crate::prosecution::ProsecutionSource::None,
-                    prosecutor_id: prosecutor,
-                    // The case this is for: the accuser is nameless on the public snapshot.
-                    prosecutor_display: ActorDisplay::Mysterious,
-                    defendant_id: defendant,
-                    defendant_display: ActorDisplay::Raw(defendant),
-                    autonomous: true,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: 1,
+                    payload: Action::StartProsecution(crate::action::StartProsecution {
+                        source: crate::prosecution::ProsecutionSource::None,
+                        prosecutor_id: prosecutor,
+                        // The case this is for: the accuser is nameless on the public snapshot.
+                        prosecutor_display: ActorDisplay::Mysterious,
+                        defendant_id: defendant,
+                        defendant_display: ActorDisplay::Raw(defendant),
+                        autonomous: true,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
 
         let told: Vec<_> = ctx

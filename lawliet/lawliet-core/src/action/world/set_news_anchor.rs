@@ -15,8 +15,8 @@ use lawliet_types::{
 
 use crate::{
     action::{
-        Action, ActionActor, ActionContext, ActionInterface, ActionResult, GiveAbility, GivePassive,
-        TakeAbility, TakePassive,
+        Action, ActionActor, ActionContext, ActionInterface, ActionResult, GiveAbility,
+        GivePassive, TakeAbility, TakePassive,
     },
     helpers::get_player,
 };

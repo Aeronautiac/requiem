@@ -5,9 +5,9 @@ use lawliet_types::{
 };
 
 use crate::{
-    common::Version,
     ability::AbilityInterface,
     action::ActionInterface,
+    common::Version,
     helpers::{actor_id, get_player},
 };
 

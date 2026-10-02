@@ -63,7 +63,9 @@ mod tests {
         config::{ability::AbilityName, role::Role},
         engine::Engine,
         helpers::get_actor,
-        test_helpers::{add_player, add_state, init_engine, quick_ability, quick_kill, set_blackout},
+        test_helpers::{
+            add_player, add_state, init_engine, quick_ability, quick_kill, set_blackout,
+        },
     };
 
     fn engine_with_player() -> (Engine, ActorKey) {
@@ -80,14 +82,17 @@ mod tests {
 
     fn plant_bug(eng: &mut Engine, time: Time, target: ActorKey, source: BugSource) -> BugKey {
         let (resp, _) = eng
-            .execute(ActionRequest {
-                actor: ActionActor::System,
-                timestamp: time,
-                payload: Action::CreateBug(CreateBug {
-                    target_id: target,
-                    source,
-                }),
-            }, Engine::version())
+            .execute(
+                ActionRequest {
+                    actor: ActionActor::System,
+                    timestamp: time,
+                    payload: Action::CreateBug(CreateBug {
+                        target_id: target,
+                        source,
+                    }),
+                },
+                Engine::version(),
+            )
             .unwrap();
         let ActionResponse::CreateBug(r) = resp else {
             unreachable!()
@@ -111,7 +116,10 @@ mod tests {
             })
             .expect("a status is broadcast");
 
-        assert_eq!(recipient, CommandRecipient::Viewport(eng.world.data_viewport));
+        assert_eq!(
+            recipient,
+            CommandRecipient::Viewport(eng.world.data_viewport)
+        );
         assert!(projected.contains(Status::Incarcerated));
         assert!(!projected.contains(Status::Missing));
         assert!(!projected.contains(Status::Dead));
@@ -151,11 +159,14 @@ mod tests {
         let bug = plant_bug(&mut eng, 1, p, BugSource::Ability(ability));
         assert!(status(&eng, p).contains(Status::Bugged));
 
-        eng.execute(ActionRequest {
-            actor: ActionActor::System,
-            timestamp: 2,
-            payload: Action::ArchiveBug(ArchiveBug { bug_id: bug }),
-        }, Engine::version())
+        eng.execute(
+            ActionRequest {
+                actor: ActionActor::System,
+                timestamp: 2,
+                payload: Action::ArchiveBug(ArchiveBug { bug_id: bug }),
+            },
+            Engine::version(),
+        )
         .unwrap();
         assert!(!status(&eng, p).contains(Status::Bugged));
     }
@@ -201,7 +212,9 @@ mod tests {
         let (mut eng, p) = engine_with_player();
         set_blackout(&mut eng, 1, true);
         quick_kill(&mut eng, 2, false, true, false, p);
-        assert!(status(&eng, p).contains(Status::Missing) && !status(&eng, p).contains(Status::Dead));
+        assert!(
+            status(&eng, p).contains(Status::Missing) && !status(&eng, p).contains(Status::Dead)
+        );
 
         set_blackout(&mut eng, 3, false);
         let s = status(&eng, p);
