@@ -89,10 +89,7 @@ impl Engine {
             return Err((ActionError::TimeAlreadyPassed, ctx));
         }
 
-        // Commands are emitted in push order; local ordering needs (e.g. perms before
-        // members) are handled with reversed scopes inside the relevant actions, so no
-        // global reversal happens here. execute_atomic resets ctx between passes, so
-        // drain each job's commands into a separate buffer as we go.
+        // commands are emitted in push order
         let mut commands = Vec::new();
         loop {
             if self.jobs.is_empty() {
@@ -113,7 +110,6 @@ impl Engine {
         let result = self.execute_atomic(&mut ctx, action, version);
         commands.append(&mut ctx.commands);
 
-        // Catchup commands first, then the target action's, in the order they occurred.
         ctx.commands = commands;
 
         // Return the accumulated context (catchup + target) whether or not the
@@ -125,7 +121,8 @@ impl Engine {
     }
 
     // every update to any place in code after the engine is publicly usable requires the version number to be incremented by 1
-    /// return the latest version of the engine
+    // return the latest version of the engine (the server must check the engine version to determine input behaviour and prevent
+    // the case where an engine update mid-game destroys its state for subsequent rebuilds)
     pub fn version() -> Version {
         0
     }
