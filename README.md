@@ -23,17 +23,26 @@ flowchart TB
     C1[browser] & C2[browser] & C3[browser]
     C1 & C2 & C3 -- "REST + WebSocket" --> Y
 
-    subgraph Y[Yagami — one process]
+    subgraph Y[Yagami]
         direction TB
-        H[HTTP edge<br/>accounts · tickets · rate limits]
+        H[REST handlers<br/>accounts · sessions · tickets · game creation]
+        subgraph W[WebSocket connection, one per client]
+            direction LR
+            RD[reader task]
+            WR[writer task]
+        end
         G1[game task]
         G2[game task]
-        H --> G1 & G2
+        H -. "ticket admits the upgrade,<br/>spawns" .-> RD & WR
+        H -. "spawns on create / wake" .-> G1 & G2
+        RD -- "inbox<br/>unbounded mpsc" --> G1 & G2
+        G1 & G2 -- "outbox<br/>bounded mpsc" --> WR
     end
 
-    G1 -- "stdin / stdout" --> R1[yagami-runtime<br/>Lawliet + sim state]
-    G2 -- "stdin / stdout" --> R2[yagami-runtime<br/>Lawliet + sim state]
-    Y -- "write-ahead input log" --> PG[(Postgres)]
+    G1 <-- "stdin / stdout" --> R1[yagami-runtime<br/>Lawliet + server state]
+    G2 <-- "stdin / stdout" --> R2[yagami-runtime<br/>Lawliet + server state]
+    H -- "accounts · sessions" --> PG[(Postgres)]
+    G1 & G2 -- "write-ahead input log" --> PG
 ```
 
 Many clients narrow into one server process, which fans back out into one OS process per running
