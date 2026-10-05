@@ -209,7 +209,7 @@ Every limit above is a `YAGAMI_*` environment variable; see [`yagami/.env.exampl
 
 - **Determinism** is verified by the suite as a whole. What matters is logical determinism,
   not bit determinism. Any divergence in logical determinism would cause some tests to randomly fail,
-  because there is such a large quantity of them. None do.
+  because there is such a large variety of them. None do.
 - **Engine** — roughly 300 unit tests in `lawliet-core`, in the root modules of the actions they cover
   and calling the engine through its public `execute` entry point.
   The tests focus on obscure interactions and state interacting throughout multiple sub-systems.

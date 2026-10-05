@@ -90,6 +90,7 @@
   <path class="line" d="M640 114 H760" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
   <path class="line" d="M640 240 H760" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
   <path class="line" d="M640 324 H760" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text class="label" x="710" y="92" text-anchor="middle">piped</text>
   <text class="label" x="710" y="106" text-anchor="middle">stdin / stdout</text>
 
   <!-- runtimes -->
