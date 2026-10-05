@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 500" role="img" aria-labelledby="title desc">
   <title id="title">Requiem architecture</title>
-  <desc id="desc">Browsers connect to Yagami over REST and WebSocket. Each WebSocket connection is a reader task and a writer task that exchange messages with one game task over channels. Each game task drives its own yagami-runtime child process over stdin and stdout and writes its input log to Postgres.</desc>
+  <desc id="desc">Clients connect to Yagami over REST and WebSocket. Each WebSocket connection is a reader task and a writer task that exchange messages with one game task over channels. Each game task drives its own yagami-runtime child process over stdin and stdout and writes its input log to Postgres.</desc>
   <style>
     .bg { fill: #ffffff; }
     .box { fill: #f6f8fa; stroke: #57606a; stroke-width: 1; }
@@ -32,24 +32,24 @@
   <rect class="group" x="196" y="24" width="464" height="452" rx="6"/>
   <text class="title" x="210" y="46">Yagami</text>
 
-  <!-- browsers -->
+  <!-- clients -->
   <rect class="box" x="34" y="66" width="104" height="40" rx="20"/>
-  <text x="86" y="90" text-anchor="middle">browser</text>
+  <text x="86" y="90" text-anchor="middle">client</text>
   <rect class="box" x="34" y="150" width="104" height="40" rx="20"/>
-  <text x="86" y="174" text-anchor="middle">browser</text>
+  <text x="86" y="174" text-anchor="middle">client</text>
   <rect class="box" x="34" y="234" width="104" height="40" rx="20"/>
-  <text x="86" y="258" text-anchor="middle">browser</text>
+  <text x="86" y="258" text-anchor="middle">client</text>
   <rect class="box" x="34" y="318" width="104" height="40" rx="20"/>
-  <text x="86" y="342" text-anchor="middle">browser</text>
+  <text x="86" y="342" text-anchor="middle">client</text>
 
-  <!-- browser to connection -->
+  <!-- client to connection -->
   <path class="line" d="M138 86 H220" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
   <path class="line" d="M138 170 H220" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
   <path class="line" d="M138 254 H220" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
   <path class="line" d="M138 338 H220" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
   <text class="label" x="164" y="76" text-anchor="middle">WebSocket</text>
 
-  <!-- browser to REST handlers -->
+  <!-- client to REST handlers -->
   <path class="line" d="M34 86 H14 V432 H220" marker-end="url(#arrow)"/>
   <path class="line" d="M34 170 H14"/>
   <path class="line" d="M34 254 H14"/>
