@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 500" role="img" aria-labelledby="title desc">
+  <title id="title">Requiem architecture</title>
+  <desc id="desc">Browsers connect to Yagami over REST and WebSocket. Each WebSocket connection is a reader task and a writer task that exchange messages with one game task over channels. Each game task drives its own yagami-runtime child process over stdin and stdout and writes its input log to Postgres.</desc>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f8fa; stroke: #57606a; stroke-width: 1; }
+    .group { fill: #eaeef2; stroke: #8c959f; stroke-width: 1; }
+    .line { fill: none; stroke: #57606a; stroke-width: 1.2; }
+    .dotted { stroke-dasharray: 3 4; }
+    .head { fill: #57606a; }
+    text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 12px; fill: #1f2328; }
+    .label { font-size: 11px; fill: #57606a; }
+    .title { font-size: 13px; font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .box { fill: #161b22; stroke: #8b949e; }
+      .group { fill: #21262d; stroke: #6e7681; }
+      .line { stroke: #8b949e; }
+      .head { fill: #8b949e; }
+      text { fill: #e6edf3; }
+      .label { fill: #9198a1; }
+    }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="head" d="M0 0 L10 5 L0 10 Z"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1040" height="500" rx="8"/>
+
+  <rect class="group" x="196" y="24" width="464" height="452" rx="6"/>
+  <text class="title" x="210" y="46">Yagami</text>
+
+  <!-- browsers -->
+  <rect class="box" x="34" y="66" width="104" height="40" rx="20"/>
+  <text x="86" y="90" text-anchor="middle">browser</text>
+  <rect class="box" x="34" y="150" width="104" height="40" rx="20"/>
+  <text x="86" y="174" text-anchor="middle">browser</text>
+  <rect class="box" x="34" y="234" width="104" height="40" rx="20"/>
+  <text x="86" y="258" text-anchor="middle">browser</text>
+  <rect class="box" x="34" y="318" width="104" height="40" rx="20"/>
+  <text x="86" y="342" text-anchor="middle">browser</text>
+
+  <!-- browser to connection -->
+  <path class="line" d="M138 86 H220" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path class="line" d="M138 170 H220" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path class="line" d="M138 254 H220" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path class="line" d="M138 338 H220" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text class="label" x="164" y="76" text-anchor="middle">WebSocket</text>
+
+  <!-- browser to REST handlers -->
+  <path class="line" d="M34 86 H14 V432 H220" marker-end="url(#arrow)"/>
+  <path class="line" d="M34 170 H14"/>
+  <path class="line" d="M34 254 H14"/>
+  <path class="line" d="M34 338 H14"/>
+  <text class="label" x="104" y="424" text-anchor="middle">REST</text>
+
+  <!-- connections -->
+  <rect class="box" x="220" y="62" width="160" height="48" rx="4"/>
+  <text x="300" y="82" text-anchor="middle">connection</text>
+  <text class="label" x="300" y="98" text-anchor="middle">reader task · writer task</text>
+  <rect class="box" x="220" y="146" width="160" height="48" rx="4"/>
+  <text x="300" y="166" text-anchor="middle">connection</text>
+  <text class="label" x="300" y="182" text-anchor="middle">reader task · writer task</text>
+  <rect class="box" x="220" y="230" width="160" height="48" rx="4"/>
+  <text x="300" y="250" text-anchor="middle">connection</text>
+  <text class="label" x="300" y="266" text-anchor="middle">reader task · writer task</text>
+  <rect class="box" x="220" y="314" width="160" height="48" rx="4"/>
+  <text x="300" y="334" text-anchor="middle">connection</text>
+  <text class="label" x="300" y="350" text-anchor="middle">reader task · writer task</text>
+
+  <!-- connection to game task -->
+  <path class="line" d="M380 86 L520 116" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path class="line" d="M380 170 L520 140" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path class="line" d="M380 254 H520" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path class="line" d="M380 338 H520" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text class="label" x="450" y="56" text-anchor="middle">inbox: unbounded mpsc →</text>
+  <text class="label" x="450" y="72" text-anchor="middle">← outbox: bounded mpsc</text>
+
+  <!-- game tasks -->
+  <rect class="box" x="520" y="96" width="120" height="64" rx="4"/>
+  <text x="580" y="132" text-anchor="middle">game task</text>
+  <rect class="box" x="520" y="222" width="120" height="64" rx="4"/>
+  <text x="580" y="258" text-anchor="middle">game task</text>
+  <rect class="box" x="520" y="306" width="120" height="64" rx="4"/>
+  <text x="580" y="342" text-anchor="middle">game task</text>
+
+  <!-- game task to runtime -->
+  <path class="line" d="M640 114 H760" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path class="line" d="M640 240 H760" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path class="line" d="M640 324 H760" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text class="label" x="710" y="106" text-anchor="middle">stdin / stdout</text>
+
+  <!-- runtimes -->
+  <rect class="box" x="760" y="90" width="170" height="48" rx="4"/>
+  <text x="845" y="110" text-anchor="middle">yagami-runtime</text>
+  <text class="label" x="845" y="126" text-anchor="middle">Lawliet + server state</text>
+  <rect class="box" x="760" y="216" width="170" height="48" rx="4"/>
+  <text x="845" y="236" text-anchor="middle">yagami-runtime</text>
+  <text class="label" x="845" y="252" text-anchor="middle">Lawliet + server state</text>
+  <rect class="box" x="760" y="300" width="170" height="48" rx="4"/>
+  <text x="845" y="320" text-anchor="middle">yagami-runtime</text>
+  <text class="label" x="845" y="336" text-anchor="middle">Lawliet + server state</text>
+
+  <!-- game task to Postgres -->
+  <path class="line" d="M640 150 H968 V402" marker-end="url(#arrow)"/>
+  <path class="line" d="M640 276 H968"/>
+  <path class="line" d="M640 360 H968"/>
+  <text class="label" x="845" y="166" text-anchor="middle">write-ahead input log</text>
+
+  <!-- REST handlers -->
+  <rect class="box" x="220" y="404" width="420" height="56" rx="4"/>
+  <text x="430" y="428" text-anchor="middle">REST handlers</text>
+  <text class="label" x="430" y="446" text-anchor="middle">accounts · sessions · tickets · game creation</text>
+
+  <path class="line dotted" d="M300 404 V364" marker-end="url(#arrow)"/>
+  <text class="label" x="310" y="388">ticket admits upgrade</text>
+  <path class="line dotted" d="M580 404 V372" marker-end="url(#arrow)"/>
+  <text class="label" x="570" y="392" text-anchor="end">spawns on create / wake</text>
+
+  <!-- REST handlers to Postgres -->
+  <path class="line" d="M640 432 H918" marker-end="url(#arrow)"/>
+  <text class="label" x="780" y="424" text-anchor="middle">accounts · sessions</text>
+
+  <!-- Postgres -->
+  <path class="box" d="M920 414 V452 A48 10 0 0 0 1016 452 V414 A48 10 0 0 0 920 414 A48 10 0 0 0 1016 414"/>
+  <text x="968" y="446" text-anchor="middle">Postgres</text>
+</svg>

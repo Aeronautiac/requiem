@@ -16,34 +16,7 @@ simulation engine and a server built around the idea that a game is its input lo
 
 ## Architecture
 
-<!-- hourglass diagram (SVG) — the mermaid below is a stand-in -->
-
-```mermaid
-flowchart TB
-    C1[browser] & C2[browser] & C3[browser]
-    C1 & C2 & C3 -- "REST + WebSocket" --> Y
-
-    subgraph Y[Yagami]
-        direction TB
-        H[REST handlers<br/>accounts · sessions · tickets · game creation]
-        subgraph W[WebSocket connection, one per client]
-            direction LR
-            RD[reader task]
-            WR[writer task]
-        end
-        G1[game task]
-        G2[game task]
-        H -. "ticket admits the upgrade,<br/>spawns" .-> RD & WR
-        H -. "spawns on create / wake" .-> G1 & G2
-        RD -- "inbox<br/>unbounded mpsc" --> G1 & G2
-        G1 & G2 -- "outbox<br/>bounded mpsc" --> WR
-    end
-
-    G1 <-- "stdin / stdout" --> R1[yagami-runtime<br/>Lawliet + server state]
-    G2 <-- "stdin / stdout" --> R2[yagami-runtime<br/>Lawliet + server state]
-    H -- "accounts · sessions" --> PG[(Postgres)]
-    G1 & G2 -- "write-ahead input log" --> PG
-```
+![Requiem architecture](docs/architecture.svg)
 
 Many clients narrow into one server process, which fans back out into one OS process per running
 game. Each game is owned by a single Tokio task that serializes everything that it receives.
