@@ -34,10 +34,18 @@ export function useFlash(ms = 3000): Flash {
   };
 }
 
-export function FlashLine({ flash }: { flash: Flash }) {
+// `floating` is for a toolbar, where a line in the flow would push the buttons around: the line
+// sits over the bottom of the screen instead, clear of the bottom bar, and takes no space. `fixed`,
+// so it shows the same from the bar and from inside a dialog's scrolling body.
+const FLOATING =
+  "pointer-events-none fixed inset-x-4 bottom-14 z-50 mx-auto w-fit max-w-md whitespace-normal border border-edge bg-panel px-3 py-2 text-center";
+
+export function FlashLine({ flash, floating = false }: { flash: Flash; floating?: boolean }) {
   if (!flash.message) return null;
   return (
-    <p className={`text-sm ${flash.message.kind === "error" ? "text-danger-text" : "text-ok-text"}`}>
+    <p
+      className={`text-sm ${flash.message.kind === "error" ? "text-danger-text" : "text-ok-text"} ${floating ? FLOATING : ""}`}
+    >
       {flash.message.text}
     </p>
   );

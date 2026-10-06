@@ -46,7 +46,7 @@ export function AdminPanel() {
       <Button variant="danger" size="sm" onClick={crash}>
         Crash
       </Button>
-      <FlashLine flash={flash} />
+      <FlashLine flash={flash} floating />
     </div>
   );
 }

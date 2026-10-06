@@ -259,7 +259,7 @@ function CreateGame({
             </p>
             <p className="break-all font-mono">{created.admin_key}</p>
             <p className="text-ink-dim">
-              The server shows this key once. Save it now — it cannot be recovered later.
+              This key is saved to your account. You can find it again under Saved keys.
             </p>
             <FlashLine flash={copyFlash} />
           </div>

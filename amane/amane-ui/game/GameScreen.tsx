@@ -145,6 +145,9 @@ export function GameScreen() {
 // On a wide screen, everything in one bar. On a phone, one row of what is used mid-play (abilities,
 // passives, your own statuses, the clock), with the rest behind "More": a bar holding all of it
 // would wrap into rows and eat the screen.
+//
+// Two parts: everything on the left may wrap onto a second row when a narrow screen runs out of
+// width; the buttons on the right never shrink and never wrap, so "More" is always on screen.
 function BottomBar() {
   const client = useClient();
   const session = useSession();
@@ -175,20 +178,24 @@ function BottomBar() {
   );
 
   return (
-    <div className="flex shrink-0 items-center gap-2 border-t border-edge px-3 py-1.5 lg:flex-wrap">
-      {wide && <ViewSelect />}
-      <ErrorBoundary name="Abilities">
-        <AbilityMenu />
-      </ErrorBoundary>
-      <ErrorBoundary name="Passives">
-        <PassivesPanel />
-      </ErrorBoundary>
-      {wide && admin}
-      <div className="min-w-0">
-        <StatusBadges />
+    <div className="flex shrink-0 items-center gap-2 border-t border-edge px-3 py-1.5">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        {wide && <ViewSelect />}
+        <ErrorBoundary name="Abilities">
+          <AbilityMenu />
+        </ErrorBoundary>
+        <ErrorBoundary name="Passives">
+          <PassivesPanel />
+        </ErrorBoundary>
+        {wide && admin}
+        <div className="min-w-0">
+          <StatusBadges />
+        </div>
+        <div className="ml-auto">
+          <GameClock />
+        </div>
       </div>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <GameClock />
+      <div className="flex shrink-0 items-center gap-2">
         {wide ? (
           settings
         ) : (
