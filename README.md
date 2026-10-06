@@ -65,8 +65,8 @@ due at or before the time being processed.
 
 **Why?**
 Timed game events (poll timeouts, scheduled kills, prosecution phases) fire at exactly the
-same point in the stream on every replay, regardless of when the replay happens, making race
-conditions completely impossible.
+same point in the stream on every replay, regardless of when the replay happens, making it
+impossible for jobs to race with player inputs.
 
 Due jobs are executed like any other action, before the incoming one.
 Their commands are returned even if the incoming action is then rejected, because the jobs already
@@ -112,9 +112,9 @@ WebSocket upgrade handler in a single lock acquisition.
 Joining a game only needs a key (you can join a game without an account).
 
 **Why?**
-Browsers can't attach metadata to a WebSocket handshake outside of what a URL implies, but the browser
-logs URLs, so you don't want to use the key as the URL, because that puts something that's meant to be
-secure into local logs. It'd also be harder to differentiate different connections that share the same key.
+Browsers can't set custom headers on a WebSocket handshake, but URLs are often logged,
+so you don't want to put the key in the URL, because that puts something that's meant to be secure into logs.
+It'd also be harder to differentiate different connections that share the same key.
 
 Instead, a ticket is generated via a POST REST API endpoint, with the key in the HTTP header. The request
 returns a new short lived ticket, which doubles as a connection identifier. The ticket is used to access a
@@ -124,9 +124,9 @@ The ticket is claimed BEFORE the WebSocket upgrade goes through, and wrapped wit
 
 **Why?**
 The WebSocket upgrade might fail. This should not brick a ticket and pollute RAM.
-There is also a window where a connection might go through, but some other connection request might have already
-claimed the ticket. This essentially makes the WebSocket useless. It's better to claim immediately.
-The drop guard ensures that the ticket is freed in either scenario (successful upgrade, on disconnect, or failure).
+There is also a potential race where two connections attempt to claim the same ticket, leaving
+one with a dead WebSocket. It's better to claim immediately.
+The drop guard ensures that the ticket is freed in every case (successful upgrade, on disconnect, or failure).
 
 #### Write-ahead persistence and crash recovery
 
@@ -145,7 +145,7 @@ Each game runs on a sandboxed clock — real elapsed time plus
 an offset/anchor. Client timestamps are ignored. Inputs have their time overwritten by the server using its virtual clock.
 
 A forward jump shifts the anchor and sends in a Null action to drive the simulation forward.
-A backward jump truncates the log up to and including the target time, deletes the tail from the database,
+A backward jump truncates the log AFTER the target time, deletes the tail from the database,
 and reboots from what remains.
 
 **Why?** Rewind falls out of event sourcing for free, and hosts need it to undo mistakes in a game
@@ -175,9 +175,9 @@ this game has idle periods. Idle games aren't discarded. They are only put to sl
   This is because a game may be active in RAM for an arbitrary period of time.
   Just telling someone "in progress" is dishonest, because it could take hours, theoretically, for a slot to open up.
   It's better to refuse outright and have them try again later. If a game is inactive for the configured time period,
-  it happens automatically.
+  the slot frees up automatically.
   I could make a server-side queueing system, but it isn't yet worth the complexity.
-  I am not even close to hitting residence caps yet. My current server has about 4GB of RAM.
+  I am not even close to hitting the cap yet. My current server has about 4GB of RAM.
 - A game that fails to boot retries with exponential backoff, then enters a cooldown so client
   retries can't repeatedly start the cycle. The retry mechanism exists because there could theoretically
   be some transient freak circumstances leading to boot failure. If the game fails to boot beyond this point,
@@ -185,7 +185,8 @@ this game has idle periods. Idle games aren't discarded. They are only put to sl
 - Each connection has a bounded outbox. A client too slow to drain it is dropped immediately.
   A slow client doesn't threaten the server. The client reconnects and resyncs when it's back to normal.
 - Inbound messages are rate-limited per connection by not reading the socket, pushing the backlog
-  into the kernel buffer and back onto the sender.
+  into the kernel buffer and back onto the sender. This is why the inbox is unbounded. If it weren't,
+  it'd be possible to get random rejections beyond just being rate-limited.
 - REST is rate-limited per IP, with a tighter bucket on anything that hashes a password.
 
 Every limit above is a `YAGAMI_*` environment variable; see [`yagami/.env.example`](yagami/.env.example).
@@ -207,9 +208,11 @@ Every limit above is a `YAGAMI_*` environment variable; see [`yagami/.env.exampl
 
 ## Testing
 
-- **Determinism** is verified by the suite as a whole. What matters is logical determinism,
-  not bit determinism. Any divergence in logical determinism would cause some tests to randomly fail,
-  because there is such a large variety of them. None do.
+- **Determinism** — What matters is logical determinism, not bit determinism.
+  I don't have an explicit test set up for it yet, which I plan to add after my first live test run
+  with the community, but the suite acts as an indirect check. It was added to after every engine change,
+  and any divergence in logical determinism at some point would have created flaky tests, given how varied they are.
+  None have.
 - **Engine** — roughly 300 unit tests in `lawliet-core`, in the root modules of the actions they cover
   and calling the engine through its public `execute` entry point.
   The tests focus on obscure interactions and state interacting throughout multiple sub-systems.
