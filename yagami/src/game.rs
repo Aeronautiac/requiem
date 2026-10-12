@@ -186,7 +186,7 @@ struct Game {
     creation_responses: Vec<ExecOutcome>,
 
     // state
-    clock: GameClock,             // sandboxed source of action timestamps
+    clock: GameClock,              // sandboxed source of action timestamps
     accepted: Vec<VersionedInput>, // the single durable source of truth; replayed on boot
     // the engine's input version, queried from the runtime once per boot and stamped on every
     // newly-accepted input so a rebuild replays each under the semantics it was recorded with.
