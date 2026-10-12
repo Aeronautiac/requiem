@@ -6,8 +6,8 @@
 // crash" and never sees a query.
 //
 // The three tables (see migrations/0001_init.sql):
-//   games   -- one row per game; metadata that cannot be derived by replay (last_reached, the
-//             sandbox clock checkpoint, the keys cache for on-demand boot).
+//   games   -- one row per game; metadata that cannot be derived by replay (the sandbox clock
+//             checkpoint, the keys cache for on-demand boot).
 //   inputs  -- the append-only accepted stream, serialized to jsonb, keyed by (game_id, seq).
 //   crashes -- a global debug log of crash reproduction sequences (inert, never replayed).
 //
@@ -39,7 +39,6 @@ pub struct Store {
 // keys is a cache so a restarted server can validate get_ticket without booting the engine.
 #[derive(Default, Clone)]
 pub struct GameMeta {
-    pub last_reached: Time,
     // the sandbox clock's current virtual time, and the wall-clock millis it was true at.
     // together these make the clock real-time-continuous across a restart.
     pub clock: Time,
@@ -144,8 +143,8 @@ impl Store {
         Ok(())
     }
 
-    // update only the metadata row (no new input). used after a rewind-truncate + rebuild, and
-    // after a boot, to keep the games row current with what the replay reconstructed.
+    // update only the metadata row (no new input). used after a boot (a rewind's rebuild included)
+    // and after a forward time jump, to keep the games row current.
     pub async fn persist_progress(
         &self,
         game_id: GameId,
@@ -214,7 +213,7 @@ impl Store {
     // None if there is no such active game (e.g. it was ended while its wake was in flight).
     pub async fn load_game(&self, game_id: GameId) -> Result<Option<GameRecord>, sqlx::Error> {
         let row = sqlx::query(
-            "SELECT last_reached, clock, clock_wall, keys FROM games
+            "SELECT clock, clock_wall, keys FROM games
               WHERE id = $1 AND status = 'active'",
         )
         .bind(game_id as i64)
@@ -223,13 +222,11 @@ impl Store {
         let Some(row) = row else {
             return Ok(None);
         };
-        let last_reached: i64 = row.try_get("last_reached")?;
         let clock: i64 = row.try_get("clock")?;
         let clock_wall: i64 = row.try_get("clock_wall")?;
         let keys_json: serde_json::Value = row.try_get("keys")?;
         Ok(Some(GameRecord {
             meta: GameMeta {
-                last_reached: last_reached as Time,
                 clock: clock as Time,
                 clock_wall,
                 keys: keys_from_json(&keys_json),
@@ -533,11 +530,10 @@ async fn write_meta(
     let keys_json = serde_json::to_value(keys_to_vec(&meta.keys)).map_err(json_err)?;
     sqlx::query(
         "UPDATE games
-            SET last_reached = $2, clock = $3, clock_wall = $4, keys = $5
+            SET clock = $2, clock_wall = $3, keys = $4
           WHERE id = $1",
     )
     .bind(game_id as i64)
-    .bind(meta.last_reached as i64)
     .bind(meta.clock as i64)
     .bind(meta.clock_wall)
     .bind(keys_json)

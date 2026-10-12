@@ -10,6 +10,7 @@
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
+use std::num::NonZeroUsize;
 
 use enumflags2::{BitFlags, bitflags};
 use lawliet_types::{
@@ -400,36 +401,22 @@ pub struct Batch {
 }
 
 impl Batch {
-    // TODO:
-    // zero copy optimization
-    // not important yet
-    pub fn into_chunks(self, chunk_size: usize) -> Vec<Batch> {
+    // split into batches of at most `chunk_size` outputs, moving the outputs out as it goes. the
+    // first chunk keeps this batch's kind and the rest are Continuations. a batch with no outputs
+    // still yields itself once, since its kind may carry a response.
+    pub fn into_chunks(self, chunk_size: NonZeroUsize) -> impl Iterator<Item = Batch> {
         let Batch { kind, outputs } = self;
-
-        let mut outputs_split: Vec<Vec<Output>> =
-            outputs.chunks(chunk_size).map(|c| c.to_vec()).collect();
-
-        if outputs_split.is_empty() {
-            outputs_split.push(vec![]);
-        }
-
-        let mut chunks_iter = outputs_split.into_iter();
-        let mut batches = vec![];
-
-        if let Some(first_chunk) = chunks_iter.next() {
-            batches.push(Batch {
-                kind,
-                outputs: first_chunk,
-            });
-        }
-
-        for remaining_chunk in chunks_iter {
-            batches.push(Batch {
-                kind: BatchKind::Continuation,
-                outputs: remaining_chunk,
-            });
-        }
-
-        batches
+        let mut kind = Some(kind);
+        let mut outputs = outputs.into_iter();
+        std::iter::from_fn(move || {
+            let first = kind.take();
+            if first.is_none() && outputs.len() == 0 {
+                return None;
+            }
+            Some(Batch {
+                kind: first.unwrap_or(BatchKind::Continuation),
+                outputs: outputs.by_ref().take(chunk_size.get()).collect(),
+            })
+        })
     }
 }

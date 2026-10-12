@@ -769,7 +769,7 @@ pub async fn game_connection(
     });
 
     let mut outbound = tokio::spawn(async move {
-        let mut split_batches: Option<std::vec::IntoIter<Batch>> = None;
+        let mut split_batches = None;
         let mut ping = interval(settings.heartbeat_interval);
         loop {
             select! {
@@ -787,7 +787,7 @@ pub async fn game_connection(
                 out = recv.recv(), if split_batches.is_none() => match out {
                     Some(out) => {
                         // split batch into chunks using batch split method (chunks are just more batches)
-                        split_batches = Some(out.into_chunks(settings.batch_size).into_iter());
+                        split_batches = Some(out.into_chunks(settings.batch_size));
                     }
                     None => break, // game task dropped the outbox sender
                 },
@@ -796,7 +796,10 @@ pub async fn game_connection(
                     let Some(batches) = &mut split_batches  else {
                         unreachable!()
                     };
-                    let out = batches.next();
+                    let Some(out) = batches.next() else {
+                        split_batches = None;
+                        continue;
+                    };
 
                     // Batch is ours; a serialize failure is a bug in this process, not a
                     // runtime condition. abort loudly rather than drop a message on the floor.
@@ -806,10 +809,6 @@ pub async fn game_connection(
                     });
                     if ws_send.send(Message::Text(json.into())).await.is_err() {
                         break; // socket gone
-                    }
-
-                    if batches.len() == 0 {
-                        split_batches = None;
                     }
                 }
             }

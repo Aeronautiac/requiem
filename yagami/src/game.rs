@@ -186,10 +186,7 @@ struct Game {
     creation_responses: Vec<ExecOutcome>,
 
     // state
-    last_reached: Time, // the latest timestamp executed by the engine, not necessarily
-    // the highest ever executed. this distinction is important because time travel may change what
-    // "the end of the timeline" is.
-    clock: GameClock,              // sandboxed source of action timestamps
+    clock: GameClock,             // sandboxed source of action timestamps
     accepted: Vec<VersionedInput>, // the single durable source of truth; replayed on boot
     // the engine's input version, queried from the runtime once per boot and stamped on every
     // newly-accepted input so a rebuild replays each under the semantics it was recorded with.
@@ -299,7 +296,6 @@ impl Game {
             creator,
             creation_reply,
             creation_responses: Vec::new(),
-            last_reached: 0,
             clock,
             accepted,
             engine_version: 0,
@@ -499,8 +495,6 @@ impl Game {
                     .collect();
             }
 
-            let mut last_time: Time = 0;
-
             // re-feed the accepted stream. every input is server-issued (caller None): the stream
             // was already authorized when first accepted, so replay trusts it. the runtime
             // reconstructs engine + sim state and emits the output stream, which we append to
@@ -523,11 +517,6 @@ impl Game {
                             {
                                 self.creation_responses.push(reply.outcome.clone());
                             }
-                            for out in &output.outputs {
-                                if out.time > last_time {
-                                    last_time = out.time;
-                                }
-                            }
                             self.update_server_projections(&output.outputs);
                             self.history.append(output.outputs);
                         }
@@ -540,8 +529,23 @@ impl Game {
                 self.accepted = accepted;
             }
 
+            // the replay leaves the engine at its last accepted input, with every job due since
+            // then still queued. ticks are not in the stream, so one null at the clock runs those
+            // jobs and makes the rebuilt history complete before anyone can sync against it.
             if ok {
-                self.last_reached = last_time;
+                match self
+                    .dispatch(&self.null_at_clock(), self.engine_version, None)
+                    .await
+                {
+                    Ok(output) => {
+                        self.update_server_projections(&output.outputs);
+                        self.history.append(output.outputs);
+                    }
+                    Err(_) => ok = false,
+                }
+            }
+
+            if ok {
                 // reconcile live key handles + privilege cache against the rebuilt sim key set.
                 self.reconcile_key_handles();
                 // anchor every client's game time on the rebuilt timeline.
@@ -875,21 +879,16 @@ impl Game {
         // drive it forward to `target` with a null tick so time-based state actually settles there,
         // rather than waiting for the next scheduled tick.
         if target >= now {
-            let request = ActionRequest {
-                actor: ActionActor::System,
-                timestamp: self.clock.now(),
-                payload: Action::Null(Null {}),
-            };
-            let runtime_input = RuntimeInput::Action(request);
             match self
-                .dispatch(&runtime_input, self.engine_version, None)
+                .dispatch(&self.null_at_clock(), self.engine_version, None)
                 .await
             {
                 Ok(output) => {
-                    self.last_reached = target;
                     self.update_server_projections(&output.outputs);
                     let at = self.history.append(output.outputs);
                     self.history.broadcast(&self.server_state, at, None);
+                    // the jump moved the clock and is not in the log, so the row is its only record.
+                    self.persist_progress().await;
                 }
                 Err(_) => {
                     // the engine hung (or died) mid-catch-up: a crash like any other. dispatch has
@@ -910,7 +909,6 @@ impl Game {
         }
 
         // backward jump: truncate the accepted stream to the target and rebuild from there.
-        self.last_reached = target;
         if self.boot(Some(target)).await.is_err() {
             // the rebuild never came up; the game cannot serve this timeline.
             self.close();
@@ -1065,17 +1063,21 @@ impl Game {
     }
 
     // ===== TICK ===== //
-    // drive time forward. the engine only advances when an action arrives, so without this nothing
-    // time-based ever happens. a Null does nothing itself and only exists to carry the clock.
-    async fn tick(&mut self) {
-        let request = ActionRequest {
+
+    // a Null does nothing itself and only exists to carry the clock to the engine.
+    fn null_at_clock(&self) -> RuntimeInput {
+        RuntimeInput::Action(ActionRequest {
             actor: ActionActor::System,
             timestamp: self.clock.now(),
             payload: Action::Null(Null {}),
-        };
-        let runtime_input = RuntimeInput::Action(request);
+        })
+    }
+
+    // drive time forward. the engine only advances when an action arrives, so without this nothing
+    // time-based ever happens.
+    async fn tick(&mut self) {
         match self
-            .dispatch(&runtime_input, self.engine_version, None)
+            .dispatch(&self.null_at_clock(), self.engine_version, None)
             .await
         {
             Ok(output) => {
@@ -1096,19 +1098,19 @@ impl Game {
 
     // ===== DURABILITY / REGISTRATION ===== //
 
-    // the current GameMeta: last_reached, clock, and the keys cache. shared by every persist site
+    // the current GameMeta: clock and the keys cache. shared by every persist site
     // so the metadata row is always built the same way.
     fn current_meta(&self) -> GameMeta {
         GameMeta {
-            last_reached: self.last_reached,
             clock: self.clock.now(),
             clock_wall: wall_now(),
             keys: self.keys_cache.clone(),
         }
     }
 
-    // write the current progress (last_reached, clock, keys) into the games row. called after a
-    // boot of a durable game so the metadata the row caches (for on-demand boot) stays current.
+    // write the current progress (clock, keys) into the games row. called whenever
+    // it changes without an input being accepted -- after a boot of a durable game, and after a
+    // forward time jump -- so the metadata the row caches (for on-demand boot) stays current.
     async fn persist_progress(&self) {
         let meta = self.current_meta();
         if let Err(e) = self.store.persist_progress(self.game_id, &meta).await {
@@ -1186,16 +1188,18 @@ impl Game {
         self.idle_since.get_or_insert_with(Instant::now).elapsed()
     }
 
-    // put an idle game to sleep: checkpoint its progress, then -- in one step, under the lock --
-    // confirm nobody is on it and close its handle. from that instant no ticket can be issued; the
-    // loop exits on the cancel and Drop removes the handle, and the next get_ticket after that wakes
-    // a fresh task, which loads the checkpoint just written. does nothing if someone arrived in the
-    // meantime.
+    // put an idle game to sleep: in one step, under the lock, confirm nobody is on it and close its
+    // handle. from that instant no ticket can be issued; the loop exits on the cancel and Drop
+    // removes the handle, and the next get_ticket after that wakes a fresh task. does nothing if
+    // someone arrived in the meantime.
+    //
+    // nothing is saved here. the log and the games row are already current: every accepted input,
+    // boot and time jump writes them as it happens, and the stored clock stays valid however long
+    // ago it was written, because a resume adds the wall time since.
     //
     // no ticket means no connection and none about to form, so nothing else holds a sender into
     // this task's queue -- an empty queue here stays empty, and nothing sent is ever dropped.
-    async fn hibernate(&mut self) {
-        self.persist_progress().await;
+    fn hibernate(&mut self) {
         let mut server_state = lock_state(&self.server_state);
         let game = server_state
             .games
@@ -1351,7 +1355,7 @@ impl Game {
                 _ = self.tick.tick(), if !self.cancel.is_cancelled() => {
                     self.tick().await;
                     if self.idle_for() >= self.settings.hibernate_after {
-                        self.hibernate().await;
+                        self.hibernate();
                     }
                 }
                 _ = self.cancel.cancelled() => {

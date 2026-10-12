@@ -163,8 +163,8 @@ could manipulate RNG. I wanted to prevent this from even being possible.
 
 #### Hibernation, caps, and backpressure
 
-A game with no connections for a configurable period checkpoints
-in the DB and exits. The next ticket request for it validates the key and wakes it.
+A game with no connections for a configurable period exits.
+The next ticket request for it validates the key and wakes it.
 After a server restart nothing is immediately resumed. Every game is hibernated on server boot.
 
 Games are intended to last about a week. This is a slow-burn game. In the same way that Discord has idle periods,

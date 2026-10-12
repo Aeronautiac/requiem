@@ -8,6 +8,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    num::NonZeroUsize,
     sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
@@ -112,7 +113,7 @@ pub struct Settings {
     // batches a connection's outbox holds before it counts as too slow and is dropped.
     pub outbox_size: usize,
     // the most commands sent in one websocket message; larger batches are split.
-    pub batch_size: usize,
+    pub batch_size: NonZeroUsize,
     // how often the server pings each connection.
     pub heartbeat_interval: Duration,
     // how long a connection may go without sending any frame before it is reaped as dead.
